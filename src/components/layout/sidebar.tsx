@@ -60,7 +60,7 @@ const navGroups = [
 
 const STORAGE_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ nomeSistema, modulosVisiveis }: { nomeSistema: string; modulosVisiveis: string[] | null }) {
+export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nomeSistema: string; modulosVisiveis: string[] | null; categoriaCores: Record<string, string> }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -144,7 +144,7 @@ export function Sidebar({ nomeSistema, modulosVisiveis }: { nomeSistema: string;
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
-                <span>{group.label}</span>
+                <span style={categoriaCores[group.key] ? { color: categoriaCores[group.key] } : undefined}>{group.label}</span>
                 <ChevronDown
                   className={cn(
                     'h-3 w-3 transition-transform duration-200',

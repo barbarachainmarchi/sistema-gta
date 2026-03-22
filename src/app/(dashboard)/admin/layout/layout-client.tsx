@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Check, RotateCcw } from 'lucide-react'
+import { Check, RotateCcw, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const PRESETS = [
@@ -24,11 +24,22 @@ const PRESETS = [
   { label: 'Rosa',     h: 330, s: 70,  l: 55 },
 ]
 
+const CATEGORIAS = [
+  { key: 'admin',        label: 'Admin' },
+  { key: 'investigacao', label: 'Investigação' },
+  { key: 'vendas',       label: 'Vendas' },
+  { key: 'ferramentas',  label: 'Ferramentas' },
+  { key: 'gestao',       label: 'Gestão' },
+]
+
+type CategoriaCores = Partial<Record<string, string>>
+
 interface Tema {
   accentH: number
   accentS: number
   accentL: number
   nomeSistema: string
+  categoriaCores?: CategoriaCores
 }
 
 function applyTheme(tema: Tema) {
@@ -52,6 +63,17 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
 
   function selectPreset(p: typeof PRESETS[0]) {
     updatePreview({ ...preview, accentH: p.h, accentS: p.s, accentL: p.l })
+  }
+
+  function setCategoriaColor(key: string, h: number, s: number, l: number) {
+    const cores = { ...(preview.categoriaCores ?? {}), [key]: `hsl(${h}, ${s}%, ${l}%)` }
+    setPreview({ ...preview, categoriaCores: cores })
+  }
+
+  function clearCategoriaColor(key: string) {
+    const cores = { ...(preview.categoriaCores ?? {}) }
+    delete cores[key]
+    setPreview({ ...preview, categoriaCores: cores })
   }
 
   async function handleSave() {
@@ -113,14 +135,13 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
 
         <div className="h-px bg-border" />
 
-        {/* Cor */}
+        {/* Cor de destaque */}
         <section className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold">Cor de destaque</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Itens ativos da sidebar, botões e indicadores</p>
           </div>
 
-          {/* Preview */}
           <div className="flex items-center gap-4 p-4 rounded-lg border border-border bg-card/50">
             <div className="h-8 w-8 rounded-md border border-white/10 shrink-0" style={{ background: previewColor }} />
             <div className="flex-1">
@@ -135,7 +156,6 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
             </div>
           </div>
 
-          {/* Presets */}
           <div>
             <p className="text-xs text-muted-foreground mb-2">Paleta rápida</p>
             <div className="flex flex-wrap gap-2">
@@ -160,7 +180,6 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
             </div>
           </div>
 
-          {/* HSL manual */}
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">Personalizado (HSL)</p>
             <div className="grid grid-cols-3 gap-3 max-w-sm">
@@ -182,6 +201,66 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
             </div>
           </div>
         </section>
+
+        <div className="h-px bg-border" />
+
+        {/* Cores das categorias */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold">Cor das categorias</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Cor do título de cada grupo na sidebar</p>
+          </div>
+
+          <div className="space-y-3">
+            {CATEGORIAS.map(cat => {
+              const corAtual = preview.categoriaCores?.[cat.key]
+              return (
+                <div key={cat.key} className="flex items-center gap-4 p-3 rounded-lg border border-border">
+                  <div className="w-28 shrink-0">
+                    <p
+                      className="text-[11px] font-semibold uppercase tracking-widest"
+                      style={{ color: corAtual ?? undefined }}
+                    >
+                      {cat.label}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                    {PRESETS.map(preset => {
+                      const cor = `hsl(${preset.h}, ${preset.s}%, ${preset.l}%)`
+                      const isSelected = corAtual === cor
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() => setCategoriaColor(cat.key, preset.h, preset.s, preset.l)}
+                          title={preset.label}
+                          className={cn(
+                            'h-5 w-5 rounded border-2 transition-all flex items-center justify-center shrink-0',
+                            isSelected ? 'border-white/50 scale-110' : 'border-transparent hover:border-white/20'
+                          )}
+                          style={{ background: cor }}
+                        >
+                          {isSelected && <Check className="h-2.5 w-2.5 text-black/60" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {corAtual && (
+                    <button
+                      onClick={() => clearCategoriaColor(cat.key)}
+                      title="Remover cor"
+                      className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
       </div>
     </>
   )

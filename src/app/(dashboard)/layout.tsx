@@ -30,6 +30,7 @@ export default async function DashboardLayout({
 
   const tema = configRow ? JSON.parse(configRow.valor) : null
   const nomeSistema = tema?.nomeSistema || 'Sistema GTA'
+  const categoriaCores: Record<string, string> = tema?.categoriaCores ?? {}
 
   // Módulos que o usuário pode ver (null = sem perfil = vê tudo)
   type PerfilRow = { perfis_acesso: { perfil_permissoes: { modulo: string; pode_ver: boolean }[] } | null } | null
@@ -42,7 +43,7 @@ export default async function DashboardLayout({
   return (
     <ThemeProvider config={tema}>
       <div className="min-h-screen bg-background">
-        <Sidebar nomeSistema={nomeSistema} modulosVisiveis={modulosVisiveis} />
+        <Sidebar nomeSistema={nomeSistema} modulosVisiveis={modulosVisiveis} categoriaCores={categoriaCores} />
         <main className="ml-[var(--sidebar-width)] min-h-screen flex flex-col">
           {children}
         </main>

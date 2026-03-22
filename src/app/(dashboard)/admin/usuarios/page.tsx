@@ -8,10 +8,24 @@ export default async function UsuariosPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center space-y-2 max-w-sm">
+          <p className="text-sm font-medium text-foreground">Configuração necessária</p>
+          <p className="text-xs text-muted-foreground">
+            Adicione <code className="bg-white/10 px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> no arquivo <code className="bg-white/10 px-1 rounded">.env.local</code> e reinicie o servidor.
+          </p>
+          <p className="text-xs text-muted-foreground">Encontre a chave em: Supabase → Settings → API → service_role</p>
+        </div>
+      </div>
+    )
+  }
+
   const admin = createAdminClient()
 
   const [
-    { data: { users: authUsers } },
+    authResult,
     { data: usuariosData },
     { data: perfis },
     { data: permissoes },
@@ -21,9 +35,10 @@ export default async function UsuariosPage() {
     supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar'),
-    // Convites ativos: não usados e não expirados
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
   ])
+
+  const authUsers = authResult.data?.users ?? []
 
   const usuariosMap = new Map((usuariosData ?? []).map(u => [u.id, u]))
 
