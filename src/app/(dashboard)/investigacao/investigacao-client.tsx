@@ -24,10 +24,10 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-const emptyFaccaoForm = { nome: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' as const }
-const emptyMembroForm = { nome: '', vulgo: '', telefone: '', faccao_id: '', status: 'ativo' as const, observacoes: '' }
-const emptyVeiculoForm = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido' as const, proprietario_id: '', observacoes: '' }
-const emptyLojaForm = { nome: '', localizacao: '', tipo: '', status: 'ativo' as const }
+const emptyFaccaoForm: { nome: string; descricao: string; territorio: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' }
+const emptyMembroForm: { nome: string; vulgo: string; telefone: string; faccao_id: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', faccao_id: '', status: 'ativo', observacoes: '' }
+const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
+const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
 interface Props {
   initialFaccoes: Faccao[]
