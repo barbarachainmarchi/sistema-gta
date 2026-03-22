@@ -1,4 +1,4 @@
-import { cacheLife, cacheTag } from 'next/cache'
+import { unstable_cache } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export type Tema = {
@@ -9,17 +9,16 @@ export type Tema = {
   categoriaCores?: Record<string, string>
 }
 
-export async function getTema(): Promise<Tema | null> {
-  'use cache'
-  cacheTag('config-tema')
-  cacheLife('minutes')
-
-  const admin = createAdminClient()
-  const { data } = await admin
-    .from('config_sistema')
-    .select('valor')
-    .eq('chave', 'tema')
-    .single()
-
-  return data ? (JSON.parse(data.valor) as Tema) : null
-}
+export const getTema = unstable_cache(
+  async (): Promise<Tema | null> => {
+    const admin = createAdminClient()
+    const { data } = await admin
+      .from('config_sistema')
+      .select('valor')
+      .eq('chave', 'tema')
+      .single()
+    return data ? (JSON.parse(data.valor) as Tema) : null
+  },
+  ['config-tema'],
+  { tags: ['config-tema'], revalidate: 60 }
+)
