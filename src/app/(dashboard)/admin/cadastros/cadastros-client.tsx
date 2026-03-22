@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -28,6 +28,7 @@ type Item = {
   tem_craft: boolean
   eh_meu_produto: boolean
   eh_compravel: boolean
+  tem_reciclagem: boolean
   created_at: string
   updated_at: string
   categorias_item: { id: string; nome: string } | null
@@ -37,19 +38,20 @@ type Categoria = { id: string; nome: string; descricao: string | null; created_a
 type Loja = { id: string; nome: string; localizacao: string | null }
 
 type ReceitaIngrediente = { id?: string; ingrediente_id: string; ingrediente_nome: string; quantidade: number }
+type ReciclagemResultado = { id?: string; resultado_id: string; resultado_nome: string; quantidade: number }
 type PrecoHistorico = { id?: string; preco_sujo: number | null; preco_limpo: number | null; data_inicio: string }
 type LojaPreco = { id?: string; loja_id: string; preco: number }
 
 type ItemForm = {
   nome: string; descricao: string; categoria_id: string
-  status: 'ativo' | 'inativo'; tem_craft: boolean; eh_meu_produto: boolean; eh_compravel: boolean
-  receita: ReceitaIngrediente[]; precos: PrecoHistorico[]; loja_precos: LojaPreco[]
+  status: 'ativo' | 'inativo'; tem_craft: boolean; eh_meu_produto: boolean; eh_compravel: boolean; tem_reciclagem: boolean
+  receita: ReceitaIngrediente[]; reciclagem: ReciclagemResultado[]; precos: PrecoHistorico[]; loja_precos: LojaPreco[]
 }
 
 const emptyItemForm: ItemForm = {
   nome: '', descricao: '', categoria_id: '', status: 'ativo',
-  tem_craft: false, eh_meu_produto: false, eh_compravel: false,
-  receita: [], precos: [], loja_precos: [],
+  tem_craft: false, eh_meu_produto: false, eh_compravel: false, tem_reciclagem: false,
+  receita: [], reciclagem: [], precos: [], loja_precos: [],
 }
 
 interface Props {
@@ -187,6 +189,7 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
       || (filterTipo === 'craft' && item.tem_craft)
       || (filterTipo === 'meu_produto' && item.eh_meu_produto)
       || (filterTipo === 'compravel' && item.eh_compravel)
+      || (filterTipo === 'reciclagem' && item.tem_reciclagem)
     return matchSearch && matchStatus && matchCategoria && matchTipo
   }), [items, search, filterStatus, filterCategoria, filterTipo])
 
@@ -210,6 +213,7 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
               <SelectItem value="craft">Craft</SelectItem>
               <SelectItem value="meu_produto">Venda</SelectItem>
               <SelectItem value="compravel">Compra</SelectItem>
+              <SelectItem value="reciclagem">Reciclagem</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterCategoria} onValueChange={setFilterCategoria}>
@@ -258,7 +262,8 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
                       {item.tem_craft && <TipoBadge label="Craft" icon={Wrench} color="text-orange-400 bg-orange-400/10" />}
                       {item.eh_meu_produto && <TipoBadge label="Venda" icon={ShoppingBag} color="text-emerald-400 bg-emerald-400/10" />}
                       {item.eh_compravel && <TipoBadge label="Compra" icon={Package} color="text-sky-400 bg-sky-400/10" />}
-                      {!item.tem_craft && !item.eh_meu_produto && !item.eh_compravel && (
+                      {item.tem_reciclagem && <TipoBadge label="Reciclagem" icon={Recycle} color="text-violet-400 bg-violet-400/10" />}
+                      {!item.tem_craft && !item.eh_meu_produto && !item.eh_compravel && !item.tem_reciclagem && (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
@@ -339,14 +344,16 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 }) {
   const [form, setForm] = useState<ItemForm>(item ? {
     nome: item.nome, descricao: item.descricao || '', categoria_id: item.categoria_id || '',
-    status: item.status, tem_craft: item.tem_craft, eh_meu_produto: item.eh_meu_produto, eh_compravel: item.eh_compravel,
-    receita: [], precos: [], loja_precos: [],
+    status: item.status, tem_craft: item.tem_craft, eh_meu_produto: item.eh_meu_produto,
+    eh_compravel: item.eh_compravel, tem_reciclagem: item.tem_reciclagem,
+    receita: [], reciclagem: [], precos: [], loja_precos: [],
   } : { ...emptyItemForm })
 
   const [activeFormTab, setActiveFormTab] = useState('geral')
   const [loading, setLoading] = useState(item !== null)
   const [saving, setSaving] = useState(false)
   const [newIng, setNewIng] = useState({ ingrediente_id: '', quantidade: '' })
+  const [newRec, setNewRec] = useState({ resultado_id: '', quantidade: '' })
   const [newPreco, setNewPreco] = useState({ preco_sujo: '', preco_limpo: '', data_inicio: new Date().toISOString().split('T')[0] })
   const [newLoja, setNewLoja] = useState({ loja_id: '', preco: '' })
 
@@ -354,13 +361,16 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
     if (!item) return
     Promise.all([
       sb().from('item_receita').select('id, ingrediente_id, quantidade, items!item_receita_ingrediente_id_fkey(nome)').eq('item_id', item.id),
+      sb().from('item_reciclagem').select('id, resultado_id, quantidade, items!item_reciclagem_resultado_id_fkey(nome)').eq('item_id', item.id),
       sb().from('item_precos').select('id, preco_sujo, preco_limpo, data_inicio').eq('item_id', item.id).order('data_inicio', { ascending: false }),
       sb().from('loja_item_precos').select('id, loja_id, preco').eq('item_id', item.id),
-    ]).then(([receitaRes, precosRes, lojasRes]) => {
+    ]).then(([receitaRes, reciclagemRes, precosRes, lojasRes]) => {
       setForm(prev => ({
         ...prev,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         receita: (receitaRes.data || []).map((r: any) => ({ id: r.id, ingrediente_id: r.ingrediente_id, ingrediente_nome: r.items?.nome || '', quantidade: r.quantidade })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reciclagem: (reciclagemRes.data || []).map((r: any) => ({ id: r.id, resultado_id: r.resultado_id, resultado_nome: r.items?.nome || '', quantidade: r.quantidade })),
         precos: precosRes.data || [],
         loja_precos: lojasRes.data || [],
       }))
@@ -368,12 +378,13 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
     })
   })
 
-  function setFlag(flag: 'tem_craft' | 'eh_meu_produto' | 'eh_compravel', value: boolean) {
+  function setFlag(flag: 'tem_craft' | 'eh_meu_produto' | 'eh_compravel' | 'tem_reciclagem', value: boolean) {
     setForm(prev => ({ ...prev, [flag]: value }))
     if (value) {
       if (flag === 'tem_craft') setActiveFormTab('craft')
       if (flag === 'eh_meu_produto') setActiveFormTab('preco')
       if (flag === 'eh_compravel') setActiveFormTab('lojas')
+      if (flag === 'tem_reciclagem') setActiveFormTab('reciclagem')
     }
   }
 
@@ -389,6 +400,20 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
       ]
     }))
     setNewIng({ ingrediente_id: '', quantidade: '' })
+  }
+
+  function addReciclagem() {
+    if (!newRec.resultado_id || !newRec.quantidade) return
+    const found = allItems.find(i => i.id === newRec.resultado_id)
+    if (!found) return
+    setForm(prev => ({
+      ...prev,
+      reciclagem: [
+        ...prev.reciclagem.filter(r => r.resultado_id !== newRec.resultado_id),
+        { resultado_id: newRec.resultado_id, resultado_nome: found.nome, quantidade: Number(newRec.quantidade) }
+      ]
+    }))
+    setNewRec({ resultado_id: '', quantidade: '' })
   }
 
   function addPreco() {
@@ -422,7 +447,8 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
       const payload = {
         nome: form.nome.trim(), descricao: form.descricao.trim() || null,
         categoria_id: form.categoria_id || null, status: form.status,
-        tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto, eh_compravel: form.eh_compravel,
+        tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto,
+        eh_compravel: form.eh_compravel, tem_reciclagem: form.tem_reciclagem,
         updated_at: new Date().toISOString(),
       }
 
@@ -460,6 +486,13 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
         }
       }
 
+      if (form.tem_reciclagem) {
+        await sb().from('item_reciclagem').delete().eq('item_id', id)
+        if (form.reciclagem.length > 0) {
+          await sb().from('item_reciclagem').insert(form.reciclagem.map(r => ({ item_id: id, resultado_id: r.resultado_id, quantidade: r.quantidade })))
+        }
+      }
+
       toast.success(item ? 'Item atualizado!' : 'Item criado!')
       onSaved(savedItem)
     } catch (err: unknown) {
@@ -485,7 +518,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
         ) : (
           <div className="flex-1 overflow-y-auto">
             <Tabs value={activeFormTab} onValueChange={setActiveFormTab}>
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="geral" className="text-xs">Geral</TabsTrigger>
                 <TabsTrigger value="craft" className="text-xs" disabled={!form.tem_craft}>
                   <span className={cn(!form.tem_craft && 'opacity-40')}>Craft</span>
@@ -495,6 +528,9 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                 </TabsTrigger>
                 <TabsTrigger value="lojas" className="text-xs" disabled={!form.eh_compravel}>
                   <span className={cn(!form.eh_compravel && 'opacity-40')}>Lojas</span>
+                </TabsTrigger>
+                <TabsTrigger value="reciclagem" className="text-xs" disabled={!form.tem_reciclagem}>
+                  <span className={cn(!form.tem_reciclagem && 'opacity-40')}>Reciclar</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -536,6 +572,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                   <FlagRow icon={<Wrench className="h-3.5 w-3.5 text-orange-400" />} label="Tem Craft" desc="Pode ser fabricado com ingredientes" checked={form.tem_craft} onChange={v => setFlag('tem_craft', v)} />
                   <FlagRow icon={<ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />} label="Meu Produto" desc="Aparece nas vendas com preço configurado" checked={form.eh_meu_produto} onChange={v => setFlag('eh_meu_produto', v)} />
                   <FlagRow icon={<Package className="h-3.5 w-3.5 text-sky-400" />} label="Comprável" desc="Encontrado em lojas — preços pela Investigação" checked={form.eh_compravel} onChange={v => setFlag('eh_compravel', v)} />
+                  <FlagRow icon={<Recycle className="h-3.5 w-3.5 text-violet-400" />} label="Reciclável" desc="Pode ser reciclado — cadastre o que se obtém" checked={form.tem_reciclagem} onChange={v => setFlag('tem_reciclagem', v)} />
                 </div>
               </TabsContent>
 
@@ -599,6 +636,32 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                       </div>
                     ))}
                   </div>
+                }
+              </TabsContent>
+
+              {/* ── RECICLAGEM ── */}
+              <TabsContent value="reciclagem" className="space-y-3 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  O que se obtém ao reciclar <strong>{form.nome || 'este item'}</strong>. Útil para calcular o retorno na Ferramenta de Cálculo.
+                </p>
+                <div className="flex gap-2">
+                  <Select value={newRec.resultado_id} onValueChange={v => setNewRec(p => ({ ...p, resultado_id: v }))}>
+                    <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Item obtido..." /></SelectTrigger>
+                    <SelectContent>
+                      {allItems.filter(i => !item || i.id !== item.id).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{i.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input type="number" placeholder="Qtd" className="w-20 h-9 text-sm" value={newRec.quantidade} onChange={e => setNewRec(p => ({ ...p, quantidade: e.target.value }))} />
+                  <Button type="button" size="sm" className="h-9 px-3" onClick={addReciclagem}><Plus className="h-4 w-4" /></Button>
+                </div>
+                {form.reciclagem.length === 0
+                  ? <EmptyState text="Nenhum resultado de reciclagem cadastrado" />
+                  : <div className="space-y-1.5">{form.reciclagem.map(r => (
+                    <RowItem key={r.resultado_id} label={r.resultado_nome} value={`${r.quantidade}x`}
+                      onRemove={() => setForm(p => ({ ...p, reciclagem: p.reciclagem.filter(x => x.resultado_id !== r.resultado_id) }))} />
+                  ))}</div>
                 }
               </TabsContent>
 
