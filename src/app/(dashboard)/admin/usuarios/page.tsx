@@ -50,7 +50,7 @@ export default async function UsuariosPage() {
       nome: perfil?.nome ?? au.email?.split('@')[0] ?? '—',
       cargo: perfil?.cargo ?? null,
       perfil_id: perfil?.perfil_id ?? null,
-      perfil_nome: (perfil?.perfis_acesso as { nome: string } | null)?.nome ?? null,
+      perfil_nome: (Array.isArray(perfil?.perfis_acesso) ? perfil.perfis_acesso[0]?.nome : null) ?? null,
       status: (perfil?.status ?? 'ativo') as 'ativo' | 'inativo' | 'pendente',
       created_at: au.created_at,
       ultimo_acesso: au.last_sign_in_at ?? null,
