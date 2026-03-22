@@ -84,6 +84,7 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
         .from('config_sistema')
         .upsert({ chave: 'tema', valor: JSON.stringify(preview), updated_at: new Date().toISOString() })
       if (error) throw error
+      await fetch('/api/revalidar-tema', { method: 'POST' })
       setSaved(preview)
       applyTheme(preview)
       toast.success('Tema salvo!')

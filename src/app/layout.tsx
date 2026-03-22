@@ -2,23 +2,13 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
-import { createClient } from '@/lib/supabase/server'
+import { getTema } from '@/lib/getTema'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export async function generateMetadata(): Promise<Metadata> {
-  try {
-    const supabase = await createClient()
-    const { data } = await supabase
-      .from('config_sistema')
-      .select('valor')
-      .eq('chave', 'tema')
-      .single()
-    const tema = data ? JSON.parse(data.valor) : null
-    return { title: tema?.nomeSistema || 'Sistema GTA', description: 'Sistema de gestão' }
-  } catch {
-    return { title: 'Sistema GTA', description: 'Sistema de gestão' }
-  }
+  const tema = await getTema()
+  return { title: tema?.nomeSistema || 'Sistema GTA', description: 'Sistema de gestão' }
 }
 
 export default function RootLayout({

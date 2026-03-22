@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/layout/sidebar'
 import { ThemeProvider } from '@/components/layout/theme-provider'
+import { getTema } from '@/lib/getTema'
 
 export default async function DashboardLayout({
   children,
@@ -12,23 +13,18 @@ export default async function DashboardLayout({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Paraleliza: perfil do usuário + tema do sistema
-  const [{ data: perfilRow }, { data: configRow }] = await Promise.all([
+  // Paraleliza: perfil do usuário (dinâmico) + tema (cacheado)
+  const [{ data: perfilRow }, tema] = await Promise.all([
     supabase
       .from('usuarios')
       .select('status, perfis_acesso(perfil_permissoes(modulo, pode_ver))')
       .eq('id', user.id)
       .maybeSingle(),
-    supabase
-      .from('config_sistema')
-      .select('valor')
-      .eq('chave', 'tema')
-      .single(),
+    getTema(),
   ])
 
   if (perfilRow?.status === 'pendente') redirect('/aguardando')
 
-  const tema = configRow ? JSON.parse(configRow.valor) : null
   const nomeSistema = tema?.nomeSistema || 'Sistema GTA'
   const categoriaCores: Record<string, string> = tema?.categoriaCores ?? {}
 
@@ -38,7 +34,7 @@ export default async function DashboardLayout({
   const permissoes = pr?.perfis_acesso?.perfil_permissoes
   const modulosVisiveis: string[] | null = permissoes
     ? permissoes.filter(p => p.pode_ver).map(p => p.modulo)
-    : null // null = vê tudo (sem perfil)
+    : null
 
   return (
     <ThemeProvider config={tema}>
