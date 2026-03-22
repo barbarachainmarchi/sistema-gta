@@ -17,50 +17,50 @@ const navGroups = [
     key: 'admin',
     label: 'Admin',
     items: [
-      { href: '/admin/cadastros', label: 'Cadastros', icon: Database },
-      { href: '/admin/usuarios', label: 'Usuários', icon: Users },
-      { href: '/admin/layout', label: 'Layout', icon: Palette },
-      { href: '/admin/logs', label: 'Logs', icon: FileText },
+      { href: '/admin/cadastros',   label: 'Cadastros',    icon: Database,     perm: 'admin_cadastros' },
+      { href: '/admin/usuarios',    label: 'Usuários',     icon: Users,        perm: 'admin_usuarios' },
+      { href: '/admin/layout',      label: 'Layout',       icon: Palette,      perm: 'admin_layout' },
+      { href: '/admin/logs',        label: 'Logs',         icon: FileText,     perm: 'admin_logs' },
     ],
   },
   {
     key: 'investigacao',
     label: 'Investigação',
     items: [
-      { href: '/investigacao', label: 'Investigação', icon: Search },
+      { href: '/investigacao',      label: 'Investigação', icon: Search,       perm: 'investigacao' },
     ],
   },
   {
     key: 'vendas',
     label: 'Vendas',
     items: [
-      { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
-      { href: '/encomendas', label: 'Encomendas', icon: Package },
-      { href: '/vendas-concluidas', label: 'Concluídas', icon: CheckSquare },
+      { href: '/vendas',            label: 'Vendas',       icon: ShoppingCart, perm: 'vendas' },
+      { href: '/encomendas',        label: 'Encomendas',   icon: Package,      perm: 'encomendas' },
+      { href: '/vendas-concluidas', label: 'Concluídas',   icon: CheckSquare,  perm: 'vendas_concluidas' },
     ],
   },
   {
     key: 'ferramentas',
     label: 'Ferramentas',
     items: [
-      { href: '/ferramentas/calculadora', label: 'Calculadora', icon: Calculator },
-      { href: '/ferramentas/cotacao', label: 'Cotação', icon: TrendingUp },
+      { href: '/ferramentas/calculadora', label: 'Calculadora', icon: Calculator,  perm: 'calculadora' },
+      { href: '/ferramentas/cotacao',     label: 'Cotação',     icon: TrendingUp,  perm: 'cotacao' },
     ],
   },
   {
     key: 'gestao',
     label: 'Gestão',
     items: [
-      { href: '/metas', label: 'Metas', icon: Target },
-      { href: '/acao', label: 'Ação', icon: Zap },
-      { href: '/financeiro', label: 'Financeiro', icon: DollarSign },
+      { href: '/metas',             label: 'Metas',        icon: Target,       perm: 'metas' },
+      { href: '/acao',              label: 'Ação',         icon: Zap,          perm: 'acao' },
+      { href: '/financeiro',        label: 'Financeiro',   icon: DollarSign,   perm: 'financeiro' },
     ],
   },
 ]
 
 const STORAGE_KEY = 'sidebar_collapsed'
 
-export function Sidebar({ nomeSistema }: { nomeSistema: string }) {
+export function Sidebar({ nomeSistema, modulosVisiveis }: { nomeSistema: string; modulosVisiveis: string[] | null }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -101,6 +101,16 @@ export function Sidebar({ nomeSistema }: { nomeSistema: string }) {
 
   if (!mounted) return null
 
+  // Filtra grupos/itens pelo perfil (null = sem restrição)
+  const gruposVisiveis = navGroups
+    .map(group => ({
+      ...group,
+      items: modulosVisiveis === null
+        ? group.items
+        : group.items.filter(item => modulosVisiveis.includes(item.perm)),
+    }))
+    .filter(group => group.items.length > 0)
+
   return (
     <aside className="fixed left-0 top-0 h-screen w-[var(--sidebar-width)] flex flex-col bg-card border-r border-border z-50">
 
@@ -116,7 +126,7 @@ export function Sidebar({ nomeSistema }: { nomeSistema: string }) {
 
       {/* Navegação */}
       <nav className="flex-1 overflow-y-auto py-3 px-2">
-        {navGroups.map((group) => {
+        {gruposVisiveis.map((group) => {
           const active = isGroupActive(group)
           const isCollapsed = collapsed[group.key] && !active
 
