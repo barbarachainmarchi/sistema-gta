@@ -24,10 +24,16 @@ const navGroups = [
     ],
   },
   {
-    key: 'operacional',
-    label: 'Operacional',
+    key: 'investigacao',
+    label: 'Investigação',
     items: [
       { href: '/investigacao', label: 'Investigação', icon: Search },
+    ],
+  },
+  {
+    key: 'vendas',
+    label: 'Vendas',
+    items: [
       { href: '/vendas', label: 'Vendas', icon: ShoppingCart },
       { href: '/encomendas', label: 'Encomendas', icon: Package },
       { href: '/vendas-concluidas', label: 'Concluídas', icon: CheckSquare },
@@ -54,7 +60,7 @@ const navGroups = [
 
 const STORAGE_KEY = 'sidebar_collapsed'
 
-export function Sidebar() {
+export function Sidebar({ nomeSistema }: { nomeSistema: string }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -104,7 +110,7 @@ export function Sidebar() {
           <div className="h-6 w-6 rounded bg-primary/10 flex items-center justify-center">
             <Shield className="h-3.5 w-3.5 text-primary" />
           </div>
-          <span className="font-semibold text-sm tracking-wide text-foreground">Sistema GTA</span>
+          <span className="font-semibold text-sm tracking-wide text-foreground">{nomeSistema}</span>
         </div>
       </div>
 

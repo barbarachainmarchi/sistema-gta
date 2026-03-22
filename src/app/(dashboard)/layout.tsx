@@ -13,6 +13,14 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/login')
 
+  // Bloqueia usuários pendentes de aprovação
+  const { data: perfil } = await supabase
+    .from('usuarios')
+    .select('status')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (perfil?.status === 'pendente') redirect('/aguardando')
+
   const { data: configRow } = await supabase
     .from('config_sistema')
     .select('valor')
@@ -20,11 +28,12 @@ export default async function DashboardLayout({
     .single()
 
   const tema = configRow ? JSON.parse(configRow.valor) : null
+  const nomeSistema = tema?.nomeSistema || 'Sistema GTA'
 
   return (
     <ThemeProvider config={tema}>
       <div className="min-h-screen bg-background">
-        <Sidebar />
+        <Sidebar nomeSistema={nomeSistema} />
         <main className="ml-[var(--sidebar-width)] min-h-screen flex flex-col">
           {children}
         </main>
