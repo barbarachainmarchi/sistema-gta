@@ -7,6 +7,6 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  revalidateTag('config-tema')
+  revalidateTag('config-tema', 'seconds')
   return NextResponse.json({ ok: true })
 }
