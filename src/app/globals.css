@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@theme {
+  /* Base - cinza/preto profundo */
+  --color-background: hsl(0, 0%, 6%);
+  --color-foreground: hsl(0, 0%, 92%);
+
+  --color-card: hsl(0, 0%, 9%);
+  --color-card-foreground: hsl(0, 0%, 92%);
+
+  --color-popover: hsl(0, 0%, 10%);
+  --color-popover-foreground: hsl(0, 0%, 92%);
+
+  /* Primária: padrão branco/neutro — personalizável via Layout */
+  --color-primary: hsl(0, 0%, 92%);
+  --color-primary-foreground: hsl(0, 0%, 6%);
+
+  --color-secondary: hsl(0, 0%, 14%);
+  --color-secondary-foreground: hsl(0, 0%, 92%);
+
+  --color-muted: hsl(0, 0%, 13%);
+  --color-muted-foreground: hsl(0, 0%, 45%);
+
+  --color-accent: hsl(0, 0%, 15%);
+  --color-accent-foreground: hsl(0, 0%, 92%);
+
+  --color-destructive: hsl(0, 72%, 42%);
+  --color-destructive-foreground: hsl(0, 0%, 92%);
+
+  --color-border: hsl(0, 0%, 16%);
+  --color-input: hsl(0, 0%, 12%);
+  --color-ring: hsl(0, 0%, 40%);
+
+  --radius: 0.4rem;
+  --sidebar-width: 220px;
+
+  /* Cor de destaque personalizável (padrão: branco/neutro) */
+  --color-brand: hsl(0, 0%, 92%);
+  --color-brand-foreground: hsl(0, 0%, 6%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(0, 0%, 20%);
+    border-radius: 9999px;
+  }
+}
+
+/* Variável de cor de destaque — sobrescrita via JS/ThemeProvider */
+:root {
+  --brand-h: 0;
+  --brand-s: 0%;
+  --brand-l: 92%;
+}
