@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Store, Tag } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ type Item = {
 }
 
 type Categoria = { id: string; nome: string; descricao: string | null; created_at: string }
-type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo'; created_at: string }
+type Loja = { id: string; nome: string; localizacao: string | null }
 
 type ReceitaIngrediente = { id?: string; ingrediente_id: string; ingrediente_nome: string; quantidade: number }
 type PrecoHistorico = { id?: string; preco_sujo: number | null; preco_limpo: number | null; data_inicio: string }
@@ -60,32 +60,28 @@ interface Props {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas: initialLojas }: Props) {
+export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [activeTab, setActiveTab] = useState('items')
   const [items, setItems] = useState<Item[]>(initialItems)
   const [categorias, setCategorias] = useState<Categoria[]>(initialCategorias)
-  const [lojas, setLojas] = useState<Loja[]>(initialLojas)
 
-  // ── Delete confirmação ────────────────────────────────────────────
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; nome: string; type: 'item' | 'categoria' | 'loja' } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; nome: string; type: 'item' | 'categoria' } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   async function executeDelete() {
     if (!confirmDelete) return
     setDeleting(true)
-    const { type, id } = confirmDelete
-    const table = type === 'item' ? 'items' : type === 'categoria' ? 'categorias_item' : 'lojas'
-    const { error } = await sb().from(table).delete().eq('id', id)
+    const table = confirmDelete.type === 'item' ? 'items' : 'categorias_item'
+    const { error } = await sb().from(table).delete().eq('id', confirmDelete.id)
     if (error) {
       toast.error('Erro ao excluir — verifique se não há registros vinculados')
     } else {
       toast.success('Excluído com sucesso')
-      if (type === 'item') setItems(p => p.filter(i => i.id !== id))
-      if (type === 'categoria') setCategorias(p => p.filter(c => c.id !== id))
-      if (type === 'loja') setLojas(p => p.filter(l => l.id !== id))
+      if (confirmDelete.type === 'item') setItems(p => p.filter(i => i.id !== confirmDelete.id))
+      if (confirmDelete.type === 'categoria') setCategorias(p => p.filter(c => c.id !== confirmDelete.id))
     }
     setDeleting(false)
     setConfirmDelete(null)
@@ -93,44 +89,54 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
 
   return (
     <>
-      <Header title="Cadastros" description="Itens, categorias e lojas">
-        {activeTab === 'items' && <BtnNovoItem onCreated={item => setItems(p => [...p, item])} categorias={categorias} lojas={lojas} allItems={items} sb={sb} />}
-        {activeTab === 'categorias' && <BtnNovaCategoria onCreated={c => setCategorias(p => [...p, c])} sb={sb} />}
-        {activeTab === 'lojas' && <BtnNovaLoja onCreated={l => setLojas(p => [...p, l])} sb={sb} />}
+      <Header title="Cadastros" description="Itens e categorias">
+        {activeTab === 'items' && (
+          <BtnNovoItem
+            onCreated={item => setItems(p => [...p, item])}
+            categorias={categorias}
+            lojas={lojas}
+            allItems={items}
+            sb={sb}
+          />
+        )}
+        {activeTab === 'categorias' && (
+          <BtnNovaCategoria onCreated={c => setCategorias(p => [...p, c])} sb={sb} />
+        )}
       </Header>
 
       <div className="flex-1 p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
-            <TabsTrigger value="items" className="gap-1.5"><Package className="h-3.5 w-3.5" />Itens</TabsTrigger>
-            <TabsTrigger value="categorias" className="gap-1.5"><Tag className="h-3.5 w-3.5" />Categorias</TabsTrigger>
-            <TabsTrigger value="lojas" className="gap-1.5"><Store className="h-3.5 w-3.5" />Lojas</TabsTrigger>
+            <TabsTrigger value="items" className="gap-1.5">
+              <Package className="h-3.5 w-3.5" />Itens
+            </TabsTrigger>
+            <TabsTrigger value="categorias" className="gap-1.5">
+              <Tag className="h-3.5 w-3.5" />Categorias
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="items">
-            <ItemsTab items={items} categorias={categorias} lojas={lojas} sb={sb}
-              onUpdated={(updated) => setItems(p => p.map(i => i.id === updated.id ? updated : i))}
+            <ItemsTab
+              items={items}
+              categorias={categorias}
+              lojas={lojas}
+              sb={sb}
+              onUpdated={updated => setItems(p => p.map(i => i.id === updated.id ? updated : i))}
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'item' })}
             />
           </TabsContent>
 
           <TabsContent value="categorias">
-            <CategoriasTab categorias={categorias} sb={sb}
-              onUpdated={(updated) => setCategorias(p => p.map(c => c.id === updated.id ? updated : c))}
+            <CategoriasTab
+              categorias={categorias}
+              sb={sb}
+              onUpdated={updated => setCategorias(p => p.map(c => c.id === updated.id ? updated : c))}
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'categoria' })}
-            />
-          </TabsContent>
-
-          <TabsContent value="lojas">
-            <LojasTab lojas={lojas} sb={sb}
-              onUpdated={(updated) => setLojas(p => p.map(l => l.id === updated.id ? updated : l))}
-              onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'loja' })}
             />
           </TabsContent>
         </Tabs>
       </div>
 
-      {/* Confirm delete */}
       <AlertDialog open={!!confirmDelete} onOpenChange={open => !open && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -139,7 +145,6 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               Esta ação não pode ser desfeita.
               {confirmDelete?.type === 'item' && ' Receitas, preços e histórico vinculados também serão excluídos.'}
               {confirmDelete?.type === 'categoria' && ' Itens desta categoria perderão a categoria, mas não serão excluídos.'}
-              {confirmDelete?.type === 'loja' && ' Preços desta loja vinculados a itens também serão excluídos.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -191,7 +196,12 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
         <div className="flex flex-wrap gap-2">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar item..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+            <Input
+              placeholder="Buscar item..."
+              className="pl-8 h-9 text-sm"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
           <Select value={filterTipo} onValueChange={setFilterTipo}>
             <SelectTrigger className="w-[130px] h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -248,12 +258,12 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
                       {item.tem_craft && <TipoBadge label="Craft" icon={Wrench} color="text-orange-400 bg-orange-400/10" />}
                       {item.eh_meu_produto && <TipoBadge label="Venda" icon={ShoppingBag} color="text-emerald-400 bg-emerald-400/10" />}
                       {item.eh_compravel && <TipoBadge label="Compra" icon={Package} color="text-sky-400 bg-sky-400/10" />}
-                      {!item.tem_craft && !item.eh_meu_produto && !item.eh_compravel && <span className="text-xs text-muted-foreground">—</span>}
+                      {!item.tem_craft && !item.eh_meu_produto && !item.eh_compravel && (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <StatusBadge status={item.status} />
-                  </TableCell>
+                  <TableCell><StatusBadge status={item.status} /></TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingItem(item)}>
@@ -286,7 +296,7 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
   )
 }
 
-// ─── BOTÃO NOVO ITEM + Dialog ──────────────────────────────────────────────────
+// ─── BOTÃO NOVO ITEM ──────────────────────────────────────────────────────────
 
 function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
   onCreated: (item: Item) => void
@@ -334,13 +344,12 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
   } : { ...emptyItemForm })
 
   const [activeFormTab, setActiveFormTab] = useState('geral')
-  const [loading, setLoading] = useState(item !== null) // true quando edição (precisa carregar dados)
+  const [loading, setLoading] = useState(item !== null)
   const [saving, setSaving] = useState(false)
   const [newIng, setNewIng] = useState({ ingrediente_id: '', quantidade: '' })
   const [newPreco, setNewPreco] = useState({ preco_sujo: '', preco_limpo: '', data_inicio: new Date().toISOString().split('T')[0] })
   const [newLoja, setNewLoja] = useState({ loja_id: '', preco: '' })
 
-  // Carrega dados do item ao abrir edição
   useState(() => {
     if (!item) return
     Promise.all([
@@ -361,7 +370,6 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 
   function setFlag(flag: 'tem_craft' | 'eh_meu_produto' | 'eh_compravel', value: boolean) {
     setForm(prev => ({ ...prev, [flag]: value }))
-    // Auto-navega para a aba correspondente quando ativa
     if (value) {
       if (flag === 'tem_craft') setActiveFormTab('craft')
       if (flag === 'eh_meu_produto') setActiveFormTab('preco')
@@ -373,19 +381,37 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
     if (!newIng.ingrediente_id || !newIng.quantidade) return
     const found = allItems.find(i => i.id === newIng.ingrediente_id)
     if (!found) return
-    setForm(prev => ({ ...prev, receita: [...prev.receita.filter(r => r.ingrediente_id !== newIng.ingrediente_id), { ingrediente_id: newIng.ingrediente_id, ingrediente_nome: found.nome, quantidade: Number(newIng.quantidade) }] }))
+    setForm(prev => ({
+      ...prev,
+      receita: [
+        ...prev.receita.filter(r => r.ingrediente_id !== newIng.ingrediente_id),
+        { ingrediente_id: newIng.ingrediente_id, ingrediente_nome: found.nome, quantidade: Number(newIng.quantidade) }
+      ]
+    }))
     setNewIng({ ingrediente_id: '', quantidade: '' })
   }
 
   function addPreco() {
     if (!newPreco.data_inicio || (!newPreco.preco_sujo && !newPreco.preco_limpo)) return
-    setForm(prev => ({ ...prev, precos: [{ preco_sujo: newPreco.preco_sujo ? Number(newPreco.preco_sujo) : null, preco_limpo: newPreco.preco_limpo ? Number(newPreco.preco_limpo) : null, data_inicio: newPreco.data_inicio }, ...prev.precos] }))
+    setForm(prev => ({
+      ...prev,
+      precos: [
+        { preco_sujo: newPreco.preco_sujo ? Number(newPreco.preco_sujo) : null, preco_limpo: newPreco.preco_limpo ? Number(newPreco.preco_limpo) : null, data_inicio: newPreco.data_inicio },
+        ...prev.precos,
+      ]
+    }))
     setNewPreco({ preco_sujo: '', preco_limpo: '', data_inicio: new Date().toISOString().split('T')[0] })
   }
 
   function addLojaPreco() {
     if (!newLoja.loja_id || !newLoja.preco) return
-    setForm(prev => ({ ...prev, loja_precos: [...prev.loja_precos.filter(l => l.loja_id !== newLoja.loja_id), { loja_id: newLoja.loja_id, preco: Number(newLoja.preco) }] }))
+    setForm(prev => ({
+      ...prev,
+      loja_precos: [
+        ...prev.loja_precos.filter(l => l.loja_id !== newLoja.loja_id),
+        { loja_id: newLoja.loja_id, preco: Number(newLoja.preco) }
+      ]
+    }))
     setNewLoja({ loja_id: '', preco: '' })
   }
 
@@ -393,7 +419,12 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
     if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return }
     setSaving(true)
     try {
-      const payload = { nome: form.nome.trim(), descricao: form.descricao.trim() || null, categoria_id: form.categoria_id || null, status: form.status, tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto, eh_compravel: form.eh_compravel, updated_at: new Date().toISOString() }
+      const payload = {
+        nome: form.nome.trim(), descricao: form.descricao.trim() || null,
+        categoria_id: form.categoria_id || null, status: form.status,
+        tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto, eh_compravel: form.eh_compravel,
+        updated_at: new Date().toISOString(),
+      }
 
       let savedItem: Item
       if (item) {
@@ -408,22 +439,25 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 
       const id = savedItem.id
 
-      // Receita
       if (form.tem_craft) {
         await sb().from('item_receita').delete().eq('item_id', id)
-        if (form.receita.length > 0) await sb().from('item_receita').insert(form.receita.map(r => ({ item_id: id, ingrediente_id: r.ingrediente_id, quantidade: r.quantidade })))
+        if (form.receita.length > 0) {
+          await sb().from('item_receita').insert(form.receita.map(r => ({ item_id: id, ingrediente_id: r.ingrediente_id, quantidade: r.quantidade })))
+        }
       }
 
-      // Preços — só insere novos
       if (form.eh_meu_produto) {
         const novos = form.precos.filter(p => !p.id)
-        if (novos.length > 0) await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
+        if (novos.length > 0) {
+          await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
+        }
       }
 
-      // Lojas
       if (form.eh_compravel) {
         await sb().from('loja_item_precos').delete().eq('item_id', id)
-        if (form.loja_precos.length > 0) await sb().from('loja_item_precos').insert(form.loja_precos.map(l => ({ item_id: id, loja_id: l.loja_id, preco: l.preco })))
+        if (form.loja_precos.length > 0) {
+          await sb().from('loja_item_precos').insert(form.loja_precos.map(l => ({ item_id: id, loja_id: l.loja_id, preco: l.preco })))
+        }
       }
 
       toast.success(item ? 'Item atualizado!' : 'Item criado!')
@@ -501,7 +535,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                   <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Características</p>
                   <FlagRow icon={<Wrench className="h-3.5 w-3.5 text-orange-400" />} label="Tem Craft" desc="Pode ser fabricado com ingredientes" checked={form.tem_craft} onChange={v => setFlag('tem_craft', v)} />
                   <FlagRow icon={<ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />} label="Meu Produto" desc="Aparece nas vendas com preço configurado" checked={form.eh_meu_produto} onChange={v => setFlag('eh_meu_produto', v)} />
-                  <FlagRow icon={<Package className="h-3.5 w-3.5 text-sky-400" />} label="Comprável" desc="Disponível em lojas externas" checked={form.eh_compravel} onChange={v => setFlag('eh_compravel', v)} />
+                  <FlagRow icon={<Package className="h-3.5 w-3.5 text-sky-400" />} label="Comprável" desc="Encontrado em lojas — preços pela Investigação" checked={form.eh_compravel} onChange={v => setFlag('eh_compravel', v)} />
                 </div>
               </TabsContent>
 
@@ -520,7 +554,8 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                 {form.receita.length === 0
                   ? <EmptyState text="Nenhum ingrediente adicionado" />
                   : <div className="space-y-1.5">{form.receita.map(r => (
-                    <RowItem key={r.ingrediente_id} label={r.ingrediente_nome} value={`${r.quantidade}x`} onRemove={() => setForm(p => ({ ...p, receita: p.receita.filter(x => x.ingrediente_id !== r.ingrediente_id) }))} />
+                    <RowItem key={r.ingrediente_id} label={r.ingrediente_nome} value={`${r.quantidade}x`}
+                      onRemove={() => setForm(p => ({ ...p, receita: p.receita.filter(x => x.ingrediente_id !== r.ingrediente_id) }))} />
                   ))}</div>
                 }
               </TabsContent>
@@ -530,11 +565,22 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                 <div className="rounded-lg border border-border bg-muted/10 p-3 space-y-3">
                   <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Novo Reajuste</p>
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1"><Label className="text-xs">Sujo</Label><Input type="number" placeholder="0" className="h-9 text-sm" value={newPreco.preco_sujo} onChange={e => setNewPreco(p => ({ ...p, preco_sujo: e.target.value }))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Limpo</Label><Input type="number" placeholder="0" className="h-9 text-sm" value={newPreco.preco_limpo} onChange={e => setNewPreco(p => ({ ...p, preco_limpo: e.target.value }))} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Vigência</Label><Input type="date" className="h-9 text-sm" value={newPreco.data_inicio} onChange={e => setNewPreco(p => ({ ...p, data_inicio: e.target.value }))} /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Sujo</Label>
+                      <Input type="number" placeholder="0" className="h-9 text-sm" value={newPreco.preco_sujo} onChange={e => setNewPreco(p => ({ ...p, preco_sujo: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Limpo</Label>
+                      <Input type="number" placeholder="0" className="h-9 text-sm" value={newPreco.preco_limpo} onChange={e => setNewPreco(p => ({ ...p, preco_limpo: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Vigência</Label>
+                      <Input type="date" className="h-9 text-sm" value={newPreco.data_inicio} onChange={e => setNewPreco(p => ({ ...p, data_inicio: e.target.value }))} />
+                    </div>
                   </div>
-                  <Button type="button" size="sm" className="w-full h-8 text-xs" onClick={addPreco}><Plus className="h-3.5 w-3.5 mr-1" />Adicionar</Button>
+                  <Button type="button" size="sm" className="w-full h-8 text-xs" onClick={addPreco}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />Adicionar
+                  </Button>
                 </div>
                 {form.precos.length === 0
                   ? <EmptyState text="Nenhum preço cadastrado" />
@@ -542,7 +588,9 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                     <p className="text-xs text-muted-foreground">Histórico (mais recente primeiro)</p>
                     {form.precos.map((p, i) => (
                       <div key={i} className={cn('rounded-md px-3 py-2 flex items-center justify-between', i === 0 ? 'bg-white/5 border border-border' : 'bg-muted/30')}>
-                        <span className="text-xs text-muted-foreground tabular-nums">{new Date(p.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {new Date(p.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </span>
                         <div className="flex gap-4 text-xs">
                           {p.preco_sujo != null && <span>Sujo <strong>R${p.preco_sujo.toLocaleString('pt-BR')}</strong></span>}
                           {p.preco_limpo != null && <span>Limpo <strong>R${p.preco_limpo.toLocaleString('pt-BR')}</strong></span>}
@@ -556,24 +604,43 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 
               {/* ── LOJAS ── */}
               <TabsContent value="lojas" className="space-y-3 pt-3">
-                <div className="flex gap-2">
-                  <Select value={newLoja.loja_id} onValueChange={v => setNewLoja(p => ({ ...p, loja_id: v }))}>
-                    <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Selecionar loja..." /></SelectTrigger>
-                    <SelectContent>
-                      {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}{l.localizacao ? ` — ${l.localizacao}` : ''}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="Preço" className="w-24 h-9 text-sm" value={newLoja.preco} onChange={e => setNewLoja(p => ({ ...p, preco: e.target.value }))} />
-                  <Button type="button" size="sm" className="h-9 px-3" onClick={addLojaPreco}><Plus className="h-4 w-4" /></Button>
-                </div>
-                {lojas.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma loja cadastrada. Cadastre na aba Lojas.</p>}
-                {form.loja_precos.length === 0
-                  ? <EmptyState text="Nenhuma loja configurada" />
-                  : <div className="space-y-1.5">{form.loja_precos.map(l => {
-                    const loja = lojas.find(lo => lo.id === l.loja_id)
-                    return <RowItem key={l.loja_id} label={loja?.nome || l.loja_id} value={`R$ ${l.preco.toLocaleString('pt-BR')}`} onRemove={() => setForm(p => ({ ...p, loja_precos: p.loja_precos.filter(x => x.loja_id !== l.loja_id) }))} />
-                  })}</div>
-                }
+                {lojas.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                    <MapPin className="h-8 w-8 text-muted-foreground/30" />
+                    <p className="text-sm font-medium text-muted-foreground">Nenhuma loja cadastrada</p>
+                    <p className="text-xs text-muted-foreground max-w-[240px]">
+                      As lojas são descobertas e cadastradas no módulo de <strong>Investigação</strong>.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Select value={newLoja.loja_id} onValueChange={v => setNewLoja(p => ({ ...p, loja_id: v }))}>
+                        <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Selecionar loja..." /></SelectTrigger>
+                        <SelectContent>
+                          {lojas.map(l => (
+                            <SelectItem key={l.id} value={l.id}>
+                              {l.nome}{l.localizacao ? ` — ${l.localizacao}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input type="number" placeholder="Preço" className="w-24 h-9 text-sm" value={newLoja.preco} onChange={e => setNewLoja(p => ({ ...p, preco: e.target.value }))} />
+                      <Button type="button" size="sm" className="h-9 px-3" onClick={addLojaPreco}><Plus className="h-4 w-4" /></Button>
+                    </div>
+                    {form.loja_precos.length === 0
+                      ? <EmptyState text="Nenhuma loja vinculada" />
+                      : <div className="space-y-1.5">{form.loja_precos.map(l => {
+                        const loja = lojas.find(lo => lo.id === l.loja_id)
+                        return (
+                          <RowItem key={l.loja_id} label={loja?.nome || l.loja_id}
+                            value={`R$ ${l.preco.toLocaleString('pt-BR')}`}
+                            onRemove={() => setForm(p => ({ ...p, loja_precos: p.loja_precos.filter(x => x.loja_id !== l.loja_id) }))} />
+                        )
+                      })}</div>
+                    }
+                  </>
+                )}
               </TabsContent>
             </Tabs>
           </div>
@@ -619,8 +686,12 @@ function CategoriasTab({ categorias, sb, onUpdated, onDelete }: {
                   <TableCell className="text-xs text-muted-foreground">{c.descricao || '—'}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(c)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => onDelete(c.id, c.nome)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(c)}>
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => onDelete(c.id, c.nome)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -629,22 +700,46 @@ function CategoriasTab({ categorias, sb, onUpdated, onDelete }: {
           </TableBody>
         </Table>
       </div>
-      {editing && <CategoriaDialog categoria={editing} sb={sb} onClose={() => setEditing(null)} onSaved={c => { onUpdated(c); setEditing(null) }} />}
+      {editing && (
+        <CategoriaDialog
+          categoria={editing}
+          sb={sb}
+          onClose={() => setEditing(null)}
+          onSaved={c => { onUpdated(c); setEditing(null) }}
+        />
+      )}
     </>
   )
 }
 
-function BtnNovaCategoria({ onCreated, sb }: { onCreated: (c: Categoria) => void; sb: () => ReturnType<typeof createClient> }) {
+function BtnNovaCategoria({ onCreated, sb }: {
+  onCreated: (c: Categoria) => void
+  sb: () => ReturnType<typeof createClient>
+}) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <Button size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" />Nova Categoria</Button>
-      {open && <CategoriaDialog categoria={null} sb={sb} onClose={() => setOpen(false)} onSaved={c => { onCreated(c); setOpen(false) }} />}
+      <Button size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
+        <Plus className="h-3.5 w-3.5 mr-1" />Nova Categoria
+      </Button>
+      {open && (
+        <CategoriaDialog
+          categoria={null}
+          sb={sb}
+          onClose={() => setOpen(false)}
+          onSaved={c => { onCreated(c); setOpen(false) }}
+        />
+      )}
     </>
   )
 }
 
-function CategoriaDialog({ categoria, sb, onClose, onSaved }: { categoria: Categoria | null; sb: () => ReturnType<typeof createClient>; onClose: () => void; onSaved: (c: Categoria) => void }) {
+function CategoriaDialog({ categoria, sb, onClose, onSaved }: {
+  categoria: Categoria | null
+  sb: () => ReturnType<typeof createClient>
+  onClose: () => void
+  onSaved: (c: Categoria) => void
+}) {
   const [nome, setNome] = useState(categoria?.nome || '')
   const [descricao, setDescricao] = useState(categoria?.descricao || '')
   const [saving, setSaving] = useState(false)
@@ -663,135 +758,41 @@ function CategoriaDialog({ categoria, sb, onClose, onSaved }: { categoria: Categ
         onSaved(data as Categoria)
       }
       toast.success(categoria ? 'Categoria atualizada!' : 'Categoria criada!')
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Erro') } finally { setSaving(false) }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle className="text-base">{categoria ? 'Editar Categoria' : 'Nova Categoria'}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="text-base">{categoria ? 'Editar Categoria' : 'Nova Categoria'}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3 py-1">
-          <div className="space-y-1.5"><Label className="text-xs">Nome *</Label><Input value={nome} onChange={e => setNome(e.target.value)} className="h-9" /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Descrição</Label><Input value={descricao} onChange={e => setDescricao(e.target.value)} className="h-9" /></div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancelar</Button>
-          <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 text-xs">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ─── ABA LOJAS ────────────────────────────────────────────────────────────────
-
-function LojasTab({ lojas, sb, onUpdated, onDelete }: {
-  lojas: Loja[]
-  sb: () => ReturnType<typeof createClient>
-  onUpdated: (l: Loja) => void
-  onDelete: (id: string, nome: string) => void
-}) {
-  const [editing, setEditing] = useState<Loja | null>(null)
-  return (
-    <>
-      <div className="rounded-md border border-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-border">
-              <TableHead className="text-xs">Nome</TableHead>
-              <TableHead className="text-xs">Localização</TableHead>
-              <TableHead className="text-xs">Tipo</TableHead>
-              <TableHead className="text-xs">Status</TableHead>
-              <TableHead className="w-[70px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lojas.length === 0
-              ? <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-10 text-sm">Nenhuma loja cadastrada</TableCell></TableRow>
-              : lojas.map(l => (
-                <TableRow key={l.id} className="group border-border">
-                  <TableCell className="font-medium text-sm">{l.nome}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{l.localizacao || '—'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{l.tipo || '—'}</TableCell>
-                  <TableCell><StatusBadge status={l.status} /></TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(l)}><Edit2 className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => onDelete(l.id, l.nome)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            }
-          </TableBody>
-        </Table>
-      </div>
-      {editing && <LojaDialog loja={editing} sb={sb} onClose={() => setEditing(null)} onSaved={l => { onUpdated(l); setEditing(null) }} />}
-    </>
-  )
-}
-
-function BtnNovaLoja({ onCreated, sb }: { onCreated: (l: Loja) => void; sb: () => ReturnType<typeof createClient> }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <Button size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" />Nova Loja</Button>
-      {open && <LojaDialog loja={null} sb={sb} onClose={() => setOpen(false)} onSaved={l => { onCreated(l); setOpen(false) }} />}
-    </>
-  )
-}
-
-function LojaDialog({ loja, sb, onClose, onSaved }: { loja: Loja | null; sb: () => ReturnType<typeof createClient>; onClose: () => void; onSaved: (l: Loja) => void }) {
-  const [nome, setNome] = useState(loja?.nome || '')
-  const [localizacao, setLocalizacao] = useState(loja?.localizacao || '')
-  const [tipo, setTipo] = useState(loja?.tipo || '')
-  const [status, setStatus] = useState<'ativo' | 'inativo'>(loja?.status || 'ativo')
-  const [saving, setSaving] = useState(false)
-
-  async function handleSave() {
-    if (!nome.trim()) { toast.error('Nome é obrigatório'); return }
-    setSaving(true)
-    try {
-      const payload = { nome: nome.trim(), localizacao: localizacao.trim() || null, tipo: tipo.trim() || null, status }
-      if (loja) {
-        const { data, error } = await sb().from('lojas').update(payload).eq('id', loja.id).select().single()
-        if (error) throw error
-        onSaved(data as Loja)
-      } else {
-        const { data, error } = await sb().from('lojas').insert(payload).select().single()
-        if (error) throw error
-        onSaved(data as Loja)
-      }
-      toast.success(loja ? 'Loja atualizada!' : 'Loja criada!')
-    } catch (err: unknown) { toast.error(err instanceof Error ? err.message : 'Erro') } finally { setSaving(false) }
-  }
-
-  return (
-    <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle className="text-base">{loja ? 'Editar Loja' : 'Nova Loja'}</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-1">
-          <div className="space-y-1.5"><Label className="text-xs">Nome *</Label><Input value={nome} onChange={e => setNome(e.target.value)} className="h-9" /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Localização</Label><Input value={localizacao} onChange={e => setLocalizacao(e.target.value)} className="h-9" placeholder="Ex: Megamall 2º andar" /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Tipo</Label><Input value={tipo} onChange={e => setTipo(e.target.value)} className="h-9" placeholder="Ex: megamall, npc, player" /></div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Status</Label>
-            <Select value={status} onValueChange={v => setStatus(v as 'ativo' | 'inativo')}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="ativo">Ativo</SelectItem><SelectItem value="inativo">Inativo</SelectItem></SelectContent>
-            </Select>
+            <Label className="text-xs">Nome *</Label>
+            <Input value={nome} onChange={e => setNome(e.target.value)} className="h-9" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Descrição</Label>
+            <Input value={descricao} onChange={e => setDescricao(e.target.value)} className="h-9" />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancelar</Button>
-          <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 text-xs">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 text-xs">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-// ─── Componentes utilitários ──────────────────────────────────────────────────
+// ─── Utilitários ─────────────────────────────────────────────────────────────
 
 function TipoBadge({ label, icon: Icon, color }: { label: string; icon: React.ElementType; color: string }) {
   return (
@@ -811,7 +812,9 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function FlagRow({ icon, label, desc, checked, onChange }: { icon: React.ReactNode; label: string; desc: string; checked: boolean; onChange: (v: boolean) => void }) {
+function FlagRow({ icon, label, desc, checked, onChange }: {
+  icon: React.ReactNode; label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
+}) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
       <div className="flex items-center gap-2.5">
@@ -832,7 +835,9 @@ function RowItem({ label, value, onRemove }: { label: string; value: string; onR
       <span className="text-sm">{label}</span>
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium tabular-nums text-muted-foreground">{value}</span>
-        <button onClick={onRemove} className="text-muted-foreground hover:text-foreground transition-colors"><X className="h-3 w-3" /></button>
+        <button onClick={onRemove} className="text-muted-foreground hover:text-foreground transition-colors">
+          <X className="h-3 w-3" />
+        </button>
       </div>
     </div>
   )
