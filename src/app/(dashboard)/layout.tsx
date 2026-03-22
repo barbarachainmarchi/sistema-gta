@@ -4,8 +4,6 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { ThemeProvider } from '@/components/layout/theme-provider'
 import { getTema } from '@/lib/getTema'
 
-export const dynamic = 'force-dynamic'
-
 export default async function DashboardLayout({
   children,
 }: {
