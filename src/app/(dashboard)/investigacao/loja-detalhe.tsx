@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import type { Membro, Produto, Veiculo } from './faccao-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
-type LojaItem = { id: string; item_id: string; preco: number; items: { id: string; nome: string; categorias_item: { nome: string } | null } | null }
+type LojaItem = { id: string; item_id: string; preco: number; preco_sujo: number | null; items: { id: string; nome: string; categorias_item: { nome: string } | null } | null }
 type LojaFuncionario = { id: string; membro_id: string; cargo: string | null; membros: { id: string; nome: string; vulgo: string | null; telefone: string | null; faccoes: { nome: string; cor_tag: string } | null } | null }
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR')}` }
@@ -42,7 +42,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     if (!open) return
     setLoadingData(true)
     Promise.all([
-      sb().from('loja_item_precos').select('id, item_id, preco, items(id, nome, categorias_item(nome))').eq('loja_id', loja.id).order('items(nome)'),
+      sb().from('loja_item_precos').select('id, item_id, preco, preco_sujo, items(id, nome, categorias_item(nome))').eq('loja_id', loja.id).order('items(nome)'),
       sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, telefone, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
     ]).then(([itensRes, funcRes]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,8 +78,10 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   const [addItem, setAddItem] = useState(false)
   const [newItemId, setNewItemId] = useState('')
   const [newItemPreco, setNewItemPreco] = useState('')
+  const [newItemPrecoSujo, setNewItemPrecoSujo] = useState('')
   const [editItem, setEditItem] = useState<LojaItem | null>(null)
   const [editItemPreco, setEditItemPreco] = useState('')
+  const [editItemPrecoSujo, setEditItemPrecoSujo] = useState('')
   const [savingItem, setSavingItem] = useState(false)
   const [buscaItem, setBuscaItem] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
@@ -102,24 +104,24 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   async function handleSalvarItem() {
     if (!newItemId || !newItemPreco) return
     setSavingItem(true)
-    const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco) }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, items(id, nome, categorias_item(nome))').single()
+    const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco), preco_sujo: newItemPrecoSujo ? parseFloat(newItemPrecoSujo) : null }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, preco_sujo, items(id, nome, categorias_item(nome))').single()
     setSavingItem(false)
     if (error) { toast.error('Erro ao salvar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setItens(prev => [...prev.filter(i => i.item_id !== newItemId), data as any])
-    setAddItem(false); setNewItemId(''); setNewItemPreco('')
+    setAddItem(false); setNewItemId(''); setNewItemPreco(''); setNewItemPrecoSujo('')
     toast.success('Item adicionado')
   }
 
   async function handleEditarItem() {
     if (!editItem || !editItemPreco) return
     setSavingItem(true)
-    const { data, error } = await sb().from('loja_item_precos').update({ preco: parseFloat(editItemPreco) }).eq('id', editItem.id).select('id, item_id, preco, items(id, nome, categorias_item(nome))').single()
+    const { data, error } = await sb().from('loja_item_precos').update({ preco: parseFloat(editItemPreco), preco_sujo: editItemPrecoSujo ? parseFloat(editItemPrecoSujo) : null }).eq('id', editItem.id).select('id, item_id, preco, preco_sujo, items(id, nome, categorias_item(nome))').single()
     setSavingItem(false)
     if (error) { toast.error('Erro ao salvar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setItens(prev => prev.map(i => i.id === editItem.id ? data as any : i))
-    setEditItem(null); setEditItemPreco('')
+    setEditItem(null); setEditItemPreco(''); setEditItemPrecoSujo('')
     toast.success('Preço atualizado')
   }
 
@@ -231,14 +233,15 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
               </div>
 
               {addItem && (
-                <div className="flex gap-2 mb-2">
+                <div className="flex gap-2 mb-2 flex-wrap">
                   <Select value={newItemId} onValueChange={setNewItemId}>
-                    <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar item..." /></SelectTrigger>
+                    <SelectTrigger className="flex-1 min-w-[160px] h-8 text-sm"><SelectValue placeholder="Selecionar item..." /></SelectTrigger>
                     <SelectContent>{itensDisponiveis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
                   </Select>
-                  <Input type="number" placeholder="Preço" className="w-24 h-8 text-sm" value={newItemPreco} onChange={e => setNewItemPreco(e.target.value)} />
+                  <Input type="number" placeholder="Sujo (opcional)" className="w-28 h-8 text-sm" value={newItemPrecoSujo} onChange={e => setNewItemPrecoSujo(e.target.value)} />
+                  <Input type="number" placeholder="Limpo *" className="w-24 h-8 text-sm" value={newItemPreco} onChange={e => setNewItemPreco(e.target.value)} />
                   <Button size="sm" className="h-8 px-3" onClick={handleSalvarItem} disabled={savingItem || !newItemId || !newItemPreco}><Plus className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddItem(false); setNewItemId(''); setNewItemPreco('') }}><X className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddItem(false); setNewItemId(''); setNewItemPreco(''); setNewItemPrecoSujo('') }}><X className="h-3.5 w-3.5" /></Button>
                 </div>
               )}
 
@@ -277,16 +280,20 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
                           </div>
                           {editItem?.id === item.id ? (
                             <>
-                              <Input type="number" className="w-24 h-7 text-sm" value={editItemPreco} onChange={e => setEditItemPreco(e.target.value)} autoFocus />
+                              <Input type="number" placeholder="Sujo" className="w-24 h-7 text-sm" value={editItemPrecoSujo} onChange={e => setEditItemPrecoSujo(e.target.value)} />
+                              <Input type="number" placeholder="Limpo" className="w-24 h-7 text-sm" value={editItemPreco} onChange={e => setEditItemPreco(e.target.value)} autoFocus />
                               <button onClick={handleEditarItem} disabled={savingItem} className="h-6 w-6 rounded flex items-center justify-center text-green-400 hover:bg-white/[0.06]">
                                 {savingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                               </button>
-                              <button onClick={() => { setEditItem(null); setEditItemPreco('') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                              <button onClick={() => { setEditItem(null); setEditItemPreco(''); setEditItemPrecoSujo('') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
                             </>
                           ) : (
                             <>
-                              <span className="text-sm font-medium tabular-nums">{fmt(item.preco)}</span>
-                              <button onClick={() => { setEditItem(item); setEditItemPreco(item.preco.toString()) }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                              <div className="flex flex-col items-end shrink-0">
+                                {item.preco_sujo != null && <span className="text-[11px] text-muted-foreground">S: <span className="text-foreground font-medium tabular-nums">{fmt(item.preco_sujo)}</span></span>}
+                                <span className="text-[11px] text-muted-foreground">L: <span className="text-sm font-medium tabular-nums">{fmt(item.preco)}</span></span>
+                              </div>
+                              <button onClick={() => { setEditItem(item); setEditItemPreco(item.preco.toString()); setEditItemPrecoSujo(item.preco_sujo?.toString() ?? '') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
                               <button onClick={() => handleRemoverItem(item)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
                             </>
                           )}

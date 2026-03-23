@@ -152,7 +152,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent aria-describedby={undefined} className="max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+      <DialogContent aria-describedby={undefined} className="max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col">
         <DialogHeader className="shrink-0 pb-2 border-b border-border">
           <div className="flex items-center gap-3">
             <span className="h-5 w-5 rounded-full shrink-0" style={{ background: faccao.cor_tag }} />

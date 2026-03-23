@@ -37,6 +37,7 @@ interface Props {
   initialLojas: Loja[]
   todosProdutos: Produto[]
   initialFaccaoPrecos: FaccaoPreco[]
+  lojaPorMembro: Record<string, string[]>
 }
 
 function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
@@ -49,7 +50,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos, lojaPorMembro }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -622,6 +623,14 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                             {m.deep && <span className="font-mono text-[11px] bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/10">{m.deep}</span>}
                             {m.observacoes && <span className="truncate max-w-xs">{m.observacoes}</span>}
                           </div>
+                          {(lojaPorMembro[m.id] ?? []).length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap text-xs mt-0.5">
+                              <span className="text-muted-foreground">Trabalha em:</span>
+                              {(lojaPorMembro[m.id] ?? []).map(nomeL => (
+                                <span key={nomeL} className="bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/10">{nomeL}</span>
+                              ))}
+                            </div>
+                          )}
                           {(veiculosPorMembro[m.id] ?? []).length > 0 && (
                             <div className="flex items-center gap-2 flex-wrap mt-0.5">
                               {(veiculosPorMembro[m.id] ?? []).map(v => (
