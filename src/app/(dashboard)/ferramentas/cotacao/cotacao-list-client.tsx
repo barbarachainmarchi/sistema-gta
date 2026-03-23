@@ -75,7 +75,6 @@ export function CotacaoListClient({ userId, cotacoes, faccoes, lojas, membros }:
       fornecedor_id,
       fornecedor_nome,
       modo_preco: form.modo_preco,
-      created_by: userId,
     }).select('id').single()
 
     setCriando(false)
