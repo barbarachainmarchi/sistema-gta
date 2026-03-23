@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -223,6 +223,16 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   const veiculosFiltrados = veiculos.filter(v => !buscaVeiculo || v.placa.toLowerCase().includes(buscaVeiculo.toLowerCase()) || v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase()))
 
+  const veiculosPorMembro = useMemo(() => {
+    const map: Record<string, Veiculo[]> = {}
+    veiculos.filter(v => v.proprietario_tipo === 'membro' && v.proprietario_id).forEach(v => {
+      const id = v.proprietario_id!
+      if (!map[id]) map[id] = []
+      map[id].push(v)
+    })
+    return map
+  }, [veiculos])
+
   // ── Loja: CRUD ─────────────────────────────────────────────────────────────
   const [lojaModal, setLojaModal] = useState(false)
   const [lojaForm, setLojaForm] = useState(emptyLojaForm)
@@ -295,7 +305,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {faccoesFiltradas.map(f => {
                   const nMembros = membros.filter(m => m.faccao_id === f.id).length
-                  const nVeiculos = veiculos.filter(v => v.proprietario_tipo === 'faccao' && v.proprietario_id === f.id).length
+                  const nVeiculos = veiculos.filter(v =>
+                    (v.proprietario_tipo === 'faccao' && v.proprietario_id === f.id) ||
+                    (v.proprietario_tipo === 'membro' && membros.some(m => m.id === v.proprietario_id && m.faccao_id === f.id))
+                  ).length
                   return (
                     <div key={f.id} className="rounded-lg border border-border bg-card p-4 space-y-3 hover:border-border/80 transition-colors">
                       <div className="flex items-start justify-between gap-2">
@@ -361,9 +374,16 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <div className="text-center py-10 text-muted-foreground text-sm">Nenhum membro encontrado</div>
               ) : membrosFiltrados.map(m => (
                 <div key={m.id} className="grid grid-cols-[1fr_100px_130px_140px_80px_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
-                  <div>
-                    <span className="text-sm font-medium">{m.nome}</span>
-                    {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium">{m.nome}</span>
+                      {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                    </div>
+                    {(veiculosPorMembro[m.id] ?? []).map(v => (
+                      <span key={v.id} title={`${v.placa}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
+                        <Car className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                      </span>
+                    ))}
                   </div>
                   <span className="text-xs font-mono text-muted-foreground">{m.telefone ?? '—'}</span>
                   <span>
@@ -409,10 +429,18 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                   <span className="font-mono text-sm font-medium">{v.placa}</span>
                   <span className="text-sm">{v.modelo ?? '—'}</span>
                   <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
-                  <div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {v.proprietario_tipo === 'desconhecido' || !v.proprietario_tipo
                       ? <span className="text-xs text-muted-foreground">Desconhecido</span>
-                      : <span className="text-xs">{getProprietarioNome(v)}<span className="ml-1 text-muted-foreground">({v.proprietario_tipo})</span></span>
+                      : <>
+                          <span className="text-xs">{getProprietarioNome(v)}</span>
+                          {v.proprietario_tipo === 'membro' && (() => {
+                            const fac = membros.find(m => m.id === v.proprietario_id)?.faccoes
+                            return fac ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: fac.cor_tag + '22', color: fac.cor_tag }}>{fac.nome}</span>
+                            ) : null
+                          })()}
+                        </>
                     }
                   </div>
                   <span className="text-xs text-muted-foreground truncate">{v.observacoes ?? '—'}</span>
@@ -759,7 +787,11 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
         <FaccaoDetalhe
           faccao={detalhe}
           membros={membros.filter(m => m.faccao_id === detalhe.id)}
-          veiculos={veiculos.filter(v => v.proprietario_tipo === 'faccao' && v.proprietario_id === detalhe.id)}
+          veiculos={veiculos.filter(v => {
+            if (v.proprietario_tipo === 'faccao') return v.proprietario_id === detalhe.id
+            if (v.proprietario_tipo === 'membro') return membros.some(m => m.id === v.proprietario_id && m.faccao_id === detalhe.id)
+            return false
+          })}
           todosProdutos={todosProdutos}
           faccaoPrecos={faccaoPrecos.filter(p => p.faccao_id === detalhe.id)}
           open={!!detalhe}

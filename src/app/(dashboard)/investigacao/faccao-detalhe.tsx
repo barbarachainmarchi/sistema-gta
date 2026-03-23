@@ -81,10 +81,22 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     m.telefone?.includes(buscaMembro)
   ), [membros, buscaMembro])
 
-  const veiculosFiltrados = useMemo(() => veiculos.filter(v =>
-    !buscaVeiculo || v.placa.toLowerCase().includes(buscaVeiculo.toLowerCase()) ||
-    v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase())
-  ), [veiculos, buscaVeiculo])
+  const veiculosFiltrados = useMemo(() => veiculos.filter(v => {
+    if (!buscaVeiculo) return true
+    const q = buscaVeiculo.toLowerCase()
+    const dono = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id)?.nome : undefined
+    return v.placa.toLowerCase().includes(q) || v.modelo?.toLowerCase().includes(q) || dono?.toLowerCase().includes(q)
+  }), [veiculos, buscaVeiculo, membros])
+
+  const veiculosPorMembro = useMemo(() => {
+    const map: Record<string, Veiculo[]> = {}
+    veiculos.filter(v => v.proprietario_tipo === 'membro' && v.proprietario_id).forEach(v => {
+      const id = v.proprietario_id!
+      if (!map[id]) map[id] = []
+      map[id].push(v)
+    })
+    return map
+  }, [veiculos])
 
   const precosFiltrados = useMemo(() => faccaoPrecos.filter(p => {
     if (!buscaProduto) return true
@@ -160,7 +172,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-6 py-4">
+        <div className="flex-1 overflow-y-auto py-4 space-y-4">
           {/* Form de edição inline */}
           {editando && (
             <div className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-3">
@@ -196,7 +208,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             </div>
           )}
 
-          {/* Membros */}
+          <div className="grid grid-cols-2 gap-6 items-start">
+          {/* Membros - coluna esquerda */}
           <section className="space-y-2">
             <div className="flex items-center gap-3">
               <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Users className="h-4 w-4 text-muted-foreground" />Membros</p>
@@ -211,17 +224,23 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_110px_130px_70px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Nome / Vulgo</span><span>Telefone</span><span>Observações</span><span>Status</span>
+                <div className="grid grid-cols-[1fr_90px_60px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Nome / Vulgo</span><span>Telefone</span><span>Status</span>
                 </div>
                 {membrosFiltrados.map((m, idx) => (
-                  <div key={m.id} className={cn('grid grid-cols-[1fr_110px_130px_70px] gap-3 items-center px-4 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
-                    <div>
-                      <span className="text-sm font-medium">{m.nome}</span>
-                      {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                  <div key={m.id} className={cn('grid grid-cols-[1fr_90px_60px] gap-2 items-center px-3 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">{m.nome}</span>
+                        {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                      </div>
+                      {(veiculosPorMembro[m.id] ?? []).map(v => (
+                        <span key={v.id} title={`${v.placa}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
+                          <Car className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
+                        </span>
+                      ))}
                     </div>
                     <span className="text-xs font-mono text-muted-foreground">{m.telefone ?? '—'}</span>
-                    <span className="text-xs text-muted-foreground truncate">{m.observacoes ?? '—'}</span>
                     <span className={cn('text-[10px] px-1.5 py-0.5 rounded w-fit', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
                       {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
                     </span>
@@ -231,7 +250,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             )}
           </section>
 
-          {/* Veículos */}
+          {/* Veículos + Produtos - coluna direita */}
+          <div className="space-y-6">
           <section className="space-y-2">
             <div className="flex items-center gap-3">
               <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Car className="h-4 w-4 text-muted-foreground" />Veículos</p>
@@ -246,17 +266,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[110px_1fr_90px_1fr] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Placa</span><span>Modelo</span><span>Cor</span><span>Observações</span>
+                <div className="grid grid-cols-[100px_1fr_70px_1fr_1fr] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Placa</span><span>Modelo</span><span>Cor</span><span>Proprietário</span><span>Obs.</span>
                 </div>
-                {veiculosFiltrados.map((v, idx) => (
-                  <div key={v.id} className={cn('grid grid-cols-[110px_1fr_90px_1fr] gap-3 items-center px-4 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
+                {veiculosFiltrados.map((v, idx) => {
+                  const dono = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id) : null
+                  return (
+                  <div key={v.id} className={cn('grid grid-cols-[100px_1fr_70px_1fr_1fr] gap-2 items-center px-3 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <span className="font-mono text-sm font-semibold">{v.placa}</span>
                     <span className="text-sm text-muted-foreground">{v.modelo ?? '—'}</span>
                     <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
+                    <span className="text-xs truncate">{dono ? dono.nome : v.proprietario_tipo === 'faccao' ? 'Facção' : '—'}</span>
                     <span className="text-xs text-muted-foreground truncate">{v.observacoes ?? '—'}</span>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </section>
@@ -302,6 +326,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </div>
             )}
           </section>
+          </div>{/* end coluna direita */}
+          </div>{/* end grid 2 colunas */}
         </div>
       </DialogContent>
 
