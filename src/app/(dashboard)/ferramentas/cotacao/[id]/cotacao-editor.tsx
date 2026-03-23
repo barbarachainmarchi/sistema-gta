@@ -21,10 +21,10 @@ import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 type Cotacao = {
   id: string; titulo: string | null; fornecedor_tipo: string; fornecedor_id: string | null
   fornecedor_nome: string; modo_preco: 'sujo' | 'limpo'; status: 'rascunho' | 'finalizada' | 'cancelada'
-  criado_por_nome: string | null
+  criado_por_nome: string | null; created_by: string | null
 }
 type Pessoa  = { id: string; cotacao_id: string; nome: string; membro_id: string | null }
-type Item    = { id: string; cotacao_id: string; pessoa_id: string | null; item_nome: string; item_id: string | null; quantidade: number; preco_unit: number }
+type Item    = { id: string; cotacao_id: string; pessoa_id: string | null; item_nome: string; item_id: string | null; quantidade: number; preco_unit: number; adicionado_por_nome: string | null }
 type Faccao  = { id: string; nome: string; cor_tag: string }
 type Loja    = { id: string; nome: string }
 type Membro  = { id: string; nome: string; vulgo: string | null }
@@ -148,6 +148,9 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   const [cotacao, setCotacao] = useState(cotacaoInicial)
   const [pessoas, setPessoas] = useState<Pessoa[]>(pessoasIniciais)
   const [itens, setItens] = useState<Item[]>(itensIniciais)
+
+  // Quem pode editar: qualquer um se rascunho, só o criador se finalizada
+  const podeEditar = cotacao.status === 'rascunho' || cotacao.created_by === userId
 
   // Compartilhar
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -281,6 +284,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
       cotacao_id: cotacao.id, pessoa_id: addItemPessoa,
       item_nome: itemForm.nome.trim(), item_id: itemForm.item_id || null,
       quantidade: qty, preco_unit: preco,
+      adicionado_por: userId, adicionado_por_nome: userNome,
     }).select().single()
     setSalvandoItem(false)
     if (error) { toast.error('Erro ao adicionar item'); return }
@@ -314,8 +318,12 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
   async function handleDeletar() {
     setDeletando(true)
-    await sb().from('cotacoes').delete().eq('id', cotacao.id)
+    // Deletar itens e pessoas manualmente (caso o cascade não esteja ativo via RLS)
+    await sb().from('cotacao_itens').delete().eq('cotacao_id', cotacao.id)
+    await sb().from('cotacao_pessoas').delete().eq('cotacao_id', cotacao.id)
+    const { error } = await sb().from('cotacoes').delete().eq('id', cotacao.id)
     setDeletando(false)
+    if (error) { toast.error('Erro ao excluir: ' + error.message); return }
     toast.success('Cotação excluída')
     router.push('/ferramentas/cotacao')
   }
@@ -408,7 +416,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />Pessoas ({pessoas.length})
             </h3>
-            {cotacao.status === 'rascunho' && (
+            {podeEditar && (
               <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setNovaPessoaOpen(true)}>
                 <UserPlus className="h-3.5 w-3.5" />Adicionar pessoa
               </Button>
@@ -436,7 +444,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                   </button>
                   <span className="text-sm font-semibold flex-1">{pessoa.nome}</span>
                   <span className="text-sm font-semibold tabular-nums text-primary">{fmt(subtotal)}</span>
-                  {cotacao.status === 'rascunho' && (
+                  {podeEditar && (
                     <button onClick={() => handleDeletePessoa(pessoa.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -452,7 +460,12 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                         </div>
                         {pessoaItens.map(it => (
                           <div key={it.id} className="grid grid-cols-[1fr_70px_100px_100px_64px] gap-2 items-center px-4 py-2.5">
-                            <span className="text-sm font-medium">{it.item_nome}</span>
+                            <div>
+                              <span className="text-sm font-medium">{it.item_nome}</span>
+                              {it.adicionado_por_nome && (
+                                <span className="block text-[10px] text-muted-foreground/60">por {it.adicionado_por_nome}</span>
+                              )}
+                            </div>
                             {editandoItemId === it.id ? (
                               <>
                                 <Input value={editItemForm.qty} onChange={e => setEditItemForm(f => ({ ...f, qty: e.target.value }))} className="h-7 text-xs text-right" type="number" />
@@ -469,12 +482,12 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                                 <span className="text-sm text-right tabular-nums text-muted-foreground">{fmt(it.preco_unit)}</span>
                                 <span className="text-sm text-right tabular-nums font-medium">{fmt(it.quantidade * it.preco_unit)}</span>
                                 <div className="flex gap-0.5 justify-end">
-                                  {cotacao.status === 'rascunho' && (
-                                    <>
-                                      <button onClick={() => abrirEditItem(it)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
-                                      <button onClick={() => handleDeleteItem(it.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
-                                    </>
-                                  )}
+                                  {podeEditar && (
+                                      <>
+                                        <button onClick={() => abrirEditItem(it)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                                        <button onClick={() => handleDeleteItem(it.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
+                                      </>
+                                    )}
                                 </div>
                               </>
                             )}
@@ -483,7 +496,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                       </div>
                     )}
 
-                    {cotacao.status === 'rascunho' && (
+                    {podeEditar && (
                       addItemPessoa === pessoa.id ? (
                         <div className="border-t border-border/40 p-3 bg-white/[0.01] space-y-2">
                           <div className="relative">
@@ -568,26 +581,6 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
           </section>
         )}
 
-        {/* Resumo por pessoa */}
-        {pessoas.length > 1 && (
-          <div className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-2">
-            <h3 className="text-sm font-semibold">Por Pessoa</h3>
-            <div className="space-y-1.5">
-              {pessoas.map(p => {
-                const sub = (itensPorPessoa[p.id] ?? []).reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
-                return (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{p.nome}</span>
-                    <span className="font-medium tabular-nums">{fmt(sub)}</span>
-                  </div>
-                )
-              })}
-              <div className="flex items-center justify-between text-sm pt-2 border-t border-border font-semibold">
-                <span>Total</span><span className="tabular-nums text-primary">{fmt(totalGeral)}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Modal: Preview ── */}

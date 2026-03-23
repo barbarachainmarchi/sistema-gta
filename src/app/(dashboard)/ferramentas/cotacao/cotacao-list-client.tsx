@@ -20,6 +20,7 @@ type Cotacao = {
   modo_preco: string
   status: string
   created_at: string
+  criado_por_nome: string | null
 }
 
 type Faccao = { id: string; nome: string; cor_tag: string }
@@ -28,6 +29,7 @@ type Membro = { id: string; nome: string; vulgo: string | null }
 
 interface Props {
   userId: string
+  userNome: string | null
   cotacoes: Cotacao[]
   faccoes: Faccao[]
   lojas: Loja[]
@@ -38,7 +40,7 @@ const statusIcon = { rascunho: Clock, finalizada: CheckCircle2, cancelada: XCirc
 const statusLabel = { rascunho: 'Rascunho', finalizada: 'Finalizada', cancelada: 'Cancelada' }
 const statusColor = { rascunho: 'text-yellow-400', finalizada: 'text-green-400', cancelada: 'text-zinc-500' }
 
-export function CotacaoListClient({ userId, cotacoes, faccoes, lojas, membros }: Props) {
+export function CotacaoListClient({ userId, userNome, cotacoes, faccoes, lojas, membros }: Props) {
   const router = useRouter()
   const [novaOpen, setNovaOpen] = useState(false)
   const [criando, setCriando] = useState(false)
@@ -75,6 +77,8 @@ export function CotacaoListClient({ userId, cotacoes, faccoes, lojas, membros }:
       fornecedor_id,
       fornecedor_nome,
       modo_preco: form.modo_preco,
+      created_by: userId,
+      criado_por_nome: userNome,
     }).select('id').single()
 
     setCriando(false)
@@ -123,6 +127,7 @@ export function CotacaoListClient({ userId, cotacoes, faccoes, lojas, membros }:
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-[11px] text-muted-foreground capitalize">{c.fornecedor_tipo}</span>
                     <span className="text-[11px] text-muted-foreground">preço {c.modo_preco}</span>
+                    {c.criado_por_nome && <span className="text-[11px] text-muted-foreground">por {c.criado_por_nome}</span>}
                     <span className="text-[11px] text-muted-foreground">
                       {new Date(c.created_at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' })}
                     </span>

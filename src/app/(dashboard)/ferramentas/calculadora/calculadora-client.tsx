@@ -62,6 +62,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
   const [modoSujo, setModoSujo] = useState(false)
+  const [desconto, setDesconto] = useState('')
 
   // ── Mapas ──────────────────────────────────────────────────────────────────
 
@@ -398,41 +399,97 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
               </div>
             </div>
 
-            {/* Nosso preço de venda — só aparece se todos os itens do batch forem meus produtos */}
-            {batch.every(b => itemMap[b.item_id]?.eh_meu_produto) && batch.length > 0 && (() => {
-              const totalVendaSujo = batch.reduce((s, { item_id, quantidade }) => {
-                const p = precoMap[item_id]?.preco_sujo
-                return p != null ? s + p * quantidade : s
-              }, 0)
-              const totalVendaLimpo = batch.reduce((s, { item_id, quantidade }) => {
-                const p = precoMap[item_id]?.preco_limpo
-                return p != null ? s + p * quantidade : s
-              }, 0)
-              if (totalVendaSujo === 0 && totalVendaLimpo === 0) return null
-              const margem = totais.custoTotal > 0 ? totalVendaSujo - totais.custoTotal : null
+            {/* Preços de venda — aparece para qualquer item que seja meu produto e tenha preço */}
+            {batch.some(b => itemMap[b.item_id]?.eh_meu_produto && precoMap[b.item_id]) && (() => {
+              const linhas = batch
+                .filter(b => itemMap[b.item_id]?.eh_meu_produto && precoMap[b.item_id])
+                .map(({ item_id, quantidade }) => ({
+                  nome: itemMap[item_id]!.nome,
+                  quantidade,
+                  sujo: precoMap[item_id]?.preco_sujo ?? null,
+                  limpo: precoMap[item_id]?.preco_limpo ?? null,
+                  totalSujo: precoMap[item_id]?.preco_sujo != null ? precoMap[item_id]!.preco_sujo! * quantidade : null,
+                  totalLimpo: precoMap[item_id]?.preco_limpo != null ? precoMap[item_id]!.preco_limpo! * quantidade : null,
+                }))
+
+              const totalSujo = linhas.reduce((s, l) => l.totalSujo != null ? s + l.totalSujo : s, 0)
+              const totalLimpo = linhas.reduce((s, l) => l.totalLimpo != null ? s + l.totalLimpo : s, 0)
+              const pct = parseFloat(desconto)
+              const fator = !isNaN(pct) && pct > 0 ? (1 - pct / 100) : null
+              const finalSujo = fator != null && totalSujo > 0 ? totalSujo * fator : null
+              const finalLimpo = fator != null && totalLimpo > 0 ? totalLimpo * fator : null
+
               return (
                 <section className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-3">
-                  <h3 className="text-sm font-semibold">Receita de Venda (nossos preços)</h3>
+                  <h3 className="text-sm font-semibold">Preços de Venda</h3>
+
+                  {linhas.length > 1 && (
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <div className="grid grid-cols-[1fr_60px_90px_90px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                        <span>Item</span><span className="text-right">Qtd</span><span className="text-right">Sujo</span><span className="text-right">Limpo</span>
+                      </div>
+                      {linhas.map((l, i) => (
+                        <div key={i} className="grid grid-cols-[1fr_60px_90px_90px] gap-3 items-center px-4 py-2 border-b border-border/40 last:border-0">
+                          <span className="text-sm">{l.nome}</span>
+                          <span className="text-xs text-right text-muted-foreground">{l.quantidade}×</span>
+                          <span className="text-sm text-right tabular-nums">{l.totalSujo != null ? fmt(l.totalSujo) : '—'}</span>
+                          <span className="text-sm text-right tabular-nums">{l.totalLimpo != null ? fmt(l.totalLimpo) : '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-4">
-                    {totalVendaSujo > 0 && (
+                    {totalSujo > 0 && (
                       <div>
-                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Sujo</p>
-                        <p className="text-lg font-semibold tabular-nums">{fmt(totalVendaSujo)}</p>
-                        {margem != null && (
-                          <p className={cn('text-xs mt-0.5', margem >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                            margem {margem >= 0 ? '+' : ''}{fmt(margem)} ({Math.round(margem / totais.custoTotal * 100)}%)
+                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Total Sujo</p>
+                        <p className="text-lg font-semibold tabular-nums">{fmt(totalSujo)}</p>
+                        {totais.custoTotal > 0 && (
+                          <p className={cn('text-xs mt-0.5', (totalSujo - totais.custoTotal) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                            margem {fmt(totalSujo - totais.custoTotal)} ({Math.round((totalSujo - totais.custoTotal) / totais.custoTotal * 100)}%)
                           </p>
                         )}
                       </div>
                     )}
-                    {totalVendaLimpo > 0 && (
+                    {totalLimpo > 0 && (
                       <div>
-                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Limpo</p>
-                        <p className="text-lg font-semibold tabular-nums">{fmt(totalVendaLimpo)}</p>
+                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Total Limpo</p>
+                        <p className="text-lg font-semibold tabular-nums">{fmt(totalLimpo)}</p>
                         {totais.custoTotal > 0 && (
-                          <p className={cn('text-xs mt-0.5', (totalVendaLimpo - totais.custoTotal) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                            margem {fmt(totalVendaLimpo - totais.custoTotal)} ({Math.round((totalVendaLimpo - totais.custoTotal) / totais.custoTotal * 100)}%)
+                          <p className={cn('text-xs mt-0.5', (totalLimpo - totais.custoTotal) >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                            margem {fmt(totalLimpo - totais.custoTotal)} ({Math.round((totalLimpo - totais.custoTotal) / totais.custoTotal * 100)}%)
                           </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Desconto */}
+                  <div className="pt-2 border-t border-border space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">% de desconto</Label>
+                      <div className="flex items-center gap-1.5 max-w-[120px]">
+                        <Input
+                          type="number" placeholder="0" min="0" max="100"
+                          value={desconto} onChange={e => setDesconto(e.target.value)}
+                          className="h-7 text-sm text-right"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    {fator != null && (
+                      <div className="grid grid-cols-2 gap-4">
+                        {finalSujo != null && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground">Sujo com -{pct}%</p>
+                            <p className="text-base font-semibold tabular-nums text-primary">{fmt(finalSujo)}</p>
+                          </div>
+                        )}
+                        {finalLimpo != null && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground">Limpo com -{pct}%</p>
+                            <p className="text-base font-semibold tabular-nums text-primary">{fmt(finalLimpo)}</p>
+                          </div>
                         )}
                       </div>
                     )}
