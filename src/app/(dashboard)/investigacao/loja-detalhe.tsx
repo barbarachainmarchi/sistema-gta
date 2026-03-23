@@ -9,13 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search } from 'lucide-react'
+import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Membro, Produto } from './faccao-detalhe'
+import type { Membro, Produto, Veiculo } from './faccao-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
 type LojaItem = { id: string; item_id: string; preco: number; items: { id: string; nome: string; categorias_item: { nome: string } | null } | null }
-type LojaFuncionario = { id: string; membro_id: string; cargo: string | null; membros: { id: string; nome: string; vulgo: string | null; faccoes: { nome: string; cor_tag: string } | null } | null }
+type LojaFuncionario = { id: string; membro_id: string; cargo: string | null; membros: { id: string; nome: string; vulgo: string | null; telefone: string | null; faccoes: { nome: string; cor_tag: string } | null } | null }
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR')}` }
 
@@ -23,12 +23,13 @@ interface Props {
   loja: Loja
   todosProdutos: Produto[]
   todosMembros: Membro[]
+  todosVeiculos: Veiculo[]
   open: boolean
   onClose: () => void
   onUpdateLoja: (l: Loja) => void
 }
 
-export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, onUpdateLoja }: Props) {
+export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, open, onClose, onUpdateLoja }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -42,7 +43,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
     setLoadingData(true)
     Promise.all([
       sb().from('loja_item_precos').select('id, item_id, preco, items(id, nome, categorias_item(nome))').eq('loja_id', loja.id).order('items(nome)'),
-      sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
+      sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, telefone, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
     ]).then(([itensRes, funcRes]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setItens((itensRes.data ?? []) as any)
@@ -136,6 +137,16 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
   const [buscaFunc, setBuscaFunc] = useState('')
 
   const membrosDisponiveis = todosMembros.filter(m => !funcionarios.some(f => f.membro_id === m.id))
+
+  const veiculosPorMembro = useMemo(() => {
+    const map: Record<string, Veiculo[]> = {}
+    todosVeiculos.filter(v => v.proprietario_tipo === 'membro' && v.proprietario_id).forEach(v => {
+      const id = v.proprietario_id!
+      if (!map[id]) map[id] = []
+      map[id].push(v)
+    })
+    return map
+  }, [todosVeiculos])
 
   const funcionariosFiltrados = useMemo(() => {
     if (!buscaFunc) return funcionarios
@@ -321,14 +332,24 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
                   ) : (
                     <div className="rounded-lg border border-border overflow-hidden">
                       {funcionariosFiltrados.map((f, idx) => (
-                        <div key={f.id} className={cn('flex items-center gap-3 px-3 py-2', idx < funcionariosFiltrados.length - 1 && 'border-b border-border/50')}>
+                        <div key={f.id} className={cn('flex items-center gap-3 px-3 py-2.5', idx < funcionariosFiltrados.length - 1 && 'border-b border-border/50')}>
                           <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium">{f.membros?.nome ?? '—'}</span>
-                            {f.membros?.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{f.membros.vulgo}"</span>}
-                            {f.cargo && <span className="ml-2 text-xs text-muted-foreground">· {f.cargo}</span>}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-medium">{f.membros?.nome ?? '—'}</span>
+                              {f.membros?.vulgo && <span className="text-xs text-muted-foreground">"{f.membros.vulgo}"</span>}
+                              {f.cargo && <span className="text-xs text-muted-foreground">· {f.cargo}</span>}
+                              {(veiculosPorMembro[f.membro_id] ?? []).map(v => (
+                                <span key={v.id} title={`${v.placa ?? 'S/P'}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
+                                  <Car className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
+                                </span>
+                              ))}
+                            </div>
+                            {f.membros?.telefone && (
+                              <span className="text-xs font-mono text-muted-foreground">{f.membros.telefone}</span>
+                            )}
                           </div>
                           {f.membros?.faccoes && (
-                            <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: f.membros.faccoes.cor_tag + '22', color: f.membros.faccoes.cor_tag }}>
+                            <span className="text-[11px] px-1.5 py-0.5 rounded shrink-0" style={{ background: f.membros.faccoes.cor_tag + '22', color: f.membros.faccoes.cor_tag }}>
                               {f.membros.faccoes.nome}
                             </span>
                           )}

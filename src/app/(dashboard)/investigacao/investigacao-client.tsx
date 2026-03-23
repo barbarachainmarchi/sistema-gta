@@ -25,8 +25,8 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-const emptyFaccaoForm: { nome: string; sigla: string; descricao: string; territorio: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', sigla: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' }
-const emptyMembroForm: { nome: string; vulgo: string; telefone: string; faccao_id: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', faccao_id: 'sem', status: 'ativo', observacoes: '' }
+const emptyFaccaoForm: { nome: string; sigla: string; descricao: string; territorio: string; deep: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', sigla: '', descricao: '', territorio: '', deep: '', cor_tag: '#6366f1', status: 'ativo' }
+const emptyMembroForm: { nome: string; vulgo: string; telefone: string; instagram: string; deep: string; faccao_id: string; cargo_faccao: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', instagram: '', deep: '', faccao_id: 'sem', cargo_faccao: '', status: 'ativo', observacoes: '' }
 const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
@@ -102,17 +102,17 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [buscaFaccao, setBuscaFaccao] = useState('')
 
   function openNovaFaccao() { setFaccaoForm(emptyFaccaoForm); setFaccaoEditId(null); setFaccaoModal(true) }
-  function openEditFaccao(f: Faccao) { setFaccaoForm({ nome: f.nome, sigla: f.sigla ?? '', descricao: f.descricao ?? '', territorio: f.territorio ?? '', cor_tag: f.cor_tag, status: f.status }); setFaccaoEditId(f.id); setFaccaoModal(true) }
+  function openEditFaccao(f: Faccao) { setFaccaoForm({ nome: f.nome, sigla: f.sigla ?? '', descricao: f.descricao ?? '', territorio: f.territorio ?? '', deep: f.deep ?? '', cor_tag: f.cor_tag, status: f.status }); setFaccaoEditId(f.id); setFaccaoModal(true) }
 
   async function handleSalvarFaccao() {
     if (!faccaoForm.nome) { toast.error('Nome obrigatório'); return }
     setFaccaoSaving(true)
     if (faccaoEditId) {
-      const { data, error } = await sb().from('faccoes').update({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).eq('id', faccaoEditId).select().single()
+      const { data, error } = await sb().from('faccoes').update({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null, deep: faccaoForm.deep || null }).eq('id', faccaoEditId).select().single()
       if (error) { toast.error('Erro ao salvar'); setFaccaoSaving(false); return }
       setFaccoes(prev => prev.map(f => f.id === faccaoEditId ? data as Faccao : f))
     } else {
-      const { data, error } = await sb().from('faccoes').insert({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).select().single()
+      const { data, error } = await sb().from('faccoes').insert({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null, deep: faccaoForm.deep || null }).select().single()
       if (error) { toast.error('Erro ao salvar'); setFaccaoSaving(false); return }
       setFaccoes(prev => [...prev, data as Faccao].sort((a, b) => a.nome.localeCompare(b.nome)))
     }
@@ -143,12 +143,12 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [filtrFaccaoId, setFiltrFaccaoId] = useState('todas')
 
   function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroEditId(null); setMembroModal(true) }
-  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', faccao_id: m.faccao_id ?? 'sem', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
+  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', instagram: m.instagram ?? '', deep: m.deep ?? '', faccao_id: m.faccao_id ?? 'sem', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
 
   async function handleSalvarMembro() {
     if (!membroForm.nome) { toast.error('Nome obrigatório'); return }
     setMembroSaving(true)
-    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, status: membroForm.status, observacoes: membroForm.observacoes || null }
+    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, instagram: membroForm.instagram || null, deep: membroForm.deep || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, cargo_faccao: membroForm.cargo_faccao || null, status: membroForm.status, observacoes: membroForm.observacoes || null }
     if (membroEditId) {
       const { data, error } = await sb().from('membros').update(row).eq('id', membroEditId).select('*, faccoes(id, nome, cor_tag)').single()
       if (error) { toast.error('Erro ao salvar'); setMembroSaving(false); return }
@@ -187,7 +187,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [buscaVeiculo, setBuscaVeiculo] = useState('')
 
   function openNovoVeiculo() { setVeiculoForm(emptyVeiculoForm); setVeiculoEditId(null); setVeiculoModal(true) }
-  function openEditVeiculo(v: Veiculo) { setVeiculoForm({ placa: v.placa, modelo: v.modelo ?? '', cor: v.cor ?? '', proprietario_tipo: v.proprietario_tipo ?? 'desconhecido', proprietario_id: v.proprietario_id ?? '', observacoes: v.observacoes ?? '' }); setVeiculoEditId(v.id); setVeiculoModal(true) }
+  function openEditVeiculo(v: Veiculo) { setVeiculoForm({ placa: v.placa ?? '', modelo: v.modelo ?? '', cor: v.cor ?? '', proprietario_tipo: v.proprietario_tipo ?? 'desconhecido', proprietario_id: v.proprietario_id ?? '', observacoes: v.observacoes ?? '' }); setVeiculoEditId(v.id); setVeiculoModal(true) }
 
   function getProprietarioNome(v: Veiculo) {
     if (v.proprietario_tipo === 'membro') return membros.find(m => m.id === v.proprietario_id)?.nome ?? 'Desconhecido'
@@ -196,9 +196,8 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   }
 
   async function handleSalvarVeiculo() {
-    if (!veiculoForm.placa) { toast.error('Placa obrigatória'); return }
     setVeiculoSaving(true)
-    const row = { placa: veiculoForm.placa.toUpperCase(), modelo: veiculoForm.modelo || null, cor: veiculoForm.cor || null, proprietario_tipo: veiculoForm.proprietario_tipo, proprietario_id: veiculoForm.proprietario_id || null, observacoes: veiculoForm.observacoes || null }
+    const row = { placa: veiculoForm.placa ? veiculoForm.placa.toUpperCase() : null, modelo: veiculoForm.modelo || null, cor: veiculoForm.cor || null, proprietario_tipo: veiculoForm.proprietario_tipo, proprietario_id: veiculoForm.proprietario_id || null, observacoes: veiculoForm.observacoes || null }
     if (veiculoEditId) {
       const { data, error } = await sb().from('veiculos').update(row).eq('id', veiculoEditId).select().single()
       if (error) { toast.error('Erro ao salvar'); setVeiculoSaving(false); return }
@@ -206,7 +205,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     } else {
       const { data, error } = await sb().from('veiculos').insert(row).select().single()
       if (error) { toast.error(error.message.includes('unique') ? 'Placa já cadastrada' : 'Erro ao salvar'); setVeiculoSaving(false); return }
-      setVeiculos(prev => [...prev, data as Veiculo].sort((a, b) => a.placa.localeCompare(b.placa)))
+      setVeiculos(prev => [...prev, data as Veiculo].sort((a, b) => (a.placa ?? '').localeCompare(b.placa ?? '')))
     }
     setVeiculoSaving(false); setVeiculoModal(false); toast.success('Veículo salvo')
   }
@@ -221,7 +220,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     setConfirmDeleteVeiculo(null); toast.success('Veículo excluído')
   }
 
-  const veiculosFiltrados = veiculos.filter(v => !buscaVeiculo || v.placa.toLowerCase().includes(buscaVeiculo.toLowerCase()) || v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase()))
+  const veiculosFiltrados = veiculos.filter(v => !buscaVeiculo || v.placa?.toLowerCase().includes(buscaVeiculo.toLowerCase()) || v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase()))
 
   const veiculosPorMembro = useMemo(() => {
     const map: Record<string, Veiculo[]> = {}
@@ -273,6 +272,34 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   const lojasFiltradas = lojas.filter(l => !buscaLoja || l.nome.toLowerCase().includes(buscaLoja.toLowerCase()) || l.localizacao?.toLowerCase().includes(buscaLoja.toLowerCase()))
 
+  // ── Pesquisa Geral ─────────────────────────────────────────────────────────
+  const [termoBusca, setTermoBusca] = useState('')
+
+  const resultadosMembros = useMemo(() => {
+    const q = termoBusca.trim().toLowerCase()
+    if (q.length < 2) return []
+    return membros.filter(m =>
+      m.nome.toLowerCase().includes(q) ||
+      m.vulgo?.toLowerCase().includes(q) ||
+      m.telefone?.includes(q) ||
+      m.instagram?.toLowerCase().includes(q) ||
+      m.deep?.toLowerCase().includes(q) ||
+      m.cargo_faccao?.toLowerCase().includes(q) ||
+      m.observacoes?.toLowerCase().includes(q)
+    )
+  }, [membros, termoBusca])
+
+  const resultadosVeiculos = useMemo(() => {
+    const q = termoBusca.trim().toLowerCase()
+    if (q.length < 2) return []
+    return veiculos.filter(v =>
+      v.placa?.toLowerCase().includes(q) ||
+      v.modelo?.toLowerCase().includes(q) ||
+      v.cor?.toLowerCase().includes(q) ||
+      v.observacoes?.toLowerCase().includes(q)
+    )
+  }, [veiculos, termoBusca])
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -285,6 +312,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <TabsTrigger value="membros">Membros <span className="ml-1.5 text-[10px] text-muted-foreground">({membros.length})</span></TabsTrigger>
             <TabsTrigger value="veiculos">Veículos <span className="ml-1.5 text-[10px] text-muted-foreground">({veiculos.length})</span></TabsTrigger>
             <TabsTrigger value="lojas">Lojas <span className="ml-1.5 text-[10px] text-muted-foreground">({lojas.length})</span></TabsTrigger>
+            <TabsTrigger value="pesquisa">Pesquisa Geral</TabsTrigger>
           </TabsList>
 
           {/* ── Facções ──────────────────────────────────────────────────── */}
@@ -367,20 +395,20 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             </div>
 
             <div className="rounded-lg border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_100px_130px_140px_80px_64px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
-                <span>Nome / Vulgo</span><span>Telefone</span><span>Facção</span><span>Observações</span><span>Status</span><span />
+              <div className="grid grid-cols-[1fr_100px_110px_110px_120px_80px_64px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
+                <span>Nome / Vulgo</span><span>Telefone</span><span>Facção</span><span>Cargo</span><span>Observações</span><span>Status</span><span />
               </div>
               {membrosFiltrados.length === 0 ? (
                 <div className="text-center py-10 text-muted-foreground text-sm">Nenhum membro encontrado</div>
               ) : membrosFiltrados.map(m => (
-                <div key={m.id} className="grid grid-cols-[1fr_100px_130px_140px_80px_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
+                <div key={m.id} className="grid grid-cols-[1fr_100px_110px_110px_120px_80px_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="min-w-0">
                       <span className="text-sm font-medium">{m.nome}</span>
                       {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
                     </div>
                     {(veiculosPorMembro[m.id] ?? []).map(v => (
-                      <span key={v.id} title={`${v.placa}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
+                      <span key={v.id} title={`${v.placa ?? 'S/P'}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
                         <Car className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground transition-colors" />
                       </span>
                     ))}
@@ -395,6 +423,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                       : <span className="text-xs text-muted-foreground">Sem facção</span>
                     }
                   </span>
+                  <span className="text-xs text-muted-foreground truncate">{m.cargo_faccao ?? '—'}</span>
                   <span className="text-xs text-muted-foreground truncate">{m.observacoes ?? '—'}</span>
                   <StatusBadge status={m.status} />
                   <div className="flex gap-1">
@@ -426,7 +455,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <div className="text-center py-10 text-muted-foreground text-sm">Nenhum veículo encontrado</div>
               ) : veiculosFiltrados.map(v => (
                 <div key={v.id} className="grid grid-cols-[100px_1fr_80px_1fr_1fr_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
-                  <span className="font-mono text-sm font-medium">{v.placa}</span>
+                  <span className="font-mono text-sm font-medium">{v.placa ?? '—'}</span>
                   <span className="text-sm">{v.modelo ?? '—'}</span>
                   <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -542,6 +571,123 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               </div>
             )}
           </TabsContent>
+          {/* ── Pesquisa Geral ──────────────────────────────────────────── */}
+          <TabsContent value="pesquisa" className="space-y-4">
+            <div className="relative max-w-lg">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Nome, vulgo, telefone, placa, modelo, instagram, deep..."
+                value={termoBusca}
+                onChange={e => setTermoBusca(e.target.value)}
+                className="pl-9 h-10 text-sm"
+                autoFocus
+              />
+            </div>
+
+            {termoBusca.trim().length > 0 && termoBusca.trim().length < 2 && (
+              <p className="text-xs text-muted-foreground">Digite pelo menos 2 caracteres...</p>
+            )}
+
+            {termoBusca.trim().length >= 2 && (
+              <>
+                {resultadosMembros.length === 0 && resultadosVeiculos.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-10">Nenhum resultado para &quot;{termoBusca}&quot;</p>
+                )}
+
+                {/* Membros */}
+                {resultadosMembros.length > 0 && (
+                  <section className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Users className="h-3.5 w-3.5" />Membros ({resultadosMembros.length})
+                    </p>
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      {resultadosMembros.map((m, idx) => (
+                        <div key={m.id} className={cn('flex flex-col gap-1 px-4 py-3', idx < resultadosMembros.length - 1 && 'border-b border-border/40')}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold">{m.nome}</span>
+                            {m.vulgo && <span className="text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                            {m.faccoes && (
+                              <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: m.faccoes.cor_tag + '22', color: m.faccoes.cor_tag }}>
+                                {m.faccoes.nome}
+                              </span>
+                            )}
+                            {m.cargo_faccao && <span className="text-xs text-muted-foreground">· {m.cargo_faccao}</span>}
+                            <span className={cn('text-[10px] px-1.5 py-0.5 rounded ml-auto', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
+                              {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground">
+                            {m.telefone && <span className="font-mono">{m.telefone}</span>}
+                            {m.instagram && <span className="text-blue-400">@{m.instagram.replace(/^@/, '')}</span>}
+                            {m.deep && <span className="font-mono text-[11px] bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/10">{m.deep}</span>}
+                            {m.observacoes && <span className="truncate max-w-xs">{m.observacoes}</span>}
+                          </div>
+                          {(veiculosPorMembro[m.id] ?? []).length > 0 && (
+                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                              {(veiculosPorMembro[m.id] ?? []).map(v => (
+                                <span key={v.id} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-white/[0.04] px-2 py-0.5 rounded border border-white/10">
+                                  <Car className="h-3 w-3" />
+                                  <span className="font-mono">{v.placa ?? 'S/P'}</span>
+                                  {v.modelo && <span>— {v.modelo}</span>}
+                                  {v.cor && <span className="opacity-70">({v.cor})</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Veículos */}
+                {resultadosVeiculos.length > 0 && (
+                  <section className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Car className="h-3.5 w-3.5" />Veículos ({resultadosVeiculos.length})
+                    </p>
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      {resultadosVeiculos.map((v, idx) => {
+                        const donoMembro = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id) : null
+                        const donoFaccao = v.proprietario_tipo === 'faccao' ? faccoes.find(f => f.id === v.proprietario_id) : null
+                        return (
+                          <div key={v.id} className={cn('flex flex-col gap-1 px-4 py-3', idx < resultadosVeiculos.length - 1 && 'border-b border-border/40')}>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-mono text-sm font-semibold">{v.placa ?? '—'}</span>
+                              {v.modelo && <span className="text-sm">{v.modelo}</span>}
+                              {v.cor && <span className="text-xs text-muted-foreground">({v.cor})</span>}
+                            </div>
+                            {donoMembro && (
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                <span className="text-muted-foreground">Dono:</span>
+                                <span className="font-medium">{donoMembro.nome}</span>
+                                {donoMembro.vulgo && <span className="text-muted-foreground">"{donoMembro.vulgo}"</span>}
+                                {donoMembro.faccoes && (
+                                  <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: donoMembro.faccoes.cor_tag + '22', color: donoMembro.faccoes.cor_tag }}>
+                                    {donoMembro.faccoes.nome}
+                                  </span>
+                                )}
+                                {donoMembro.telefone && <span className="font-mono text-muted-foreground">{donoMembro.telefone}</span>}
+                                {donoMembro.instagram && <span className="text-blue-400">@{donoMembro.instagram.replace(/^@/, '')}</span>}
+                              </div>
+                            )}
+                            {donoFaccao && (
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground">Facção:</span>
+                                <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: donoFaccao.cor_tag + '22', color: donoFaccao.cor_tag }}>{donoFaccao.nome}</span>
+                              </div>
+                            )}
+                            {v.observacoes && <span className="text-xs text-muted-foreground">{v.observacoes}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </TabsContent>
+
         </Tabs>
       </div>
 
@@ -569,6 +715,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <Label className="text-xs">Descrição</Label>
                 <Input value={faccaoForm.descricao} onChange={e => setFaccaoForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Deep</Label>
+              <Input value={faccaoForm.deep} onChange={e => setFaccaoForm(f => ({ ...f, deep: e.target.value }))} placeholder="Endereço deep web da facção..." className="h-8 text-sm" />
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Cor</Label>
@@ -630,9 +780,25 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 </Select>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Observações</Label>
-              <Input value={membroForm.observacoes} onChange={e => setMembroForm(f => ({ ...f, observacoes: e.target.value }))} className="h-8 text-sm" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Instagram</Label>
+                <Input value={membroForm.instagram} onChange={e => setMembroForm(f => ({ ...f, instagram: e.target.value }))} placeholder="@usuario" className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Deep</Label>
+                <Input value={membroForm.deep} onChange={e => setMembroForm(f => ({ ...f, deep: e.target.value }))} placeholder="Endereço deep..." className="h-8 text-sm" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cargo na Facção</Label>
+                <Input value={membroForm.cargo_faccao} onChange={e => setMembroForm(f => ({ ...f, cargo_faccao: e.target.value }))} placeholder="Ex: Soldado, Capitão..." className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Observações</Label>
+                <Input value={membroForm.observacoes} onChange={e => setMembroForm(f => ({ ...f, observacoes: e.target.value }))} className="h-8 text-sm" />
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <Label className="text-xs">Status</Label>
@@ -751,7 +917,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
       {[
         { open: !!confirmDeleteFaccao, title: 'Excluir facção?', desc: `"${confirmDeleteFaccao?.nome}" será excluída. Os membros ficam sem facção.`, onConfirm: handleDeleteFaccao, loading: deletingFaccao, onCancel: () => setConfirmDeleteFaccao(null) },
         { open: !!confirmDeleteMembro, title: 'Excluir membro?', desc: `"${confirmDeleteMembro?.nome}" será excluído permanentemente.`, onConfirm: handleDeleteMembro, loading: deletingMembro, onCancel: () => setConfirmDeleteMembro(null) },
-        { open: !!confirmDeleteVeiculo, title: 'Excluir veículo?', desc: `Placa "${confirmDeleteVeiculo?.placa}" será excluída.`, onConfirm: handleDeleteVeiculo, loading: deletingVeiculo, onCancel: () => setConfirmDeleteVeiculo(null) },
+        { open: !!confirmDeleteVeiculo, title: 'Excluir veículo?', desc: `Veículo "${confirmDeleteVeiculo?.placa ?? confirmDeleteVeiculo?.modelo ?? 'sem identificação'}" será excluído.`, onConfirm: handleDeleteVeiculo, loading: deletingVeiculo, onCancel: () => setConfirmDeleteVeiculo(null) },
         { open: !!confirmDeleteLoja, title: 'Excluir loja?', desc: `"${confirmDeleteLoja?.nome}" será excluída.`, onConfirm: handleDeleteLoja, loading: deletingLoja, onCancel: () => setConfirmDeleteLoja(null) },
       ].map((c, i) => (
         <AlertDialog key={i} open={c.open} onOpenChange={v => !v && c.onCancel()}>
@@ -776,6 +942,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           loja={detalheLoja}
           todosProdutos={todosProdutos}
           todosMembros={membros}
+          todosVeiculos={veiculos}
           open={!!detalheLoja}
           onClose={() => setDetalheLoja(null)}
           onUpdateLoja={l => { setLojas(prev => prev.map(x => x.id === l.id ? l : x)); setDetalheLoja(l) }}
