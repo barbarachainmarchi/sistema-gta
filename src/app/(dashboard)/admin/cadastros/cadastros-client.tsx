@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Header } from '@/components/layout/header'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ type Item = {
   nome: string
   descricao: string | null
   categoria_id: string | null
+  peso: number | null
   status: 'ativo' | 'inativo'
   tem_craft: boolean
   eh_meu_produto: boolean
@@ -43,13 +44,13 @@ type PrecoHistorico = { id?: string; preco_sujo: number | null; preco_limpo: num
 type LojaPreco = { id?: string; loja_id: string; preco: number }
 
 type ItemForm = {
-  nome: string; descricao: string; categoria_id: string
+  nome: string; descricao: string; categoria_id: string; peso: string
   status: 'ativo' | 'inativo'; tem_craft: boolean; eh_meu_produto: boolean; eh_compravel: boolean; tem_reciclagem: boolean
   receita: ReceitaIngrediente[]; reciclagem: ReciclagemResultado[]; precos: PrecoHistorico[]; loja_precos: LojaPreco[]
 }
 
 const emptyItemForm: ItemForm = {
-  nome: '', descricao: '', categoria_id: '', status: 'ativo',
+  nome: '', descricao: '', categoria_id: '', peso: '', status: 'ativo',
   tem_craft: false, eh_meu_produto: false, eh_compravel: false, tem_reciclagem: false,
   receita: [], reciclagem: [], precos: [], loja_precos: [],
 }
@@ -94,7 +95,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
       <Header title="Cadastros" description="Itens e categorias">
         {activeTab === 'items' && (
           <BtnNovoItem
-            onCreated={item => setItems(p => [...p, item])}
+            onCreated={item => setItems(p => [...p, item].sort((a,b) => a.nome.localeCompare(b.nome)))}
             categorias={categorias}
             lojas={lojas}
             allItems={items}
@@ -125,6 +126,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               sb={sb}
               onUpdated={updated => setItems(p => p.map(i => i.id === updated.id ? updated : i))}
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'item' })}
+              onItemCreated={novo => setItems(p => [...p, novo].sort((a,b) => a.nome.localeCompare(b.nome)))}
             />
           </TabsContent>
 
@@ -167,13 +169,14 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
 
 // ─── ABA ITENS ────────────────────────────────────────────────────────────────
 
-function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
+function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete, onItemCreated }: {
   items: Item[]
   categorias: Categoria[]
   lojas: Loja[]
   sb: () => ReturnType<typeof createClient>
   onUpdated: (item: Item) => void
   onDelete: (id: string, nome: string) => void
+  onItemCreated: (item: Item) => void
 }) {
   const [search, setSearch] = useState('')
   const [filterTipo, setFilterTipo] = useState('todos')
@@ -241,6 +244,7 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
               <TableRow className="hover:bg-transparent border-border">
                 <TableHead className="text-xs">Nome</TableHead>
                 <TableHead className="text-xs">Categoria</TableHead>
+                <TableHead className="text-xs w-[70px]">Peso</TableHead>
                 <TableHead className="text-xs">Tipos</TableHead>
                 <TableHead className="text-xs">Status</TableHead>
                 <TableHead className="w-[70px]" />
@@ -257,6 +261,9 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
                 <TableRow key={item.id} className="group border-border">
                   <TableCell className="font-medium text-sm">{item.nome}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">{item.categorias_item?.nome || '—'}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs tabular-nums">
+                    {item.peso != null ? `${item.peso} kg` : '—'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {item.tem_craft && <TipoBadge label="Craft" icon={Wrench} color="text-orange-400 bg-orange-400/10" />}
@@ -295,6 +302,7 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete }: {
           sb={sb}
           onClose={() => setEditingItem(null)}
           onSaved={updated => { onUpdated(updated); setEditingItem(null) }}
+          onItemCreated={onItemCreated}
         />
       )}
     </>
@@ -325,6 +333,7 @@ function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
           sb={sb}
           onClose={() => setOpen(false)}
           onSaved={item => { onCreated(item); setOpen(false) }}
+          onItemCreated={onCreated}
         />
       )}
     </>
@@ -333,7 +342,7 @@ function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
 
 // ─── DIALOG DE ITEM ───────────────────────────────────────────────────────────
 
-function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }: {
+function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClose, onSaved, onItemCreated }: {
   item: Item | null
   categorias: Categoria[]
   lojas: Loja[]
@@ -341,9 +350,20 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
   sb: () => ReturnType<typeof createClient>
   onClose: () => void
   onSaved: (item: Item) => void
+  onItemCreated?: (item: Item) => void
 }) {
+  // Local copy so newly-created sub-items appear immediately in combobox
+  const [localItems, setLocalItems] = useState(allItemsProp)
+  useEffect(() => setLocalItems(allItemsProp), [allItemsProp])
+
+  function handleSubItemCreated(novo: Item) {
+    setLocalItems(p => [...p, novo].sort((a,b) => a.nome.localeCompare(b.nome)))
+    onItemCreated?.(novo)
+  }
+
   const [form, setForm] = useState<ItemForm>(item ? {
     nome: item.nome, descricao: item.descricao || '', categoria_id: item.categoria_id || '',
+    peso: item.peso != null ? String(item.peso) : '',
     status: item.status, tem_craft: item.tem_craft, eh_meu_produto: item.eh_meu_produto,
     eh_compravel: item.eh_compravel, tem_reciclagem: item.tem_reciclagem,
     receita: [], reciclagem: [], precos: [], loja_precos: [],
@@ -354,6 +374,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
   const [saving, setSaving] = useState(false)
   const [newIng, setNewIng] = useState({ ingrediente_id: '', quantidade: '' })
   const [newRec, setNewRec] = useState({ resultado_id: '', quantidade: '' })
+  const [criarSubItemNome, setCriarSubItemNome] = useState<{ nome: string; target: 'ing' | 'rec' } | null>(null)
   const [newPreco, setNewPreco] = useState({ preco_sujo: '', preco_limpo: '', data_inicio: new Date().toISOString().split('T')[0] })
   const [newLoja, setNewLoja] = useState({ loja_id: '', preco: '' })
 
@@ -390,7 +411,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 
   function addIngrediente() {
     if (!newIng.ingrediente_id || !newIng.quantidade) return
-    const found = allItems.find(i => i.id === newIng.ingrediente_id)
+    const found = localItems.find(i => i.id === newIng.ingrediente_id)
     if (!found) return
     setForm(prev => ({
       ...prev,
@@ -404,7 +425,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
 
   function addReciclagem() {
     if (!newRec.resultado_id || !newRec.quantidade) return
-    const found = allItems.find(i => i.id === newRec.resultado_id)
+    const found = localItems.find(i => i.id === newRec.resultado_id)
     if (!found) return
     setForm(prev => ({
       ...prev,
@@ -447,6 +468,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
       const payload = {
         nome: form.nome.trim(), descricao: form.descricao.trim() || null,
         categoria_id: form.categoria_id || null, status: form.status,
+        peso: form.peso !== '' ? parseFloat(form.peso) : null,
         tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto,
         eh_compravel: form.eh_compravel, tem_reciclagem: form.tem_reciclagem,
         updated_at: new Date().toISOString(),
@@ -502,7 +524,7 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
     }
   }
 
-  const ingredientesDisponiveis = allItems.filter(i => !item || i.id !== item.id)
+  const ingredientesDisponiveis = localItems.filter(i => !item || i.id !== item.id)
 
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
@@ -552,6 +574,10 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                     </Select>
                   </div>
                   <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1"><Weight className="h-3 w-3" />Peso (kg)</Label>
+                    <Input type="number" step="0.001" min="0" value={form.peso} onChange={e => setForm(p => ({ ...p, peso: e.target.value }))} placeholder="Ex: 0.5" className="h-9 text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Status</Label>
                     <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as 'ativo' | 'inativo' }))}>
                       <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -579,22 +605,44 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
               {/* ── CRAFT ── */}
               <TabsContent value="craft" className="space-y-3 pt-3">
                 <div className="flex gap-2">
-                  <Select value={newIng.ingrediente_id} onValueChange={v => setNewIng(p => ({ ...p, ingrediente_id: v }))}>
-                    <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Ingrediente..." /></SelectTrigger>
-                    <SelectContent>
-                      {ingredientesDisponiveis.map(i => <SelectItem key={i.id} value={i.id}>{i.nome}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="Qtd" className="w-20 h-9 text-sm" value={newIng.quantidade} onChange={e => setNewIng(p => ({ ...p, quantidade: e.target.value }))} />
+                  <ItemCombobox
+                    allItems={ingredientesDisponiveis}
+                    selectedId={newIng.ingrediente_id}
+                    onSelect={id => setNewIng(p => ({ ...p, ingrediente_id: id }))}
+                    onCriar={nome => setCriarSubItemNome({ nome, target: 'ing' })}
+                    placeholder="Ingrediente..."
+                    className="flex-1"
+                  />
+                  <Input type="number" placeholder="Qtd" className="w-20 h-9 text-sm" value={newIng.quantidade}
+                    onChange={e => setNewIng(p => ({ ...p, quantidade: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addIngrediente() } }}
+                  />
                   <Button type="button" size="sm" className="h-9 px-3" onClick={addIngrediente}><Plus className="h-4 w-4" /></Button>
                 </div>
                 {form.receita.length === 0
                   ? <EmptyState text="Nenhum ingrediente adicionado" />
-                  : <div className="space-y-1.5">{form.receita.map(r => (
-                    <RowItem key={r.ingrediente_id} label={r.ingrediente_nome} value={`${r.quantidade}x`}
-                      onRemove={() => setForm(p => ({ ...p, receita: p.receita.filter(x => x.ingrediente_id !== r.ingrediente_id) }))} />
-                  ))}</div>
+                  : <div className="space-y-1.5">{form.receita.map(r => {
+                    const ing = localItems.find(i => i.id === r.ingrediente_id)
+                    const pesoTotal = ing?.peso != null ? ing.peso * r.quantidade : null
+                    return (
+                      <RowItem key={r.ingrediente_id}
+                        label={r.ingrediente_nome}
+                        value={`${r.quantidade}x${pesoTotal != null ? ` · ${pesoTotal.toFixed(2)} kg` : ''}`}
+                        onRemove={() => setForm(p => ({ ...p, receita: p.receita.filter(x => x.ingrediente_id !== r.ingrediente_id) }))} />
+                    )
+                  })}</div>
                 }
+                {form.receita.length > 0 && (() => {
+                  const pesoTotal = form.receita.reduce((acc, r) => {
+                    const ing = localItems.find(i => i.id === r.ingrediente_id)
+                    return ing?.peso != null ? acc + ing.peso * r.quantidade : acc
+                  }, 0)
+                  return pesoTotal > 0 ? (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 pt-1">
+                      <Weight className="h-3 w-3" />Peso total do craft: <strong>{pesoTotal.toFixed(3)} kg</strong>
+                    </p>
+                  ) : null
+                })()}
               </TabsContent>
 
               {/* ── PREÇO ── */}
@@ -645,15 +693,18 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
                   O que se obtém ao reciclar <strong>{form.nome || 'este item'}</strong>. Útil para calcular o retorno na Ferramenta de Cálculo.
                 </p>
                 <div className="flex gap-2">
-                  <Select value={newRec.resultado_id} onValueChange={v => setNewRec(p => ({ ...p, resultado_id: v }))}>
-                    <SelectTrigger className="flex-1 h-9 text-sm"><SelectValue placeholder="Item obtido..." /></SelectTrigger>
-                    <SelectContent>
-                      {allItems.filter(i => !item || i.id !== item.id).map(i => (
-                        <SelectItem key={i.id} value={i.id}>{i.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="Qtd" className="w-20 h-9 text-sm" value={newRec.quantidade} onChange={e => setNewRec(p => ({ ...p, quantidade: e.target.value }))} />
+                  <ItemCombobox
+                    allItems={localItems.filter(i => !item || i.id !== item.id)}
+                    selectedId={newRec.resultado_id}
+                    onSelect={id => setNewRec(p => ({ ...p, resultado_id: id }))}
+                    onCriar={nome => setCriarSubItemNome({ nome, target: 'rec' })}
+                    placeholder="Item obtido..."
+                    className="flex-1"
+                  />
+                  <Input type="number" placeholder="Qtd" className="w-20 h-9 text-sm" value={newRec.quantidade}
+                    onChange={e => setNewRec(p => ({ ...p, quantidade: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addReciclagem() } }}
+                  />
                   <Button type="button" size="sm" className="h-9 px-3" onClick={addReciclagem}><Plus className="h-4 w-4" /></Button>
                 </div>
                 {form.reciclagem.length === 0
@@ -713,6 +764,174 @@ function ItemDialog({ item, categorias, lojas, allItems, sb, onClose, onSaved }:
           <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancelar</Button>
           <Button size="sm" onClick={handleSave} disabled={saving || loading} className="h-8 text-xs">
             {saving ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Salvando...</> : 'Salvar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+
+      {criarSubItemNome && (
+        <CriarItemRapidoDialog
+          nomeInicial={criarSubItemNome.nome}
+          categorias={categorias}
+          sb={sb}
+          onClose={() => setCriarSubItemNome(null)}
+          onCriado={novoItem => {
+            handleSubItemCreated(novoItem)
+            const target = criarSubItemNome.target
+            setCriarSubItemNome(null)
+            if (target === 'ing') setNewIng(p => ({ ...p, ingrediente_id: novoItem.id }))
+            if (target === 'rec') setNewRec(p => ({ ...p, resultado_id: novoItem.id }))
+          }}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+// ─── ITEM COMBOBOX ────────────────────────────────────────────────────────────
+
+function ItemCombobox({ allItems, selectedId, onSelect, onCriar, placeholder, className }: {
+  allItems: Item[]
+  selectedId: string
+  onSelect: (id: string) => void
+  onCriar: (nome: string) => void
+  placeholder?: string
+  className?: string
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const [highlighted, setHighlighted] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const selectedNome = allItems.find(i => i.id === selectedId)?.nome ?? ''
+  const filtered = useMemo(() =>
+    query.trim()
+      ? allItems.filter(i => i.nome.toLowerCase().includes(query.toLowerCase()))
+      : [],
+    [allItems, query]
+  )
+
+  function selectItem(it: Item) {
+    onSelect(it.id)
+    setQuery('')
+    setOpen(false)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) return
+    if (e.key === 'Tab' && filtered.length === 1) { e.preventDefault(); selectItem(filtered[0]) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, filtered.length > 0 ? filtered.length - 1 : 0)) }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setHighlighted(h => Math.max(h - 1, 0)) }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (filtered.length > 0) selectItem(filtered[highlighted])
+      else if (query.trim()) onCriar(query.trim())
+    }
+    if (e.key === 'Escape') { setOpen(false); setQuery('') }
+  }
+
+  return (
+    <div className={cn('relative', className)}>
+      <Input
+        ref={inputRef}
+        value={open ? query : selectedNome}
+        placeholder={placeholder}
+        className="h-9 text-sm"
+        onChange={e => { setQuery(e.target.value); setOpen(true); setHighlighted(0) }}
+        onFocus={() => { setOpen(true); setQuery(''); setHighlighted(0) }}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onKeyDown={handleKeyDown}
+      />
+      {open && query.trim() && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-md border border-border bg-popover shadow-lg max-h-48 overflow-y-auto">
+          {filtered.length > 0 ? filtered.map((it, i) => (
+            <button
+              key={it.id}
+              className={cn('w-full text-left flex items-center justify-between px-3 py-2 text-sm hover:bg-accent transition-colors', i === highlighted && 'bg-accent')}
+              onMouseDown={e => { e.preventDefault(); selectItem(it) }}
+            >
+              <span>{it.nome}</span>
+              <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+                {it.peso != null && <span className="flex items-center gap-0.5"><Weight className="h-2.5 w-2.5" />{it.peso} kg</span>}
+                {filtered.length === 1 && <span>Tab ↵</span>}
+              </span>
+            </button>
+          )) : (
+            <button
+              className="w-full text-left px-3 py-2.5 text-sm hover:bg-accent transition-colors"
+              onMouseDown={e => { e.preventDefault(); onCriar(query.trim()) }}
+            >
+              <span className="text-primary font-medium">+ Cadastrar</span>
+              <span className="text-muted-foreground"> &quot;{query}&quot;</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── CRIAR ITEM RÁPIDO ────────────────────────────────────────────────────────
+
+function CriarItemRapidoDialog({ nomeInicial, categorias, sb, onClose, onCriado }: {
+  nomeInicial: string
+  categorias: Categoria[]
+  sb: () => ReturnType<typeof createClient>
+  onClose: () => void
+  onCriado: (item: Item) => void
+}) {
+  const [nome, setNome] = useState(nomeInicial)
+  const [categoriaId, setCategoriaId] = useState('')
+  const [peso, setPeso] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleCriar() {
+    if (!nome.trim()) return
+    setSaving(true)
+    const { data, error } = await sb().from('items').insert({
+      nome: nome.trim(),
+      categoria_id: categoriaId || null,
+      peso: peso !== '' ? parseFloat(peso) : null,
+      status: 'ativo', tem_craft: false, eh_meu_produto: false, eh_compravel: false, tem_reciclagem: false,
+      updated_at: new Date().toISOString(),
+    }).select('*, categorias_item(id, nome)').single()
+    setSaving(false)
+    if (error) { toast.error('Erro ao criar item'); return }
+    toast.success(`"${nome}" criado!`)
+    onCriado(data as Item)
+  }
+
+  return (
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-xs" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle className="text-sm">Cadastrar novo item</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Nome *</Label>
+            <Input value={nome} onChange={e => setNome(e.target.value)} className="h-8 text-sm" autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Categoria</Label>
+              <Select value={categoriaId || '_none'} onValueChange={v => setCategoriaId(v === '_none' ? '' : v)}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sem categoria</SelectItem>
+                  {categorias.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1"><Weight className="h-3 w-3" />Peso (kg)</Label>
+              <Input type="number" step="0.001" min="0" value={peso} onChange={e => setPeso(e.target.value)} placeholder="0.000" className="h-8 text-sm" />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} className="h-7 text-xs">Cancelar</Button>
+          <Button size="sm" onClick={handleCriar} disabled={saving || !nome.trim()} className="h-7 text-xs">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Cadastrar'}
           </Button>
         </DialogFooter>
       </DialogContent>
