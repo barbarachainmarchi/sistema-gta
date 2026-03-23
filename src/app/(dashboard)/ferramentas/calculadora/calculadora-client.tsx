@@ -177,7 +177,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="h-[calc(100vh-3rem)] flex overflow-hidden">
 
       {/* ── Lista de itens ── */}
       <aside className="w-72 shrink-0 flex flex-col border-r border-border">
