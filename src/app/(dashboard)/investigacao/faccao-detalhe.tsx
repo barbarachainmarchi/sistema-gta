@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2 } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
@@ -31,6 +31,9 @@ function fmt(v: number | null) {
   return `R$ ${v.toLocaleString('pt-BR')}`
 }
 
+const emptyMembroForm = { nome: '', vulgo: '', telefone: '', cargo_faccao: '', status: 'ativo' as 'ativo' | 'inativo', observacoes: '' }
+const emptyVeiculoForm = { placa: '', modelo: '', cor: '', proprietario_tipo: 'faccao' as 'membro' | 'faccao' | 'desconhecido', proprietario_id: '', observacoes: '' }
+
 interface Props {
   faccao: Faccao
   membros: Membro[]
@@ -41,9 +44,13 @@ interface Props {
   onClose: () => void
   onUpdateFaccao: (f: Faccao) => void
   onUpdateFaccaoPrecos: (precos: FaccaoPreco[]) => void
+  onMembroSaved: (m: Membro, isNew: boolean) => void
+  onMembroDeleted: (id: string) => void
+  onVeiculoSaved: (v: Veiculo, isNew: boolean) => void
+  onVeiculoDeleted: (id: string) => void
 }
 
-export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos }: Props) {
+export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos, onMembroSaved, onMembroDeleted, onVeiculoSaved, onVeiculoDeleted }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -134,6 +141,110 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     const produto = todosProdutos.find(x => x.id === p.item_id)
     return produto?.nome.toLowerCase().includes(buscaProduto.toLowerCase())
   }), [faccaoPrecos, buscaProduto, todosProdutos])
+
+  // ── CRUD Membros ───────────────────────────────────────────────────────────
+  const [membroDialog, setMembroDialog] = useState<{ membro: Membro | null } | null>(null) // null = fechado, { membro: null } = novo, { membro: m } = editar
+  const [membroForm, setMembroForm] = useState(emptyMembroForm)
+  const [membroSaving, setMembroSaving] = useState(false)
+  const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<Membro | null>(null)
+
+  function abrirNovoMembro() {
+    setMembroForm(emptyMembroForm)
+    setMembroDialog({ membro: null })
+  }
+
+  function abrirEditarMembro(m: Membro) {
+    setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '' })
+    setMembroDialog({ membro: m })
+  }
+
+  async function handleSalvarMembro() {
+    if (!membroForm.nome.trim()) { toast.error('Nome obrigatório'); return }
+    setMembroSaving(true)
+    const payload = {
+      nome: membroForm.nome.trim(),
+      vulgo: membroForm.vulgo.trim() || null,
+      telefone: membroForm.telefone.trim() || null,
+      cargo_faccao: membroForm.cargo_faccao.trim() || null,
+      status: membroForm.status,
+      observacoes: membroForm.observacoes.trim() || null,
+      faccao_id: faccao.id,
+    }
+    const isNew = !membroDialog?.membro
+    let data: Membro | null = null
+    if (isNew) {
+      const res = await sb().from('membros').insert(payload).select('*, faccoes(id, nome, cor_tag)').single()
+      if (res.error) { toast.error('Erro ao criar membro'); setMembroSaving(false); return }
+      data = res.data as Membro
+    } else {
+      const res = await sb().from('membros').update(payload).eq('id', membroDialog!.membro!.id).select('*, faccoes(id, nome, cor_tag)').single()
+      if (res.error) { toast.error('Erro ao salvar membro'); setMembroSaving(false); return }
+      data = res.data as Membro
+    }
+    setMembroSaving(false)
+    onMembroSaved(data!, isNew)
+    setMembroDialog(null)
+    toast.success(isNew ? 'Membro adicionado' : 'Membro atualizado')
+  }
+
+  async function handleDeletarMembro(m: Membro) {
+    const { error } = await sb().from('membros').delete().eq('id', m.id)
+    if (error) { toast.error('Erro ao excluir membro'); return }
+    onMembroDeleted(m.id)
+    setConfirmDeleteMembro(null)
+    toast.success('Membro excluído')
+  }
+
+  // ── CRUD Veículos ──────────────────────────────────────────────────────────
+  const [veiculoDialog, setVeiculoDialog] = useState<{ veiculo: Veiculo | null } | null>(null)
+  const [veiculoForm, setVeiculoForm] = useState(emptyVeiculoForm)
+  const [veiculoSaving, setVeiculoSaving] = useState(false)
+  const [confirmDeleteVeiculo, setConfirmDeleteVeiculo] = useState<Veiculo | null>(null)
+
+  function abrirNovoVeiculo() {
+    setVeiculoForm(emptyVeiculoForm)
+    setVeiculoDialog({ veiculo: null })
+  }
+
+  function abrirEditarVeiculo(v: Veiculo) {
+    setVeiculoForm({ placa: v.placa ?? '', modelo: v.modelo ?? '', cor: v.cor ?? '', proprietario_tipo: v.proprietario_tipo ?? 'faccao', proprietario_id: v.proprietario_id ?? '', observacoes: v.observacoes ?? '' })
+    setVeiculoDialog({ veiculo: v })
+  }
+
+  async function handleSalvarVeiculo() {
+    setVeiculoSaving(true)
+    const payload = {
+      placa: veiculoForm.placa.trim() || null,
+      modelo: veiculoForm.modelo.trim() || null,
+      cor: veiculoForm.cor.trim() || null,
+      proprietario_tipo: veiculoForm.proprietario_tipo,
+      proprietario_id: veiculoForm.proprietario_tipo === 'membro' && veiculoForm.proprietario_id ? veiculoForm.proprietario_id : veiculoForm.proprietario_tipo === 'faccao' ? faccao.id : null,
+      observacoes: veiculoForm.observacoes.trim() || null,
+    }
+    const isNew = !veiculoDialog?.veiculo
+    let data: Veiculo | null = null
+    if (isNew) {
+      const res = await sb().from('veiculos').insert(payload).select().single()
+      if (res.error) { toast.error('Erro ao criar veículo'); setVeiculoSaving(false); return }
+      data = res.data as Veiculo
+    } else {
+      const res = await sb().from('veiculos').update(payload).eq('id', veiculoDialog!.veiculo!.id).select().single()
+      if (res.error) { toast.error('Erro ao salvar veículo'); setVeiculoSaving(false); return }
+      data = res.data as Veiculo
+    }
+    setVeiculoSaving(false)
+    onVeiculoSaved(data!, isNew)
+    setVeiculoDialog(null)
+    toast.success(isNew ? 'Veículo adicionado' : 'Veículo atualizado')
+  }
+
+  async function handleDeletarVeiculo(v: Veiculo) {
+    const { error } = await sb().from('veiculos').delete().eq('id', v.id)
+    if (error) { toast.error('Erro ao excluir veículo'); return }
+    onVeiculoDeleted(v.id)
+    setConfirmDeleteVeiculo(null)
+    toast.success('Veículo excluído')
+  }
 
   // ── Preços / Produtos ──────────────────────────────────────────────────────
   const [editPreco, setEditPreco] = useState<Produto | null>(null)
@@ -263,6 +374,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar por nome, vulgo ou telefone..." value={buscaMembro} onChange={e => setBuscaMembro(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={abrirNovoMembro}>
+                <Plus className="h-3 w-3" />
+              </Button>
             </div>
             {membrosFiltrados.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
@@ -270,11 +384,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_100px_90px_60px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Nome / Vulgo</span><span>Cargo</span><span>Telefone</span><span>Status</span>
+                <div className="grid grid-cols-[1fr_90px_80px_50px_44px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Nome / Vulgo</span><span>Cargo</span><span>Telefone</span><span>Status</span><span />
                 </div>
                 {membrosFiltrados.map((m, idx) => (
-                  <div key={m.id} className={cn('grid grid-cols-[1fr_100px_90px_60px] gap-2 items-center px-3 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
+                  <div key={m.id} className={cn('grid grid-cols-[1fr_90px_80px_50px_44px] gap-2 items-center px-3 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <div className="min-w-0">
                         <span className="text-sm font-medium">{m.nome}</span>
@@ -291,6 +405,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                     <span className={cn('text-[10px] px-1.5 py-0.5 rounded w-fit', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
                       {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
                     </span>
+                    <div className="flex gap-0.5">
+                      <button onClick={() => abrirEditarMembro(m)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                      <button onClick={() => setConfirmDeleteMembro(m)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -306,6 +424,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar por placa ou modelo..." value={buscaVeiculo} onChange={e => setBuscaVeiculo(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={abrirNovoVeiculo}>
+                <Plus className="h-3 w-3" />
+              </Button>
             </div>
             {veiculosFiltrados.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
@@ -313,18 +434,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[100px_1fr_70px_1fr_1fr] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Placa</span><span>Modelo</span><span>Cor</span><span>Proprietário</span><span>Obs.</span>
+                <div className="grid grid-cols-[90px_1fr_60px_1fr_44px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Placa</span><span>Modelo</span><span>Cor</span><span>Proprietário</span><span />
                 </div>
                 {veiculosFiltrados.map((v, idx) => {
                   const dono = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id) : null
                   return (
-                  <div key={v.id} className={cn('grid grid-cols-[100px_1fr_70px_1fr_1fr] gap-2 items-center px-3 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
+                  <div key={v.id} className={cn('grid grid-cols-[90px_1fr_60px_1fr_44px] gap-2 items-center px-3 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <span className="font-mono text-sm font-semibold">{v.placa ?? '—'}</span>
-                    <span className="text-sm text-muted-foreground">{v.modelo ?? '—'}</span>
+                    <span className="text-sm text-muted-foreground truncate">{v.modelo ?? '—'}</span>
                     <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
                     <span className="text-xs truncate">{dono ? dono.nome : v.proprietario_tipo === 'faccao' ? 'Facção' : '—'}</span>
-                    <span className="text-xs text-muted-foreground truncate">{v.observacoes ?? '—'}</span>
+                    <div className="flex gap-0.5">
+                      <button onClick={() => abrirEditarVeiculo(v)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                      <button onClick={() => setConfirmDeleteVeiculo(v)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
+                    </div>
                   </div>
                   )
                 })}
@@ -423,6 +547,132 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditPreco(null)}>Cancelar</Button>
             <Button size="sm" onClick={handleSalvarPreco} disabled={precoSaving}>{precoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Membro (add/edit) */}
+      <Dialog open={!!membroDialog} onOpenChange={v => !v && setMembroDialog(null)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{membroDialog?.membro ? 'Editar membro' : 'Novo membro'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nome *</Label>
+                <Input value={membroForm.nome} onChange={e => setMembroForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" placeholder="Nome ingame" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vulgo</Label>
+                <Input value={membroForm.vulgo} onChange={e => setMembroForm(f => ({ ...f, vulgo: e.target.value }))} className="h-8 text-sm" placeholder="Apelido" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Telefone</Label>
+                <Input value={membroForm.telefone} onChange={e => setMembroForm(f => ({ ...f, telefone: e.target.value }))} className="h-8 text-sm" placeholder="Ex: 555-1234" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cargo</Label>
+                <Input value={membroForm.cargo_faccao} onChange={e => setMembroForm(f => ({ ...f, cargo_faccao: e.target.value }))} className="h-8 text-sm" placeholder="Ex: Soldado" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observações</Label>
+              <Input value={membroForm.observacoes} onChange={e => setMembroForm(f => ({ ...f, observacoes: e.target.value }))} className="h-8 text-sm" placeholder="Notas..." />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={membroForm.status === 'ativo'} onCheckedChange={v => setMembroForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
+              <span className="text-xs text-muted-foreground">{membroForm.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setMembroDialog(null)}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarMembro} disabled={membroSaving}>
+              {membroSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Confirmar exclusão de membro */}
+      <Dialog open={!!confirmDeleteMembro} onOpenChange={v => !v && setConfirmDeleteMembro(null)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+          <DialogHeader><DialogTitle className="text-sm">Excluir membro</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Tem certeza que deseja excluir <strong className="text-foreground">{confirmDeleteMembro?.nome}</strong>? Esta ação não pode ser desfeita.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteMembro(null)}>Cancelar</Button>
+            <Button variant="destructive" size="sm" onClick={() => confirmDeleteMembro && handleDeletarMembro(confirmDeleteMembro)}>Excluir</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Veículo (add/edit) */}
+      <Dialog open={!!veiculoDialog} onOpenChange={v => !v && setVeiculoDialog(null)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{veiculoDialog?.veiculo ? 'Editar veículo' : 'Novo veículo'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Placa</Label>
+                <Input value={veiculoForm.placa} onChange={e => setVeiculoForm(f => ({ ...f, placa: e.target.value }))} className="h-8 text-sm font-mono" placeholder="ABC1234" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Modelo</Label>
+                <Input value={veiculoForm.modelo} onChange={e => setVeiculoForm(f => ({ ...f, modelo: e.target.value }))} className="h-8 text-sm" placeholder="Ex: Sultan" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cor</Label>
+                <Input value={veiculoForm.cor} onChange={e => setVeiculoForm(f => ({ ...f, cor: e.target.value }))} className="h-8 text-sm" placeholder="Ex: Preto" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Proprietário</Label>
+              <Select value={veiculoForm.proprietario_tipo} onValueChange={v => setVeiculoForm(f => ({ ...f, proprietario_tipo: v as typeof f.proprietario_tipo, proprietario_id: '' }))}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="faccao">Facção ({faccao.nome})</SelectItem>
+                  <SelectItem value="membro">Membro específico</SelectItem>
+                  <SelectItem value="desconhecido">Desconhecido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {veiculoForm.proprietario_tipo === 'membro' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Membro</Label>
+                <Select value={veiculoForm.proprietario_id} onValueChange={v => setVeiculoForm(f => ({ ...f, proprietario_id: v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar membro..." /></SelectTrigger>
+                  <SelectContent>
+                    {membros.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Observações</Label>
+              <Input value={veiculoForm.observacoes} onChange={e => setVeiculoForm(f => ({ ...f, observacoes: e.target.value }))} className="h-8 text-sm" placeholder="Notas..." />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setVeiculoDialog(null)}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarVeiculo} disabled={veiculoSaving}>
+              {veiculoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Confirmar exclusão de veículo */}
+      <Dialog open={!!confirmDeleteVeiculo} onOpenChange={v => !v && setConfirmDeleteVeiculo(null)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+          <DialogHeader><DialogTitle className="text-sm">Excluir veículo</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Excluir <strong className="text-foreground">{confirmDeleteVeiculo?.modelo ?? confirmDeleteVeiculo?.placa ?? 'este veículo'}</strong>?</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteVeiculo(null)}>Cancelar</Button>
+            <Button variant="destructive" size="sm" onClick={() => confirmDeleteVeiculo && handleDeletarVeiculo(confirmDeleteVeiculo)}>Excluir</Button>
           </div>
         </DialogContent>
       </Dialog>

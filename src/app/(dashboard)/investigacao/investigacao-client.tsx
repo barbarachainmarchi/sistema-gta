@@ -1000,6 +1000,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           onClose={() => setDetalhe(null)}
           onUpdateFaccao={f => { setFaccoes(prev => prev.map(x => x.id === f.id ? f : x)); setDetalhe(f) }}
           onUpdateFaccaoPrecos={precos => setFaccaoPrecos(prev => [...prev.filter(p => p.faccao_id !== detalhe.id), ...precos])}
+          onMembroSaved={(m, isNew) => setMembros(prev => isNew ? [...prev, m] : prev.map(x => x.id === m.id ? m : x))}
+          onMembroDeleted={id => setMembros(prev => prev.filter(x => x.id !== id))}
+          onVeiculoSaved={(v, isNew) => setVeiculos(prev => isNew ? [...prev, v] : prev.map(x => x.id === v.id ? v : x))}
+          onVeiculoDeleted={id => setVeiculos(prev => prev.filter(x => x.id !== id))}
         />
       )}
     </>
