@@ -1,0 +1,716 @@
+'use client'
+
+import { useState, useCallback, useRef, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
+import {
+  Plus, Trash2, Edit2, Check, X, Users, ArrowLeft,
+  ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp
+} from 'lucide-react'
+import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
+
+// ── Tipos ────────────────────────────────────────────────────────────────────
+
+type Cotacao = {
+  id: string
+  titulo: string | null
+  fornecedor_tipo: string
+  fornecedor_id: string | null
+  fornecedor_nome: string
+  modo_preco: 'sujo' | 'limpo'
+  status: 'rascunho' | 'finalizada' | 'cancelada'
+}
+
+type Pessoa = { id: string; cotacao_id: string; nome: string; membro_id: string | null }
+type Item = { id: string; cotacao_id: string; pessoa_id: string | null; item_nome: string; item_id: string | null; quantidade: number; preco_unit: number }
+type Faccao = { id: string; nome: string; cor_tag: string }
+type Loja = { id: string; nome: string }
+type Membro = { id: string; nome: string; vulgo: string | null }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FaccaoPreco = { faccao_id: string; item_id: string; preco_sujo: number | null; preco_limpo: number | null; items: any }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null; items: any }
+
+interface Props {
+  cotacao: Cotacao
+  pessoasIniciais: Pessoa[]
+  itensIniciais: Item[]
+  faccoes: Faccao[]
+  lojas: Loja[]
+  membros: Membro[]
+  faccaoPrecos: FaccaoPreco[]
+  lojaPrecos: LojaPreco[]
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmt(v: number) {
+  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+// ── Canvas: gerar imagem da cotação ──────────────────────────────────────────
+
+function gerarImagemCotacao(params: {
+  cotacao: Cotacao
+  pessoas: Pessoa[]
+  itensPorPessoa: Record<string, Item[]>
+  modo: 'detalhe' | 'totais'
+}): string {
+  const { cotacao, pessoas, itensPorPessoa, modo } = params
+
+  const W = 900
+  const PAD = 32
+  const LINE = 22
+  const SEC_PAD = 16
+
+  // Calculate height
+  let totalLinhas = 0
+  if (modo === 'detalhe') {
+    pessoas.forEach(p => {
+      totalLinhas += 2 // nome + header cols
+      totalLinhas += (itensPorPessoa[p.id] ?? []).length
+      totalLinhas += 1 // subtotal
+      totalLinhas += 0.5 // gap
+    })
+  } else {
+    // aggregate all items
+    const allItems = pessoas.flatMap(p => itensPorPessoa[p.id] ?? [])
+    const grouped: Record<string, { nome: string; total: number }> = {}
+    allItems.forEach(it => {
+      if (!grouped[it.item_nome]) grouped[it.item_nome] = { nome: it.item_nome, total: 0 }
+      grouped[it.item_nome].total += it.quantidade * it.preco_unit
+    })
+    totalLinhas += Object.keys(grouped).length + 3 // items + header + total
+    totalLinhas += pessoas.length + 2 // per person totals section
+  }
+
+  const H = 80 + 40 + (totalLinhas * LINE) + (SEC_PAD * pessoas.length) + 60
+
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = Math.max(H, 300)
+  const ctx = canvas.getContext('2d')!
+
+  // Background
+  ctx.fillStyle = '#0f0f0f'
+  ctx.fillRect(0, 0, W, canvas.height)
+
+  // Header bar
+  ctx.fillStyle = '#1c1c1c'
+  ctx.fillRect(0, 0, W, 70)
+  ctx.fillStyle = '#3b82f6'
+  ctx.fillRect(0, 0, 4, 70)
+
+  // Title
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 22px system-ui, sans-serif'
+  ctx.fillText(cotacao.titulo ?? cotacao.fornecedor_nome, PAD, 32)
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '14px system-ui, sans-serif'
+  ctx.fillText(`${cotacao.fornecedor_nome} · preço ${cotacao.modo_preco}`, PAD, 54)
+
+  let y = 90
+
+  if (modo === 'detalhe') {
+    for (const pessoa of pessoas) {
+      const itens = itensPorPessoa[pessoa.id] ?? []
+      const subtotal = itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+
+      // Person header
+      ctx.fillStyle = '#1c1c1c'
+      ctx.fillRect(PAD, y, W - PAD * 2, LINE + 8)
+      ctx.fillStyle = '#e5e7eb'
+      ctx.font = 'bold 14px system-ui, sans-serif'
+      ctx.fillText(`👤 ${pessoa.nome}`, PAD + 10, y + LINE - 4)
+      ctx.fillStyle = '#3b82f6'
+      ctx.font = 'bold 14px system-ui, sans-serif'
+      ctx.fillText(fmt(subtotal), W - PAD - ctx.measureText(fmt(subtotal)).width, y + LINE - 4)
+      y += LINE + 12
+
+      // Items header
+      ctx.fillStyle = '#374151'
+      ctx.font = '11px system-ui, sans-serif'
+      ctx.fillText('Item', PAD + 10, y)
+      ctx.fillText('Qtd', PAD + 400, y)
+      ctx.fillText('Unit.', PAD + 500, y)
+      ctx.fillText('Total', W - PAD - 60, y)
+      y += LINE - 4
+
+      ctx.strokeStyle = '#374151'
+      ctx.lineWidth = 0.5
+      ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke()
+      y += 8
+
+      for (const it of itens) {
+        ctx.fillStyle = '#9ca3af'
+        ctx.font = '13px system-ui, sans-serif'
+        ctx.fillText(it.item_nome, PAD + 10, y)
+        ctx.fillText(`${it.quantidade}×`, PAD + 400, y)
+        ctx.fillText(fmt(it.preco_unit), PAD + 500, y)
+        ctx.fillStyle = '#e5e7eb'
+        ctx.fillText(fmt(it.quantidade * it.preco_unit), W - PAD - ctx.measureText(fmt(it.quantidade * it.preco_unit)).width, y)
+        y += LINE
+      }
+
+      if (itens.length === 0) {
+        ctx.fillStyle = '#6b7280'
+        ctx.font = 'italic 13px system-ui, sans-serif'
+        ctx.fillText('Sem itens', PAD + 10, y)
+        y += LINE
+      }
+
+      y += SEC_PAD
+    }
+  } else {
+    // Totals mode
+    const allItems = pessoas.flatMap(p => itensPorPessoa[p.id] ?? [])
+    const grouped: Record<string, { nome: string; qtd: number; total: number }> = {}
+    allItems.forEach(it => {
+      if (!grouped[it.item_nome]) grouped[it.item_nome] = { nome: it.item_nome, qtd: 0, total: 0 }
+      grouped[it.item_nome].qtd += it.quantidade
+      grouped[it.item_nome].total += it.quantidade * it.preco_unit
+    })
+    const grandTotal = allItems.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+
+    // Items section
+    ctx.fillStyle = '#e5e7eb'
+    ctx.font = 'bold 15px system-ui, sans-serif'
+    ctx.fillText('Pedido Total', PAD, y)
+    y += LINE + 4
+
+    ctx.fillStyle = '#374151'
+    ctx.font = '11px system-ui, sans-serif'
+    ctx.fillText('Item', PAD + 10, y)
+    ctx.fillText('Qtd', PAD + 500, y)
+    ctx.fillText('Total', W - PAD - 80, y)
+    y += LINE - 4
+
+    ctx.strokeStyle = '#374151'
+    ctx.lineWidth = 0.5
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke()
+    y += 8
+
+    for (const g of Object.values(grouped)) {
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = '13px system-ui, sans-serif'
+      ctx.fillText(g.nome, PAD + 10, y)
+      ctx.fillText(`${g.qtd}×`, PAD + 500, y)
+      ctx.fillStyle = '#e5e7eb'
+      ctx.fillText(fmt(g.total), W - PAD - ctx.measureText(fmt(g.total)).width, y)
+      y += LINE
+    }
+
+    y += 8
+    ctx.strokeStyle = '#374151'
+    ctx.lineWidth = 0.5
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke()
+    y += 14
+
+    ctx.fillStyle = '#3b82f6'
+    ctx.font = 'bold 16px system-ui, sans-serif'
+    ctx.fillText('Total Geral', PAD + 10, y)
+    ctx.fillText(fmt(grandTotal), W - PAD - ctx.measureText(fmt(grandTotal)).width, y)
+    y += LINE + SEC_PAD
+
+    // Per-person breakdown
+    ctx.fillStyle = '#e5e7eb'
+    ctx.font = 'bold 15px system-ui, sans-serif'
+    ctx.fillText('Por Pessoa', PAD, y)
+    y += LINE + 4
+
+    for (const p of pessoas) {
+      const itens = itensPorPessoa[p.id] ?? []
+      const sub = itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = '13px system-ui, sans-serif'
+      ctx.fillText(`👤 ${p.nome}`, PAD + 10, y)
+      ctx.fillStyle = '#e5e7eb'
+      ctx.fillText(fmt(sub), W - PAD - ctx.measureText(fmt(sub)).width, y)
+      y += LINE
+    }
+  }
+
+  return canvas.toDataURL('image/png').replace('data:image/png;base64,', '')
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
+export function CotacaoEditor({ cotacao: cotacaoInicial, pessoasIniciais, itensIniciais, faccoes, lojas, membros, faccaoPrecos, lojaPrecos }: Props) {
+  const router = useRouter()
+  const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
+
+  const [cotacao, setCotacao] = useState(cotacaoInicial)
+  const [pessoas, setPessoas] = useState<Pessoa[]>(pessoasIniciais)
+  const [itens, setItens] = useState<Item[]>(itensIniciais)
+
+  // Compartilhar
+  const [compartilhando, setCompartilhando] = useState(false)
+  const [linkImagem, setLinkImagem] = useState<string | null>(null)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+  const [modoImagem, setModoImagem] = useState<'detalhe' | 'totais'>('detalhe')
+
+  // Add pessoa
+  const [novaPessoaOpen, setNovaPessoaOpen] = useState(false)
+  const [novaPessoaForm, setNovaPessoaForm] = useState({ nome: '', membro_id: '' })
+  const [salvandoPessoa, setSalvandoPessoa] = useState(false)
+
+  // Add item por pessoa: { pessoa_id, nome, item_id, qty, preco }
+  const [addItemPessoa, setAddItemPessoa] = useState<string | null>(null)
+  const [itemForm, setItemForm] = useState({ nome: '', item_id: '', qty: '1', preco: '' })
+  const [salvandoItem, setSalvandoItem] = useState(false)
+  const [itemBusca, setItemBusca] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+
+  // Edit item inline
+  const [editandoItemId, setEditandoItemId] = useState<string | null>(null)
+  const [editItemForm, setEditItemForm] = useState({ qty: '', preco: '' })
+
+  // Collapse pessoas
+  const [colapsadas, setColapsadas] = useState<Set<string>>(new Set())
+
+  // ── Catálogo do fornecedor ─────────────────────────────────────────────────
+
+  const catalogo = useMemo(() => {
+    if (cotacao.fornecedor_tipo === 'faccao' && cotacao.fornecedor_id) {
+      return faccaoPrecos
+        .filter(fp => fp.faccao_id === cotacao.fornecedor_id)
+        .map(fp => ({
+          item_id: fp.item_id,
+          nome: (fp.items as { nome: string } | null)?.nome ?? fp.item_id,
+          preco: cotacao.modo_preco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0),
+        }))
+    }
+    if (cotacao.fornecedor_tipo === 'loja' && cotacao.fornecedor_id) {
+      return lojaPrecos
+        .filter(lp => lp.loja_id === cotacao.fornecedor_id)
+        .map(lp => ({
+          item_id: lp.item_id,
+          nome: (lp.items as { nome: string } | null)?.nome ?? lp.item_id,
+          preco: cotacao.modo_preco === 'sujo' ? (lp.preco_sujo ?? lp.preco) : lp.preco,
+        }))
+    }
+    return []
+  }, [cotacao, faccaoPrecos, lojaPrecos])
+
+  const catalogoFiltrado = useMemo(() => {
+    if (!itemBusca.trim()) return catalogo
+    const q = itemBusca.toLowerCase()
+    return catalogo.filter(c => c.nome.toLowerCase().includes(q))
+  }, [catalogo, itemBusca])
+
+  // ── Totais ─────────────────────────────────────────────────────────────────
+
+  const itensPorPessoa = useMemo(() => {
+    const map: Record<string, Item[]> = {}
+    itens.forEach(it => {
+      const pid = it.pessoa_id ?? '__sem__'
+      if (!map[pid]) map[pid] = []
+      map[pid].push(it)
+    })
+    return map
+  }, [itens])
+
+  const totalGeral = useMemo(() =>
+    itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+  , [itens])
+
+  // ── Ações ──────────────────────────────────────────────────────────────────
+
+  async function handleAddPessoa() {
+    if (!novaPessoaForm.nome.trim()) { toast.error('Nome obrigatório'); return }
+    setSalvandoPessoa(true)
+    const payload = {
+      cotacao_id: cotacao.id,
+      nome: novaPessoaForm.nome.trim(),
+      membro_id: novaPessoaForm.membro_id || null,
+    }
+    const { data, error } = await sb().from('cotacao_pessoas').insert(payload).select().single()
+    setSalvandoPessoa(false)
+    if (error) { toast.error('Erro ao adicionar pessoa'); return }
+    setPessoas(prev => [...prev, data as Pessoa])
+    setNovaPessoaForm({ nome: '', membro_id: '' })
+    setNovaPessoaOpen(false)
+  }
+
+  async function handleDeletePessoa(id: string) {
+    const { error } = await sb().from('cotacao_pessoas').delete().eq('id', id)
+    if (error) { toast.error('Erro ao remover pessoa'); return }
+    setPessoas(prev => prev.filter(p => p.id !== id))
+    setItens(prev => prev.filter(it => it.pessoa_id !== id))
+  }
+
+  function abrirAddItem(pessoaId: string) {
+    setAddItemPessoa(pessoaId)
+    setItemForm({ nome: '', item_id: '', qty: '1', preco: '' })
+    setItemBusca('')
+  }
+
+  function selecionarCatalogo(cat: { item_id: string; nome: string; preco: number }) {
+    setItemForm(f => ({ ...f, nome: cat.nome, item_id: cat.item_id, preco: String(cat.preco) }))
+    setItemBusca(cat.nome)
+    setDropdownOpen(false)
+  }
+
+  async function handleAddItem() {
+    if (!itemForm.nome.trim()) { toast.error('Nome do item obrigatório'); return }
+    const qty = parseFloat(itemForm.qty)
+    const preco = parseFloat(itemForm.preco)
+    if (!qty || qty <= 0) { toast.error('Quantidade inválida'); return }
+    if (isNaN(preco) || preco < 0) { toast.error('Preço inválido'); return }
+
+    setSalvandoItem(true)
+    const payload = {
+      cotacao_id: cotacao.id,
+      pessoa_id: addItemPessoa,
+      item_nome: itemForm.nome.trim(),
+      item_id: itemForm.item_id || null,
+      quantidade: qty,
+      preco_unit: preco,
+    }
+    const { data, error } = await sb().from('cotacao_itens').insert(payload).select().single()
+    setSalvandoItem(false)
+    if (error) { toast.error('Erro ao adicionar item'); return }
+    setItens(prev => [...prev, data as Item])
+    setItemForm({ nome: '', item_id: '', qty: '1', preco: '' })
+    setItemBusca('')
+    // keep panel open for adding more
+  }
+
+  async function handleDeleteItem(id: string) {
+    const { error } = await sb().from('cotacao_itens').delete().eq('id', id)
+    if (error) { toast.error('Erro ao remover item'); return }
+    setItens(prev => prev.filter(it => it.id !== id))
+  }
+
+  function abrirEditItem(it: Item) {
+    setEditandoItemId(it.id)
+    setEditItemForm({ qty: String(it.quantidade), preco: String(it.preco_unit) })
+  }
+
+  async function handleSalvarEditItem(id: string) {
+    const qty = parseFloat(editItemForm.qty)
+    const preco = parseFloat(editItemForm.preco)
+    if (!qty || qty <= 0) { toast.error('Quantidade inválida'); return }
+    if (isNaN(preco) || preco < 0) { toast.error('Preço inválido'); return }
+    const { data, error } = await sb().from('cotacao_itens').update({ quantidade: qty, preco_unit: preco }).eq('id', id).select().single()
+    if (error) { toast.error('Erro ao salvar'); return }
+    setItens(prev => prev.map(it => it.id === id ? data as Item : it))
+    setEditandoItemId(null)
+  }
+
+  async function handleCompartilhar(modo: 'detalhe' | 'totais') {
+    setCompartilhando(true)
+    setModoImagem(modo)
+    try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada — Admin > Integrações'); return }
+      const base64 = gerarImagemCotacao({ cotacao, pessoas, itensPorPessoa, modo })
+      const url = await uploadImgbb(base64, key, `cotacao-${cotacao.fornecedor_nome}`)
+      setLinkImagem(url)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar imagem')
+    } finally {
+      setCompartilhando(false)
+    }
+  }
+
+  function copiarLink() {
+    if (!linkImagem) return
+    navigator.clipboard.writeText(linkImagem)
+    setLinkCopiado(true)
+    setTimeout(() => setLinkCopiado(false), 2000)
+    toast.success('Link copiado!')
+  }
+
+  async function handleFinalizar() {
+    const { error } = await sb().from('cotacoes').update({ status: 'finalizada' }).eq('id', cotacao.id)
+    if (error) { toast.error('Erro ao finalizar'); return }
+    setCotacao(c => ({ ...c, status: 'finalizada' }))
+    toast.success('Cotação finalizada')
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto p-6 space-y-6 pb-16">
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => router.push('/ferramentas/cotacao')} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-3.5 w-3.5" />Voltar
+          </button>
+
+          <div className="ml-auto flex items-center gap-2">
+            {/* Link copiado */}
+            {linkImagem && (
+              <div className="flex items-center gap-1 rounded border border-border bg-white/[0.04] px-2 h-7 max-w-[220px]">
+                <span className="text-[11px] text-muted-foreground truncate flex-1">{linkImagem}</span>
+                <button onClick={copiarLink} className="shrink-0 text-muted-foreground hover:text-foreground">
+                  {linkCopiado ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+                </button>
+              </div>
+            )}
+
+            {/* Gerar imagem */}
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleCompartilhar('detalhe')} disabled={compartilhando || pessoas.length === 0}>
+                {compartilhando && modoImagem === 'detalhe' ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageUp className="h-3 w-3" />}
+                Detalhe
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleCompartilhar('totais')} disabled={compartilhando || pessoas.length === 0}>
+                {compartilhando && modoImagem === 'totais' ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageUp className="h-3 w-3" />}
+                Totais
+              </Button>
+            </div>
+
+            {cotacao.status === 'rascunho' && (
+              <Button size="sm" className="h-7 text-xs" onClick={handleFinalizar}>
+                <Check className="h-3 w-3 mr-1" />Finalizar
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Info da cotação */}
+        <div className="rounded-lg border border-border bg-card p-4 flex items-center gap-4 flex-wrap">
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Fornecedor</p>
+            <p className="text-sm font-medium mt-0.5">{cotacao.fornecedor_nome}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Tipo</p>
+            <p className="text-sm font-medium mt-0.5 capitalize">{cotacao.fornecedor_tipo}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Preço</p>
+            <p className="text-sm font-medium mt-0.5 capitalize">{cotacao.modo_preco}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Status</p>
+            <p className={cn('text-sm font-medium mt-0.5 capitalize', cotacao.status === 'rascunho' ? 'text-yellow-400' : 'text-green-400')}>{cotacao.status}</p>
+          </div>
+          <div className="ml-auto">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Geral</p>
+            <p className="text-lg font-bold mt-0.5 tabular-nums">{fmt(totalGeral)}</p>
+          </div>
+        </div>
+
+        {/* Pessoas */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              Pessoas ({pessoas.length})
+            </h3>
+            {cotacao.status === 'rascunho' && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => setNovaPessoaOpen(true)}>
+                <UserPlus className="h-3.5 w-3.5" />Adicionar pessoa
+              </Button>
+            )}
+          </div>
+
+          {pessoas.length === 0 && (
+            <div className="rounded-lg border border-dashed border-border p-8 text-center">
+              <p className="text-xs text-muted-foreground">Adicione pessoas para montar o pedido</p>
+            </div>
+          )}
+
+          {pessoas.map(pessoa => {
+            const pessoaItens = itensPorPessoa[pessoa.id] ?? []
+            const subtotal = pessoaItens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+            const colapsada = colapsadas.has(pessoa.id)
+
+            return (
+              <div key={pessoa.id} className="rounded-lg border border-border overflow-hidden">
+                {/* Header da pessoa */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-border">
+                  <button
+                    onClick={() => setColapsadas(prev => { const n = new Set(prev); colapsada ? n.delete(pessoa.id) : n.add(pessoa.id); return n })}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {colapsada ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                  </button>
+                  <span className="text-sm font-semibold flex-1">{pessoa.nome}</span>
+                  <span className="text-sm font-semibold tabular-nums text-primary">{fmt(subtotal)}</span>
+                  {cotacao.status === 'rascunho' && (
+                    <button onClick={() => handleDeletePessoa(pessoa.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {!colapsada && (
+                  <div>
+                    {/* Itens da pessoa */}
+                    {pessoaItens.length > 0 && (
+                      <div className="divide-y divide-border/40">
+                        {/* Header cols */}
+                        <div className="grid grid-cols-[1fr_70px_100px_100px_64px] gap-2 px-4 py-1.5 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+                          <span>Item</span><span className="text-right">Qtd</span><span className="text-right">Unit.</span><span className="text-right">Total</span><span />
+                        </div>
+                        {pessoaItens.map(it => (
+                          <div key={it.id} className="grid grid-cols-[1fr_70px_100px_100px_64px] gap-2 items-center px-4 py-2.5">
+                            <span className="text-sm font-medium truncate">{it.item_nome}</span>
+                            {editandoItemId === it.id ? (
+                              <>
+                                <Input value={editItemForm.qty} onChange={e => setEditItemForm(f => ({ ...f, qty: e.target.value }))} className="h-7 text-xs text-right" type="number" />
+                                <Input value={editItemForm.preco} onChange={e => setEditItemForm(f => ({ ...f, preco: e.target.value }))} className="h-7 text-xs text-right" type="number" />
+                                <span className="text-sm text-right tabular-nums font-medium">
+                                  {fmt((parseFloat(editItemForm.qty) || 0) * (parseFloat(editItemForm.preco) || 0))}
+                                </span>
+                                <div className="flex gap-0.5 justify-end">
+                                  <button onClick={() => handleSalvarEditItem(it.id)} className="h-6 w-6 rounded flex items-center justify-center text-green-400 hover:bg-white/[0.06]"><Check className="h-3 w-3" /></button>
+                                  <button onClick={() => setEditandoItemId(null)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-sm text-right tabular-nums text-muted-foreground">{it.quantidade}×</span>
+                                <span className="text-sm text-right tabular-nums text-muted-foreground">{fmt(it.preco_unit)}</span>
+                                <span className="text-sm text-right tabular-nums font-medium">{fmt(it.quantidade * it.preco_unit)}</span>
+                                <div className="flex gap-0.5 justify-end">
+                                  {cotacao.status === 'rascunho' && (
+                                    <>
+                                      <button onClick={() => abrirEditItem(it)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                                      <button onClick={() => handleDeleteItem(it.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add item */}
+                    {cotacao.status === 'rascunho' && (
+                      addItemPessoa === pessoa.id ? (
+                        <div className="border-t border-border/40 p-3 bg-white/[0.01] space-y-2">
+                          {/* Item combobox */}
+                          <div className="relative">
+                            <Input
+                              placeholder={catalogo.length > 0 ? 'Buscar no catálogo ou digitar...' : 'Nome do item...'}
+                              value={itemBusca}
+                              onChange={e => { setItemBusca(e.target.value); setItemForm(f => ({ ...f, nome: e.target.value, item_id: '' })); setDropdownOpen(true) }}
+                              onFocus={() => setDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                              className="h-7 text-sm"
+                            />
+                            {dropdownOpen && catalogoFiltrado.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover shadow-md max-h-40 overflow-y-auto">
+                                {catalogoFiltrado.map(cat => (
+                                  <button
+                                    key={cat.item_id}
+                                    onMouseDown={() => selecionarCatalogo(cat)}
+                                    className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-accent text-left"
+                                  >
+                                    <span>{cat.nome}</span>
+                                    <span className="text-muted-foreground">{fmt(cat.preco)}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+                            <Input
+                              placeholder="Qtd"
+                              type="number"
+                              value={itemForm.qty}
+                              onChange={e => setItemForm(f => ({ ...f, qty: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                            <Input
+                              placeholder="Preço unit."
+                              type="number"
+                              value={itemForm.preco}
+                              onChange={e => setItemForm(f => ({ ...f, preco: e.target.value }))}
+                              className="h-7 text-sm"
+                            />
+                            <Button size="sm" className="h-7 text-xs gap-1" onClick={handleAddItem} disabled={salvandoItem}>
+                              {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                            </Button>
+                            <button onClick={() => setAddItemPessoa(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => abrirAddItem(pessoa.id)}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.02] transition-colors border-t border-border/40"
+                        >
+                          <Plus className="h-3 w-3" />Adicionar item
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Resumo por pessoa */}
+        {pessoas.length > 1 && (
+          <div className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-2">
+            <h3 className="text-sm font-semibold">Resumo por Pessoa</h3>
+            <div className="space-y-1.5">
+              {pessoas.map(p => {
+                const sub = (itensPorPessoa[p.id] ?? []).reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+                return (
+                  <div key={p.id} className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{p.nome}</span>
+                    <span className="font-medium tabular-nums">{fmt(sub)}</span>
+                  </div>
+                )
+              })}
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-border font-semibold">
+                <span>Total</span>
+                <span className="tabular-nums text-primary">{fmt(totalGeral)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dialog: Nova pessoa */}
+      <Dialog open={novaPessoaOpen} onOpenChange={v => !v && setNovaPessoaOpen(false)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+          <DialogHeader><DialogTitle className="text-sm">Adicionar pessoa</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nome</Label>
+              <Input value={novaPessoaForm.nome} onChange={e => setNovaPessoaForm(f => ({ ...f, nome: e.target.value }))} placeholder="Nome de quem vai comprar" className="h-8 text-sm" onKeyDown={e => e.key === 'Enter' && handleAddPessoa()} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Membro (opcional)</Label>
+              <Select value={novaPessoaForm.membro_id || 'sem'} onValueChange={v => setNovaPessoaForm(f => ({ ...f, membro_id: v === 'sem' ? '' : v }))}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Vincular a membro..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sem">— sem vínculo —</SelectItem>
+                  {membros.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setNovaPessoaOpen(false)}>Cancelar</Button>
+            <Button size="sm" onClick={handleAddPessoa} disabled={salvandoPessoa}>
+              {salvandoPessoa ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Adicionar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
