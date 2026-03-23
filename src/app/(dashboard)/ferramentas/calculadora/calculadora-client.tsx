@@ -236,6 +236,12 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
           </div>
         ) : (
           <div className="p-6 space-y-6 max-w-3xl">
+            <div className="flex justify-end">
+              <button onClick={() => { setBatch([]); setLojasPorIng({}) }}
+                className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                <X className="h-3 w-3" />Limpar tudo
+              </button>
+            </div>
 
             {/* Itens a produzir */}
             <section className="space-y-2">
@@ -295,7 +301,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
                 </div>
 
                 <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="grid grid-cols-[1fr_70px_80px_160px_90px_90px] gap-2 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <div className="grid grid-cols-[1fr_60px_180px_160px_90px_90px] gap-2 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
                     <span>Ingrediente</span>
                     <span className="text-right">Qtd</span>
                     <span className="text-right">Peso</span>
@@ -309,14 +315,20 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
                     const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
                     const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
                     const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
+                    const pesoUnit = ing.ingrediente?.peso
 
                     return (
-                      <div key={ing.ingrediente_id} className="grid grid-cols-[1fr_70px_80px_160px_90px_90px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0">
+                      <div key={ing.ingrediente_id} className="grid grid-cols-[1fr_60px_180px_160px_90px_90px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0">
                         <span className="text-sm font-medium truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
                         <span className="text-sm text-right tabular-nums text-muted-foreground">{ing.totalQty}×</span>
-                        <span className="text-sm text-right tabular-nums text-muted-foreground">
-                          {ing.totalPeso > 0 ? fmtKg(ing.totalPeso) : '—'}
-                        </span>
+                        <div className="text-right">
+                          {pesoUnit != null && pesoUnit > 0 ? (
+                            <>
+                              <span className="text-sm tabular-nums font-medium">{fmtKg(ing.totalPeso)}</span>
+                              <span className="block text-[10px] text-muted-foreground">{ing.totalQty} × {fmtKg(pesoUnit)}</span>
+                            </>
+                          ) : <span className="text-sm text-muted-foreground">—</span>}
+                        </div>
                         <div>
                           {ing.lojasDisponiveis.length > 0 ? (
                             <Select
@@ -352,7 +364,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
                   })}
 
                   {/* Linha de totais */}
-                  <div className="grid grid-cols-[1fr_70px_80px_160px_90px_90px] gap-2 items-center px-4 py-2.5 bg-white/[0.02] border-t border-border">
+                  <div className="grid grid-cols-[1fr_60px_180px_160px_90px_90px] gap-2 items-center px-4 py-2.5 bg-white/[0.02] border-t border-border">
                     <span className="text-xs font-semibold text-muted-foreground col-span-2">Total</span>
                     <span className="text-sm text-right tabular-nums font-medium">
                       {totais.pesoIngredientes > 0 ? fmtKg(totais.pesoIngredientes) : '—'}
