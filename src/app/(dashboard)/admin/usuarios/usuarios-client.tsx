@@ -60,6 +60,9 @@ type MembroInvestigacao = {
   faccao_id: string | null
   cargo_faccao: string | null
   status: string
+  membro_proprio: boolean
+  data_entrada: string | null
+  data_saida: string | null
   faccoes: { nome: string; cor_tag: string } | null
 }
 
@@ -135,16 +138,42 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [convites, setConvites] = useState(initialConvites)
   const [busca, setBusca] = useState('')
 
-  // ── Vínculo membro <-> usuário ─────────────────────────────────────────────
-  const [vinculandoUsuarioId, setVinculandoUsuarioId] = useState<string | null>(null)
+  // ── Vínculo e gestão membro <-> usuário ───────────────────────────────────
+  const [membrosState, setMembrosState] = useState<MembroInvestigacao[]>(membros)
+  const [vinculandoId, setVinculandoId] = useState<string | null>(null)
 
   async function handleVincularMembro(usuarioId: string, membroId: string | null) {
-    setVinculandoUsuarioId(usuarioId)
+    setVinculandoId(usuarioId)
     const { error } = await sb().from('usuarios').update({ membro_id: membroId }).eq('id', usuarioId)
-    setVinculandoUsuarioId(null)
+    setVinculandoId(null)
     if (error) { toast.error('Erro ao vincular'); return }
     setUsuarios(prev => prev.map(u => u.id === usuarioId ? { ...u, membro_id: membroId } : u))
     toast.success(membroId ? 'Membro vinculado!' : 'Vínculo removido')
+  }
+
+  async function handleDesativarMembro(membro: MembroInvestigacao) {
+    setVinculandoId(membro.id)
+    const hoje = new Date().toISOString().slice(0, 10)
+    const { error } = await sb().from('membros').update({ status: 'inativo', faccao_id: null, data_saida: hoje }).eq('id', membro.id)
+    if (error) { toast.error('Erro ao desativar membro'); setVinculandoId(null); return }
+    // Desativar o usuário vinculado também
+    const usuarioVinculado = usuarios.find(u => u.membro_id === membro.id)
+    if (usuarioVinculado) {
+      await fetch('/api/admin/usuarios', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: usuarioVinculado.id, status: 'inativo' }) })
+      setUsuarios(prev => prev.map(u => u.id === usuarioVinculado.id ? { ...u, status: 'inativo' } : u))
+    }
+    setMembrosState(prev => prev.map(m => m.id === membro.id ? { ...m, status: 'inativo', faccao_id: null, faccoes: null, data_saida: hoje } : m))
+    setVinculandoId(null)
+    toast.success(`${membro.nome} desativado`)
+  }
+
+  async function handleReativarMembro(membro: MembroInvestigacao) {
+    setVinculandoId(membro.id)
+    const { error } = await sb().from('membros').update({ status: 'ativo', data_saida: null }).eq('id', membro.id)
+    setVinculandoId(null)
+    if (error) { toast.error('Erro ao reativar'); return }
+    setMembrosState(prev => prev.map(m => m.id === membro.id ? { ...m, status: 'ativo', data_saida: null } : m))
+    toast.success(`${membro.nome} reativado — vincule um usuário para restaurar o acesso`)
   }
 
   // ── Gerar link de convite ──────────────────────────────────────────────────
@@ -580,76 +609,117 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
           </TabsContent>
 
           {/* ── Aba Membros ──────────────────────────────────────────────── */}
-          <TabsContent value="membros" className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              Vincule cada usuário do sistema ao seu membro na investigação. Útil para identificar quem não acessa o sistema.
-            </p>
+          <TabsContent value="membros" className="space-y-6">
 
-            {membros.length === 0 ? (
-              <div className="rounded-lg border border-border py-10 text-center text-muted-foreground text-sm">
-                Nenhum membro ativo cadastrado na investigação
-              </div>
-            ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_120px_1fr_100px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Membro (investigação)</span>
-                  <span>Facção</span>
-                  <span>Usuário do sistema</span>
-                  <span />
-                </div>
-                {membros.map((m, idx) => {
-                  const usuarioVinculado = usuarios.find(u => u.membro_id === m.id)
-                  const usuariosAtivos = usuarios.filter(u => u.status !== 'pendente')
-                  const isVinculando = vinculandoUsuarioId === (usuarioVinculado?.id ?? `new-${m.id}`)
-                  return (
-                    <div key={m.id} className={cn('grid grid-cols-[1fr_120px_1fr_100px] gap-3 items-center px-4 py-3', idx < membros.length - 1 && 'border-b border-border/40')}>
-                      <div>
-                        <span className="text-sm font-medium">{m.nome}</span>
-                        {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
-                        {m.cargo_faccao && <p className="text-[11px] text-muted-foreground">{m.cargo_faccao}</p>}
+            {/* Equipe ativa */}
+            {(() => {
+              const ativos = membrosState.filter(m => m.membro_proprio && m.status === 'ativo')
+              const inativos = membrosState.filter(m => m.membro_proprio && m.status === 'inativo')
+              const fmtData = (d: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+
+              return (
+                <>
+                  <section className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-primary/80 px-1">Equipe ativa ({ativos.length})</p>
+
+                    {ativos.length === 0 ? (
+                      <div className="rounded-lg border border-border py-8 text-center text-muted-foreground text-sm">
+                        Nenhum membro da equipe ativo
                       </div>
-                      <div>
-                        {m.faccoes ? (
-                          <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: `${m.faccoes.cor_tag}20`, color: m.faccoes.cor_tag }}>
-                            {m.faccoes.nome}
-                          </span>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                    ) : (
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="grid grid-cols-[1fr_130px_130px_1fr_120px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                          <span>Nome</span><span>Cargo</span><span>Entrada</span><span>Usuário do sistema</span><span />
+                        </div>
+                        {ativos.map((m, idx) => {
+                          const usuarioVinculado = usuarios.find(u => u.membro_id === m.id)
+                          const isLoading = vinculandoId === m.id
+                          return (
+                            <div key={m.id} className={cn('grid grid-cols-[1fr_130px_130px_1fr_120px] gap-3 items-center px-4 py-3', idx < ativos.length - 1 && 'border-b border-border/40')}>
+                              <div>
+                                <span className="text-sm font-medium">{m.nome}</span>
+                                {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                              </div>
+                              <span className="text-xs text-muted-foreground">{m.cargo_faccao ?? '—'}</span>
+                              <span className="text-xs text-muted-foreground">{fmtData(m.data_entrada)}</span>
+                              <div>
+                                {usuarioVinculado ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', usuarioVinculado.status === 'ativo' ? 'bg-green-400' : 'bg-zinc-500')} />
+                                    <span className="text-sm">{usuarioVinculado.nome}</span>
+                                    {usuarioVinculado.status !== 'ativo' && <span className="text-[10px] text-zinc-500">(inativo)</span>}
+                                  </div>
+                                ) : (
+                                  <Select onValueChange={uid => handleVincularMembro(uid, m.id)}>
+                                    <SelectTrigger className="h-7 text-xs w-32">
+                                      <SelectValue placeholder="Vincular..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {usuarios.filter(u => u.status !== 'pendente' && !u.membro_id).map(u => (
+                                        <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </div>
+                              <div className="flex justify-end gap-1">
+                                {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
+                                  <>
+                                    {usuarioVinculado && (
+                                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleVincularMembro(usuarioVinculado.id, null)} title="Desvincular usuário">
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive gap-1" onClick={() => handleDesativarMembro(m)} title="Desativar membro e revogar acesso">
+                                      Desativar
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                      <div>
-                        {usuarioVinculado ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />
-                            <span className="text-sm">{usuarioVinculado.nome}</span>
+                    )}
+                  </section>
+
+                  {/* Ex-membros */}
+                  {inativos.length > 0 && (
+                    <section className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 px-1">Ex-membros ({inativos.length})</p>
+                      <div className="rounded-lg border border-border/50 overflow-hidden">
+                        <div className="grid grid-cols-[1fr_130px_130px_130px_100px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                          <span>Nome</span><span>Cargo</span><span>Entrada</span><span>Saída</span><span />
+                        </div>
+                        {inativos.map((m, idx) => (
+                          <div key={m.id} className={cn('grid grid-cols-[1fr_130px_130px_130px_100px] gap-3 items-center px-4 py-3 opacity-70', idx < inativos.length - 1 && 'border-b border-border/40')}>
+                            <div>
+                              <span className="text-sm font-medium">{m.nome}</span>
+                              {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                              {m.faccoes && (
+                                <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded" style={{ background: `${m.faccoes.cor_tag}20`, color: m.faccoes.cor_tag }}>
+                                  {m.faccoes.nome}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground">{m.cargo_faccao ?? '—'}</span>
+                            <span className="text-xs text-muted-foreground">{fmtData(m.data_entrada)}</span>
+                            <span className="text-xs text-muted-foreground">{fmtData(m.data_saida)}</span>
+                            <div className="flex justify-end">
+                              {vinculandoId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
+                                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleReativarMembro(m)}>
+                                  Reativar
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Sem vínculo</span>
-                        )}
+                        ))}
                       </div>
-                      <div className="flex justify-end">
-                        {isVinculando ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                        ) : usuarioVinculado ? (
-                          <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive gap-1" onClick={() => handleVincularMembro(usuarioVinculado.id, null)}>
-                            <X className="h-3 w-3" />Desvincular
-                          </Button>
-                        ) : (
-                          <Select onValueChange={uid => handleVincularMembro(uid, m.id)}>
-                            <SelectTrigger className="h-7 text-xs w-28">
-                              <SelectValue placeholder="Vincular..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {usuariosAtivos.filter(u => !u.membro_id).map(u => (
-                                <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    </section>
+                  )}
+                </>
+              )
+            })()}
           </TabsContent>
         </Tabs>
       </div>

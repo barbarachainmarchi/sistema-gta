@@ -37,7 +37,7 @@ export default async function UsuariosPage() {
     supabase.from('perfis_acesso').select('id, nome, descricao').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
-    supabase.from('membros').select('id, nome, vulgo, faccao_id, cargo_faccao, status, faccoes(nome, cor_tag)').eq('status', 'ativo').order('nome'),
+    supabase.from('membros').select('id, nome, vulgo, faccao_id, cargo_faccao, status, membro_proprio, data_entrada, data_saida, faccoes(nome, cor_tag)').eq('membro_proprio', true).order('nome'),
   ])
 
   const authUsers = authResult.data?.users ?? []

@@ -26,7 +26,7 @@ const FACTION_COLORS = [
 ]
 
 const emptyFaccaoForm: { nome: string; sigla: string; descricao: string; territorio: string; deep: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', sigla: '', descricao: '', territorio: '', deep: '', cor_tag: '#6366f1', status: 'ativo' }
-const emptyMembroForm: { nome: string; vulgo: string; telefone: string; instagram: string; deep: string; faccao_id: string; cargo_faccao: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', instagram: '', deep: '', faccao_id: 'sem', cargo_faccao: '', status: 'ativo', observacoes: '' }
+const emptyMembroForm: { nome: string; vulgo: string; telefone: string; instagram: string; deep: string; faccao_id: string; cargo_faccao: string; status: 'ativo' | 'inativo'; observacoes: string; membro_proprio: boolean; data_entrada: string } = { nome: '', vulgo: '', telefone: '', instagram: '', deep: '', faccao_id: 'sem', cargo_faccao: '', status: 'ativo', observacoes: '', membro_proprio: false, data_entrada: '' }
 const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
@@ -142,14 +142,15 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [deletingMembro, setDeletingMembro] = useState(false)
   const [buscaMembro, setBuscaMembro] = useState('')
   const [filtrFaccaoId, setFiltrFaccaoId] = useState('todas')
+  const [filtrTipo, setFiltrTipo] = useState<'todos' | 'minha_equipe' | 'ex_membros'>('todos')
 
   function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroEditId(null); setMembroModal(true) }
-  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', instagram: m.instagram ?? '', deep: m.deep ?? '', faccao_id: m.faccao_id ?? 'sem', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
+  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', instagram: m.instagram ?? '', deep: m.deep ?? '', faccao_id: m.faccao_id ?? 'sem', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '', membro_proprio: m.membro_proprio, data_entrada: m.data_entrada ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
 
   async function handleSalvarMembro() {
     if (!membroForm.nome) { toast.error('Nome obrigatório'); return }
     setMembroSaving(true)
-    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, instagram: membroForm.instagram || null, deep: membroForm.deep || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, cargo_faccao: membroForm.cargo_faccao || null, status: membroForm.status, observacoes: membroForm.observacoes || null }
+    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, instagram: membroForm.instagram || null, deep: membroForm.deep || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, cargo_faccao: membroForm.cargo_faccao || null, status: membroForm.status, observacoes: membroForm.observacoes || null, membro_proprio: membroForm.membro_proprio, data_entrada: membroForm.data_entrada || null }
     if (membroEditId) {
       const { data, error } = await sb().from('membros').update(row).eq('id', membroEditId).select('*, faccoes(id, nome, cor_tag)').single()
       if (error) { toast.error('Erro ao salvar'); setMembroSaving(false); return }
@@ -175,7 +176,8 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const membrosFiltrados = membros.filter(m => {
     const matchBusca = !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) || m.telefone?.includes(buscaMembro) || m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase())
     const matchFaccao = filtrFaccaoId === 'todas' || (filtrFaccaoId === 'sem' ? !m.faccao_id : m.faccao_id === filtrFaccaoId)
-    return matchBusca && matchFaccao
+    const matchTipo = filtrTipo === 'todos' || (filtrTipo === 'minha_equipe' ? m.membro_proprio && m.status === 'ativo' : filtrTipo === 'ex_membros' ? m.membro_proprio && m.status === 'inativo' : true)
+    return matchBusca && matchFaccao && matchTipo
   })
 
   // ── Veículo: CRUD ──────────────────────────────────────────────────────────
@@ -380,6 +382,16 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Nome, vulgo ou parte do telefone..." value={buscaMembro} onChange={e => setBuscaMembro(e.target.value)} className="pl-8 h-8 text-sm" />
               </div>
+              <Select value={filtrTipo} onValueChange={v => setFiltrTipo(v as typeof filtrTipo)}>
+                <SelectTrigger className="h-8 text-sm w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  <SelectItem value="minha_equipe">Minha equipe</SelectItem>
+                  <SelectItem value="ex_membros">Ex-membros</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={filtrFaccaoId} onValueChange={setFiltrFaccaoId}>
                 <SelectTrigger className="h-8 text-sm w-44">
                   <SelectValue />
@@ -407,6 +419,11 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                     <div className="min-w-0">
                       <span className="text-sm font-medium">{m.nome}</span>
                       {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                      {m.membro_proprio && (
+                        <span className={cn('ml-1.5 text-[10px] px-1.5 py-0.5 rounded', m.status === 'ativo' ? 'bg-primary/15 text-primary' : 'bg-zinc-500/10 text-zinc-400')}>
+                          {m.status === 'ativo' ? 'Equipe' : 'Ex-membro'}
+                        </span>
+                      )}
                     </div>
                     {(veiculosPorMembro[m.id] ?? []).map(v => (
                       <span key={v.id} title={`${v.placa ?? 'S/P'}${v.modelo ? ` — ${v.modelo}` : ''}${v.cor ? ` (${v.cor})` : ''}`} className="shrink-0 cursor-default">
@@ -810,12 +827,21 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Status</Label>
+              <div className="flex items-center gap-1.5">
+                <Switch checked={membroForm.membro_proprio} onCheckedChange={v => setMembroForm(f => ({ ...f, membro_proprio: v }))} />
+                <Label className="text-xs cursor-pointer" onClick={() => setMembroForm(f => ({ ...f, membro_proprio: !f.membro_proprio }))}>Minha equipe</Label>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{membroForm.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
                 <Switch checked={membroForm.status === 'ativo'} onCheckedChange={v => setMembroForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
               </div>
             </div>
+            {membroForm.membro_proprio && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data de entrada</Label>
+                <Input type="date" value={membroForm.data_entrada} onChange={e => setMembroForm(f => ({ ...f, data_entrada: e.target.value }))} className="h-8 text-sm max-w-[180px]" />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setMembroModal(false)}>Cancelar</Button>
