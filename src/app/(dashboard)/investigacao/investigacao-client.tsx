@@ -12,10 +12,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ExternalLink } from 'lucide-react'
-import Link from 'next/link'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto } from './faccao-detalhe'
+import { LojaDetalhe } from './loja-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
 
@@ -63,8 +63,34 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   // ── Facção detalhe ─────────────────────────────────────────────────────────
   const [detalhe, setDetalhe] = useState<Faccao | null>(null)
-
   function abrirDetalhe(f: Faccao) { setDetalhe(f) }
+
+  // ── Loja detalhe ───────────────────────────────────────────────────────────
+  const [detalheLoja, setDetalheLoja] = useState<Loja | null>(null)
+
+  // ── Busca por produto nas lojas ────────────────────────────────────────────
+  const [modoBuscaProduto, setModoBuscaProduto] = useState(false)
+  const [buscaProduto, setBuscaProduto] = useState('')
+  const [resultadosBusca, setResultadosBusca] = useState<{ loja_id: string; loja_nome: string; item_nome: string; preco: number }[]>([])
+  const [buscando, setBuscando] = useState(false)
+
+  async function buscarProdutoNasLojas(termo: string) {
+    if (!termo.trim()) { setResultadosBusca([]); return }
+    setBuscando(true)
+    const { data } = await sb()
+      .from('loja_item_precos')
+      .select('preco, lojas(id, nome), items(nome)')
+      .order('preco')
+    setBuscando(false)
+    if (!data) return
+    const termo_lower = termo.toLowerCase()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filtrado = (data as any[])
+      .filter((r: any) => r.items?.nome?.toLowerCase().includes(termo_lower))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((r: any) => ({ loja_id: r.lojas?.id ?? '', loja_nome: r.lojas?.nome ?? '—', item_nome: r.items?.nome ?? '—', preco: r.preco }))
+    setResultadosBusca(filtrado)
+  }
 
   // ── Facção: CRUD ───────────────────────────────────────────────────────────
   const [faccaoModal, setFaccaoModal] = useState(false)
@@ -291,9 +317,6 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                       </div>
                       <div className="flex items-center gap-1.5 pt-1 border-t border-border/60">
                         <Button variant="ghost" size="sm" className="h-7 text-xs flex-1" onClick={() => abrirDetalhe(f)}>Ver detalhes</Button>
-                        <Link href={`/investigacao/faccao/${f.id}`} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors" title="Relatório completo">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
                         <button onClick={() => openEditFaccao(f)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
@@ -404,38 +427,92 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
           {/* ── Lojas ─────────────────────────────────────────────────────── */}
           <TabsContent value="lojas" className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input placeholder="Buscar loja ou localização..." value={buscaLoja} onChange={e => setBuscaLoja(e.target.value)} className="pl-8 h-8 text-sm" />
+            {/* Toggle: lista / busca por produto */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                <button onClick={() => setModoBuscaProduto(false)} className={cn('px-3 py-1.5 transition-colors', !modoBuscaProduto ? 'bg-white/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground')}>Lojas</button>
+                <button onClick={() => setModoBuscaProduto(true)} className={cn('px-3 py-1.5 transition-colors border-l border-border', modoBuscaProduto ? 'bg-white/[0.08] text-foreground' : 'text-muted-foreground hover:text-foreground')}>Busca por produto</button>
               </div>
-              <Button size="sm" className="h-8 gap-1.5 ml-auto" onClick={openNovaLoja}>
-                <Plus className="h-3.5 w-3.5" />Nova Loja
-              </Button>
+              {!modoBuscaProduto && (
+                <>
+                  <div className="relative flex-1 min-w-[160px] max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input placeholder="Buscar loja ou localização..." value={buscaLoja} onChange={e => setBuscaLoja(e.target.value)} className="pl-8 h-8 text-sm" />
+                  </div>
+                  <Button size="sm" className="h-8 gap-1.5 ml-auto" onClick={openNovaLoja}>
+                    <Plus className="h-3.5 w-3.5" />Nova Loja
+                  </Button>
+                </>
+              )}
             </div>
 
-            <div className="rounded-lg border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_1fr_120px_80px_96px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
-                <span>Nome</span><span>Localização</span><span>Tipo</span><span>Status</span><span />
-              </div>
-              {lojasFiltradas.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">Nenhuma loja encontrada</div>
-              ) : lojasFiltradas.map(l => (
-                <div key={l.id} className="grid grid-cols-[1fr_1fr_120px_80px_96px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
-                  <span className="text-sm font-medium">{l.nome}</span>
-                  <span className="text-sm text-muted-foreground">{l.localizacao ?? '—'}</span>
-                  <span className="text-sm text-muted-foreground">{l.tipo ?? '—'}</span>
-                  <StatusBadge status={l.status} />
-                  <div className="flex gap-1">
-                    <Link href={`/investigacao/loja/${l.id}`} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors" title="Relatório completo">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
-                    <button onClick={() => openEditLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => setConfirmDeleteLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
+            {modoBuscaProduto ? (
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Digitar nome do produto para comparar preços..."
+                    value={buscaProduto}
+                    onChange={e => { setBuscaProduto(e.target.value); buscarProdutoNasLojas(e.target.value) }}
+                    className="pl-8 h-9 text-sm"
+                    autoFocus
+                  />
                 </div>
-              ))}
-            </div>
+                {buscando && <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+                {!buscando && buscaProduto && resultadosBusca.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nenhuma loja vende esse produto</p>
+                )}
+                {resultadosBusca.length > 0 && (() => {
+                  // agrupar por item_nome
+                  const porItem: Record<string, typeof resultadosBusca> = {}
+                  resultadosBusca.forEach(r => { if (!porItem[r.item_nome]) porItem[r.item_nome] = []; porItem[r.item_nome].push(r) })
+                  const menorPreco = (lista: typeof resultadosBusca) => Math.min(...lista.map(r => r.preco))
+                  return Object.entries(porItem).sort(([a], [b]) => a.localeCompare(b)).map(([itemNome, linhas]) => {
+                    const menor = menorPreco(linhas)
+                    return (
+                      <div key={itemNome} className="space-y-1">
+                        <p className="text-xs font-semibold text-muted-foreground px-1">{itemNome}</p>
+                        <div className="rounded-lg border border-border overflow-hidden">
+                          {linhas.sort((a, b) => a.preco - b.preco).map((r, idx) => (
+                            <div key={`${r.loja_id}-${idx}`} className={cn('flex items-center justify-between px-4 py-2', idx < linhas.length - 1 && 'border-b border-border/40')}>
+                              <button className="text-sm text-left hover:text-primary transition-colors" onClick={() => { const l = lojas.find(x => x.id === r.loja_id); if (l) setDetalheLoja(l) }}>
+                                {r.loja_nome}
+                              </button>
+                              <div className="flex items-center gap-2">
+                                <span className={cn('text-sm font-medium tabular-nums', r.preco === menor && 'text-green-400')}>
+                                  R$ {r.preco.toLocaleString('pt-BR')}
+                                </span>
+                                {r.preco === menor && <span className="text-[10px] text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded">menor preço</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_1fr_120px_80px_72px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
+                  <span>Nome</span><span>Localização</span><span>Tipo</span><span>Status</span><span />
+                </div>
+                {lojasFiltradas.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground text-sm">Nenhuma loja encontrada</div>
+                ) : lojasFiltradas.map(l => (
+                  <div key={l.id} className="grid grid-cols-[1fr_1fr_120px_80px_72px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
+                    <button className="text-sm font-medium text-left hover:text-primary transition-colors" onClick={() => setDetalheLoja(l)}>{l.nome}</button>
+                    <span className="text-sm text-muted-foreground">{l.localizacao ?? '—'}</span>
+                    <span className="text-sm text-muted-foreground">{l.tipo ?? '—'}</span>
+                    <StatusBadge status={l.status} />
+                    <div className="flex gap-1">
+                      <button onClick={() => openEditLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => setConfirmDeleteLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -664,6 +741,18 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           </AlertDialogContent>
         </AlertDialog>
       ))}
+
+      {/* ── Loja Detalhe ───────────────────────────────────────────────────── */}
+      {detalheLoja && (
+        <LojaDetalhe
+          loja={detalheLoja}
+          todosProdutos={todosProdutos}
+          todosMembros={membros}
+          open={!!detalheLoja}
+          onClose={() => setDetalheLoja(null)}
+          onUpdateLoja={l => { setLojas(prev => prev.map(x => x.id === l.id ? l : x)); setDetalheLoja(l) }}
+        />
+      )}
 
       {/* ── Facção Detalhe ─────────────────────────────────────────────────── */}
       {detalhe && (

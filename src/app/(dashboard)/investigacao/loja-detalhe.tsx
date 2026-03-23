@@ -1,0 +1,288 @@
+'use client'
+
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { toast } from 'sonner'
+import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { Membro, Produto } from './faccao-detalhe'
+
+type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
+type LojaItem = { id: string; item_id: string; preco: number; items: { id: string; nome: string } | null }
+type LojaFuncionario = { id: string; membro_id: string; cargo: string | null; membros: { id: string; nome: string; vulgo: string | null; faccoes: { nome: string; cor_tag: string } | null } | null }
+
+function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR')}` }
+
+interface Props {
+  loja: Loja
+  todosProdutos: Produto[]
+  todosMembros: Membro[]
+  open: boolean
+  onClose: () => void
+  onUpdateLoja: (l: Loja) => void
+}
+
+export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, onUpdateLoja }: Props) {
+  const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
+
+  // ── Dados lazy ─────────────────────────────────────────────────────────────
+  const [itens, setItens] = useState<LojaItem[]>([])
+  const [funcionarios, setFuncionarios] = useState<LojaFuncionario[]>([])
+  const [loadingData, setLoadingData] = useState(true)
+
+  useEffect(() => {
+    if (!open) return
+    setLoadingData(true)
+    Promise.all([
+      sb().from('loja_item_precos').select('id, item_id, preco, items(id, nome)').eq('loja_id', loja.id).order('items(nome)'),
+      sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
+    ]).then(([itensRes, funcRes]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setItens((itensRes.data ?? []) as any)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setFuncionarios((funcRes.data ?? []) as any)
+      setLoadingData(false)
+    })
+  }, [open, loja.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Edição básica ──────────────────────────────────────────────────────────
+  const [editando, setEditando] = useState(false)
+  const [lojaForm, setLojaForm] = useState({ nome: loja.nome, localizacao: loja.localizacao ?? '', tipo: loja.tipo ?? '', status: loja.status })
+  const [lojaSaving, setLojaSaving] = useState(false)
+
+  function abrirEdicao() {
+    setLojaForm({ nome: loja.nome, localizacao: loja.localizacao ?? '', tipo: loja.tipo ?? '', status: loja.status })
+    setEditando(true)
+  }
+
+  async function handleSalvarLoja() {
+    if (!lojaForm.nome) { toast.error('Nome obrigatório'); return }
+    setLojaSaving(true)
+    const { data, error } = await sb().from('lojas').update({ nome: lojaForm.nome, localizacao: lojaForm.localizacao || null, tipo: lojaForm.tipo || null, status: lojaForm.status }).eq('id', loja.id).select().single()
+    setLojaSaving(false)
+    if (error) { toast.error('Erro ao salvar'); return }
+    onUpdateLoja(data as Loja)
+    setEditando(false)
+    toast.success('Loja atualizada')
+  }
+
+  // ── Itens ─────────────────────────────────────────────────────────────────
+  const [addItem, setAddItem] = useState(false)
+  const [newItemId, setNewItemId] = useState('')
+  const [newItemPreco, setNewItemPreco] = useState('')
+  const [editItem, setEditItem] = useState<LojaItem | null>(null)
+  const [editItemPreco, setEditItemPreco] = useState('')
+  const [savingItem, setSavingItem] = useState(false)
+
+  const itensDisponiveis = todosProdutos.filter(p => !itens.some(i => i.item_id === p.id))
+
+  async function handleSalvarItem() {
+    if (!newItemId || !newItemPreco) return
+    setSavingItem(true)
+    const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco) }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, items(id, nome)').single()
+    setSavingItem(false)
+    if (error) { toast.error('Erro ao salvar'); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setItens(prev => [...prev.filter(i => i.item_id !== newItemId), data as any])
+    setAddItem(false); setNewItemId(''); setNewItemPreco('')
+    toast.success('Item adicionado')
+  }
+
+  async function handleEditarItem() {
+    if (!editItem || !editItemPreco) return
+    setSavingItem(true)
+    const { data, error } = await sb().from('loja_item_precos').update({ preco: parseFloat(editItemPreco) }).eq('id', editItem.id).select('id, item_id, preco, items(id, nome)').single()
+    setSavingItem(false)
+    if (error) { toast.error('Erro ao salvar'); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setItens(prev => prev.map(i => i.id === editItem.id ? data as any : i))
+    setEditItem(null); setEditItemPreco('')
+    toast.success('Preço atualizado')
+  }
+
+  async function handleRemoverItem(item: LojaItem) {
+    await sb().from('loja_item_precos').delete().eq('id', item.id)
+    setItens(prev => prev.filter(i => i.id !== item.id))
+    toast.success('Item removido')
+  }
+
+  // ── Funcionários ───────────────────────────────────────────────────────────
+  const [addFunc, setAddFunc] = useState(false)
+  const [newFuncId, setNewFuncId] = useState('')
+  const [newFuncCargo, setNewFuncCargo] = useState('')
+  const [savingFunc, setSavingFunc] = useState(false)
+
+  const membrosDisponiveis = todosMembros.filter(m => !funcionarios.some(f => f.membro_id === m.id))
+
+  async function handleSalvarFunc() {
+    if (!newFuncId) return
+    setSavingFunc(true)
+    const { data, error } = await sb().from('loja_membros').insert({ loja_id: loja.id, membro_id: newFuncId, cargo: newFuncCargo || null }).select('id, membro_id, cargo, membros(id, nome, vulgo, faccoes(nome, cor_tag))').single()
+    setSavingFunc(false)
+    if (error) { toast.error('Erro ao adicionar'); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setFuncionarios(prev => [...prev, data as any])
+    setAddFunc(false); setNewFuncId(''); setNewFuncCargo('')
+    toast.success('Funcionário adicionado')
+  }
+
+  async function handleRemoverFunc(id: string) {
+    await sb().from('loja_membros').delete().eq('id', id)
+    setFuncionarios(prev => prev.filter(f => f.id !== id))
+    toast.success('Funcionário removido')
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent aria-describedby={undefined} className="max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <span className="flex-1">{loja.nome}</span>
+            <span className={cn('text-[11px] px-2 py-0.5 rounded-full font-normal', loja.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
+              {loja.status === 'ativo' ? 'Ativa' : 'Inativa'}
+            </span>
+          </DialogTitle>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            {loja.localizacao && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{loja.localizacao}</span>}
+            {loja.tipo && <span className="flex items-center gap-1"><Tag className="h-3 w-3" />{loja.tipo}</span>}
+          </div>
+        </DialogHeader>
+
+        {loadingData ? (
+          <div className="flex-1 flex items-center justify-center py-10">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+            {/* Editar loja */}
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Informações</p>
+              <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={editando ? () => setEditando(false) : abrirEdicao}>
+                {editando ? <><X className="h-3 w-3" />Cancelar</> : <><Edit2 className="h-3 w-3" />Editar</>}
+              </Button>
+            </div>
+
+            {editando && (
+              <div className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs">Nome *</Label><Input value={lojaForm.nome} onChange={e => setLojaForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Localização</Label><Input value={lojaForm.localizacao} onChange={e => setLojaForm(f => ({ ...f, localizacao: e.target.value }))} className="h-8 text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Tipo</Label><Input value={lojaForm.tipo} onChange={e => setLojaForm(f => ({ ...f, tipo: e.target.value }))} placeholder="Ex: Armas, Drogas..." className="h-8 text-sm" /></div>
+                  <div className="flex items-end gap-2 pb-0.5">
+                    <Switch checked={lojaForm.status === 'ativo'} onCheckedChange={v => setLojaForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
+                    <span className="text-xs text-muted-foreground">{lojaForm.status === 'ativo' ? 'Ativa' : 'Inativa'}</span>
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button size="sm" className="h-7 text-xs" onClick={handleSalvarLoja} disabled={lojaSaving}>
+                    {lojaSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Itens */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Itens ({itens.length})</p>
+                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setAddItem(true)} disabled={itensDisponiveis.length === 0}>
+                  <Plus className="h-3 w-3" />Adicionar
+                </Button>
+              </div>
+
+              {addItem && (
+                <div className="flex gap-2 mb-2">
+                  <Select value={newItemId} onValueChange={setNewItemId}>
+                    <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar item..." /></SelectTrigger>
+                    <SelectContent>{itensDisponiveis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Input type="number" placeholder="Preço" className="w-24 h-8 text-sm" value={newItemPreco} onChange={e => setNewItemPreco(e.target.value)} />
+                  <Button size="sm" className="h-8 px-3" onClick={handleSalvarItem} disabled={savingItem || !newItemId || !newItemPreco}><Plus className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddItem(false); setNewItemId(''); setNewItemPreco('') }}><X className="h-3.5 w-3.5" /></Button>
+                </div>
+              )}
+
+              {itens.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum item cadastrado</p>
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  {itens.map((item, idx) => (
+                    <div key={item.id} className={cn('flex items-center gap-2 px-3 py-2', idx < itens.length - 1 && 'border-b border-border/50')}>
+                      <span className="flex-1 text-sm">{item.items?.nome ?? '—'}</span>
+                      {editItem?.id === item.id ? (
+                        <>
+                          <Input type="number" className="w-24 h-7 text-sm" value={editItemPreco} onChange={e => setEditItemPreco(e.target.value)} autoFocus />
+                          <button onClick={handleEditarItem} disabled={savingItem} className="h-6 w-6 rounded flex items-center justify-center text-green-400 hover:bg-white/[0.06]">
+                            {savingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                          </button>
+                          <button onClick={() => { setEditItem(null); setEditItemPreco('') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm font-medium tabular-nums">{fmt(item.preco)}</span>
+                          <button onClick={() => { setEditItem(item); setEditItemPreco(item.preco.toString()) }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                          <button onClick={() => handleRemoverItem(item)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Funcionários */}
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Funcionários ({funcionarios.length})</p>
+                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setAddFunc(true)} disabled={membrosDisponiveis.length === 0}>
+                  <Plus className="h-3 w-3" />Adicionar
+                </Button>
+              </div>
+
+              {addFunc && (
+                <div className="flex gap-2 mb-2">
+                  <Select value={newFuncId} onValueChange={setNewFuncId}>
+                    <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar membro..." /></SelectTrigger>
+                    <SelectContent>{membrosDisponiveis.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <Input placeholder="Cargo (opcional)" className="w-32 h-8 text-sm" value={newFuncCargo} onChange={e => setNewFuncCargo(e.target.value)} />
+                  <Button size="sm" className="h-8 px-3" onClick={handleSalvarFunc} disabled={savingFunc || !newFuncId}><Plus className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddFunc(false); setNewFuncId(''); setNewFuncCargo('') }}><X className="h-3.5 w-3.5" /></Button>
+                </div>
+              )}
+
+              {funcionarios.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum funcionário cadastrado</p>
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  {funcionarios.map((f, idx) => (
+                    <div key={f.id} className={cn('flex items-center gap-3 px-3 py-2', idx < funcionarios.length - 1 && 'border-b border-border/50')}>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium">{f.membros?.nome ?? '—'}</span>
+                        {f.membros?.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{f.membros.vulgo}"</span>}
+                        {f.cargo && <span className="ml-2 text-xs text-muted-foreground">· {f.cargo}</span>}
+                      </div>
+                      {f.membros?.faccoes && (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: f.membros.faccoes.cor_tag + '22', color: f.membros.faccoes.cor_tag }}>
+                          {f.membros.faccoes.nome}
+                        </span>
+                      )}
+                      <button onClick={() => handleRemoverFunc(f.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
