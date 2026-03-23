@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,12 +9,12 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag } from 'lucide-react'
+import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Membro, Produto } from './faccao-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
-type LojaItem = { id: string; item_id: string; preco: number; items: { id: string; nome: string } | null }
+type LojaItem = { id: string; item_id: string; preco: number; items: { id: string; nome: string; categorias_item: { nome: string } | null } | null }
 type LojaFuncionario = { id: string; membro_id: string; cargo: string | null; membros: { id: string; nome: string; vulgo: string | null; faccoes: { nome: string; cor_tag: string } | null } | null }
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR')}` }
@@ -41,7 +41,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
     if (!open) return
     setLoadingData(true)
     Promise.all([
-      sb().from('loja_item_precos').select('id, item_id, preco, items(id, nome)').eq('loja_id', loja.id).order('items(nome)'),
+      sb().from('loja_item_precos').select('id, item_id, preco, items(id, nome, categorias_item(nome))').eq('loja_id', loja.id).order('items(nome)'),
       sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
     ]).then(([itensRes, funcRes]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,13 +80,28 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
   const [editItem, setEditItem] = useState<LojaItem | null>(null)
   const [editItemPreco, setEditItemPreco] = useState('')
   const [savingItem, setSavingItem] = useState(false)
+  const [buscaItem, setBuscaItem] = useState('')
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
 
   const itensDisponiveis = todosProdutos.filter(p => !itens.some(i => i.item_id === p.id))
+
+  const categoriasUnicas = useMemo(() => {
+    const cats = new Set(itens.map(i => i.items?.categorias_item?.nome ?? 'Sem categoria'))
+    return ['todas', ...Array.from(cats).sort()]
+  }, [itens])
+
+  const itensFiltrados = useMemo(() => {
+    return itens.filter(i => {
+      const matchCat = categoriaFiltro === 'todas' || (i.items?.categorias_item?.nome ?? 'Sem categoria') === categoriaFiltro
+      const matchBusca = !buscaItem || (i.items?.nome ?? '').toLowerCase().includes(buscaItem.toLowerCase())
+      return matchCat && matchBusca
+    })
+  }, [itens, categoriaFiltro, buscaItem])
 
   async function handleSalvarItem() {
     if (!newItemId || !newItemPreco) return
     setSavingItem(true)
-    const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco) }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, items(id, nome)').single()
+    const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco) }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, items(id, nome, categorias_item(nome))').single()
     setSavingItem(false)
     if (error) { toast.error('Erro ao salvar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,7 +113,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
   async function handleEditarItem() {
     if (!editItem || !editItemPreco) return
     setSavingItem(true)
-    const { data, error } = await sb().from('loja_item_precos').update({ preco: parseFloat(editItemPreco) }).eq('id', editItem.id).select('id, item_id, preco, items(id, nome)').single()
+    const { data, error } = await sb().from('loja_item_precos').update({ preco: parseFloat(editItemPreco) }).eq('id', editItem.id).select('id, item_id, preco, items(id, nome, categorias_item(nome))').single()
     setSavingItem(false)
     if (error) { toast.error('Erro ao salvar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,8 +133,15 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
   const [newFuncId, setNewFuncId] = useState('')
   const [newFuncCargo, setNewFuncCargo] = useState('')
   const [savingFunc, setSavingFunc] = useState(false)
+  const [buscaFunc, setBuscaFunc] = useState('')
 
   const membrosDisponiveis = todosMembros.filter(m => !funcionarios.some(f => f.membro_id === m.id))
+
+  const funcionariosFiltrados = useMemo(() => {
+    if (!buscaFunc) return funcionarios
+    const q = buscaFunc.toLowerCase()
+    return funcionarios.filter(f => (f.membros?.nome ?? '').toLowerCase().includes(q) || (f.membros?.vulgo ?? '').toLowerCase().includes(q) || (f.cargo ?? '').toLowerCase().includes(q))
+  }, [funcionarios, buscaFunc])
 
   async function handleSalvarFunc() {
     if (!newFuncId) return
@@ -141,7 +163,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent aria-describedby={undefined} className="max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent aria-describedby={undefined} className="max-w-4xl max-h-[95vh] overflow-hidden flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <span className="flex-1">{loja.nome}</span>
@@ -212,28 +234,56 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
               {itens.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum item cadastrado</p>
               ) : (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  {itens.map((item, idx) => (
-                    <div key={item.id} className={cn('flex items-center gap-2 px-3 py-2', idx < itens.length - 1 && 'border-b border-border/50')}>
-                      <span className="flex-1 text-sm">{item.items?.nome ?? '—'}</span>
-                      {editItem?.id === item.id ? (
-                        <>
-                          <Input type="number" className="w-24 h-7 text-sm" value={editItemPreco} onChange={e => setEditItemPreco(e.target.value)} autoFocus />
-                          <button onClick={handleEditarItem} disabled={savingItem} className="h-6 w-6 rounded flex items-center justify-center text-green-400 hover:bg-white/[0.06]">
-                            {savingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                          </button>
-                          <button onClick={() => { setEditItem(null); setEditItemPreco('') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-sm font-medium tabular-nums">{fmt(item.preco)}</span>
-                          <button onClick={() => { setEditItem(item); setEditItemPreco(item.preco.toString()) }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
-                          <button onClick={() => handleRemoverItem(item)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
-                        </>
-                      )}
+                <>
+                  {/* Busca + filtro de categoria */}
+                  <div className="flex flex-col gap-2 mb-3">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input placeholder="Buscar item..." className="h-8 pl-8 text-sm" value={buscaItem} onChange={e => setBuscaItem(e.target.value)} />
                     </div>
-                  ))}
-                </div>
+                    {categoriasUnicas.length > 2 && (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {categoriasUnicas.map(cat => (
+                          <button key={cat} onClick={() => setCategoriaFiltro(cat)} className={cn('text-[11px] px-2.5 py-1 rounded-full border transition-colors', categoriaFiltro === cat ? 'bg-accent text-accent-foreground border-accent' : 'border-border text-muted-foreground hover:text-foreground hover:border-border/80')}>
+                            {cat === 'todas' ? 'Todas' : cat}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {itensFiltrados.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">Nenhum item encontrado</p>
+                  ) : (
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      {itensFiltrados.map((item, idx) => (
+                        <div key={item.id} className={cn('flex items-center gap-2 px-3 py-2', idx < itensFiltrados.length - 1 && 'border-b border-border/50')}>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm">{item.items?.nome ?? '—'}</span>
+                            {item.items?.categorias_item?.nome && (
+                              <span className="ml-2 text-[11px] text-muted-foreground">{item.items.categorias_item.nome}</span>
+                            )}
+                          </div>
+                          {editItem?.id === item.id ? (
+                            <>
+                              <Input type="number" className="w-24 h-7 text-sm" value={editItemPreco} onChange={e => setEditItemPreco(e.target.value)} autoFocus />
+                              <button onClick={handleEditarItem} disabled={savingItem} className="h-6 w-6 rounded flex items-center justify-center text-green-400 hover:bg-white/[0.06]">
+                                {savingItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                              </button>
+                              <button onClick={() => { setEditItem(null); setEditItemPreco('') }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-sm font-medium tabular-nums">{fmt(item.preco)}</span>
+                              <button onClick={() => { setEditItem(item); setEditItemPreco(item.preco.toString()) }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                              <button onClick={() => handleRemoverItem(item)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </section>
 
@@ -261,23 +311,33 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, open, onClose, 
               {funcionarios.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum funcionário cadastrado</p>
               ) : (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  {funcionarios.map((f, idx) => (
-                    <div key={f.id} className={cn('flex items-center gap-3 px-3 py-2', idx < funcionarios.length - 1 && 'border-b border-border/50')}>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">{f.membros?.nome ?? '—'}</span>
-                        {f.membros?.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{f.membros.vulgo}"</span>}
-                        {f.cargo && <span className="ml-2 text-xs text-muted-foreground">· {f.cargo}</span>}
-                      </div>
-                      {f.membros?.faccoes && (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: f.membros.faccoes.cor_tag + '22', color: f.membros.faccoes.cor_tag }}>
-                          {f.membros.faccoes.nome}
-                        </span>
-                      )}
-                      <button onClick={() => handleRemoverFunc(f.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                <>
+                  <div className="relative mb-2">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input placeholder="Buscar funcionário..." className="h-8 pl-8 text-sm" value={buscaFunc} onChange={e => setBuscaFunc(e.target.value)} />
+                  </div>
+                  {funcionariosFiltrados.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">Nenhum funcionário encontrado</p>
+                  ) : (
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      {funcionariosFiltrados.map((f, idx) => (
+                        <div key={f.id} className={cn('flex items-center gap-3 px-3 py-2', idx < funcionariosFiltrados.length - 1 && 'border-b border-border/50')}>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{f.membros?.nome ?? '—'}</span>
+                            {f.membros?.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{f.membros.vulgo}"</span>}
+                            {f.cargo && <span className="ml-2 text-xs text-muted-foreground">· {f.cargo}</span>}
+                          </div>
+                          {f.membros?.faccoes && (
+                            <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: f.membros.faccoes.cor_tag + '22', color: f.membros.faccoes.cor_tag }}>
+                              {f.membros.faccoes.nome}
+                            </span>
+                          )}
+                          <button onClick={() => handleRemoverFunc(f.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </section>
           </div>

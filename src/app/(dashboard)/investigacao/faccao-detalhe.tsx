@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const FACTION_COLORS = [
@@ -70,6 +70,28 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     toast.success('Facção atualizada')
   }
 
+  // ── Busca por seção ────────────────────────────────────────────────────────
+  const [buscaMembro, setBuscaMembro] = useState('')
+  const [buscaVeiculo, setBuscaVeiculo] = useState('')
+  const [buscaProduto, setBuscaProduto] = useState('')
+
+  const membrosFiltrados = useMemo(() => membros.filter(m =>
+    !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) ||
+    m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase()) ||
+    m.telefone?.includes(buscaMembro)
+  ), [membros, buscaMembro])
+
+  const veiculosFiltrados = useMemo(() => veiculos.filter(v =>
+    !buscaVeiculo || v.placa.toLowerCase().includes(buscaVeiculo.toLowerCase()) ||
+    v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase())
+  ), [veiculos, buscaVeiculo])
+
+  const precosFiltrados = useMemo(() => faccaoPrecos.filter(p => {
+    if (!buscaProduto) return true
+    const produto = todosProdutos.find(x => x.id === p.item_id)
+    return produto?.nome.toLowerCase().includes(buscaProduto.toLowerCase())
+  }), [faccaoPrecos, buscaProduto, todosProdutos])
+
   // ── Preços / Produtos ──────────────────────────────────────────────────────
   const [editPreco, setEditPreco] = useState<Produto | null>(null)
   const [precoForm, setPrecoForm] = useState({ tipo: 'fixo' as 'percentual' | 'fixo', percentual: '', preco_sujo: '', preco_limpo: '' })
@@ -117,50 +139,32 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent aria-describedby={undefined} className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2.5">
-            <span className="h-4 w-4 rounded-full shrink-0" style={{ background: faccao.cor_tag }} />
-            <span>{faccao.nome}</span>
+      <DialogContent aria-describedby={undefined} className="max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0 pb-2 border-b border-border">
+          <div className="flex items-center gap-3">
+            <span className="h-5 w-5 rounded-full shrink-0" style={{ background: faccao.cor_tag }} />
+            <DialogTitle className="text-lg">{faccao.nome}</DialogTitle>
             {faccao.sigla && <span className="text-xs font-mono text-muted-foreground bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/10">{faccao.sigla}</span>}
-            <span className={cn('ml-auto text-[11px] px-2 py-0.5 rounded-full font-normal', faccao.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
+            <span className={cn('text-[11px] px-2 py-0.5 rounded-full', faccao.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
               {faccao.status === 'ativo' ? 'Ativa' : 'Inativa'}
             </span>
-          </DialogTitle>
+            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs gap-1" onClick={editando ? () => setEditando(false) : abrirEdicao}>
+              {editando ? <><X className="h-3 w-3" />Cancelar</> : <><Edit2 className="h-3 w-3" />Editar</>}
+            </Button>
+          </div>
           {(faccao.territorio || faccao.descricao) && (
-            <div className="text-xs text-muted-foreground space-y-0.5 pt-1">
-              {faccao.territorio && <p className="flex items-center gap-1"><MapPin className="h-3 w-3" />{faccao.territorio}</p>}
-              {faccao.descricao && <p>{faccao.descricao}</p>}
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-3 pt-1 pl-8">
+              {faccao.territorio && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{faccao.territorio}</span>}
+              {faccao.descricao && <span>{faccao.descricao}</span>}
             </div>
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-5 pr-1">
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { icon: Users, label: 'Membros', count: membros.length },
-              { icon: Car, label: 'Veículos', count: veiculos.length },
-              { icon: Package, label: 'Produtos', count: faccaoPrecos.length },
-            ].map(({ icon: Icon, label, count }) => (
-              <div key={label} className="rounded-lg border border-border bg-white/[0.02] p-3 text-center">
-                <p className="text-2xl font-bold tabular-nums">{count}</p>
-                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-0.5"><Icon className="h-3 w-3" />{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Editar facção */}
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Informações</p>
-            <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={editando ? () => setEditando(false) : abrirEdicao}>
-              {editando ? <><X className="h-3 w-3" />Cancelar</> : <><Edit2 className="h-3 w-3" />Editar</>}
-            </Button>
-          </div>
-
+        <div className="flex-1 overflow-y-auto space-y-6 py-4">
+          {/* Form de edição inline */}
           {editando && (
             <div className="rounded-lg border border-border bg-white/[0.02] p-4 space-y-3">
-              <div className="grid grid-cols-[1fr_100px] gap-3">
+              <div className="grid grid-cols-[1fr_120px] gap-3">
                 <div className="space-y-1"><Label className="text-xs">Nome *</Label><Input value={geralForm.nome} onChange={e => setGeralForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" /></div>
                 <div className="space-y-1"><Label className="text-xs">Sigla</Label><Input value={geralForm.sigla} onChange={e => setGeralForm(f => ({ ...f, sigla: e.target.value }))} placeholder="Ex: CV" className="h-8 text-sm" maxLength={10} /></div>
               </div>
@@ -182,37 +186,45 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Status</span>
                   <Switch checked={geralForm.status === 'ativo'} onCheckedChange={v => setGeralForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
                   <span className="text-xs text-muted-foreground">{geralForm.status === 'ativo' ? 'Ativa' : 'Inativa'}</span>
                 </div>
                 <Button size="sm" className="h-7 text-xs" onClick={handleSalvarGeral} disabled={geralSaving}>
-                  {geralSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+                  {geralSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar alterações'}
                 </Button>
               </div>
             </div>
           )}
 
           {/* Membros */}
-          <section>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Membros</p>
-            {membros.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum membro nesta facção</p>
+          <section className="space-y-2">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Users className="h-4 w-4 text-muted-foreground" />Membros</p>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input placeholder="Buscar por nome, vulgo ou telefone..." value={buscaMembro} onChange={e => setBuscaMembro(e.target.value)} className="pl-7 h-7 text-xs" />
+              </div>
+            </div>
+            {membrosFiltrados.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
+                {buscaMembro ? 'Nenhum resultado' : 'Nenhum membro nesta facção'}
+              </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                {membros.map((m, idx) => (
-                  <div key={m.id} className={cn('flex items-center justify-between px-3 py-2', idx < membros.length - 1 && 'border-b border-border/50')}>
+                <div className="grid grid-cols-[1fr_110px_130px_70px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Nome / Vulgo</span><span>Telefone</span><span>Observações</span><span>Status</span>
+                </div>
+                {membrosFiltrados.map((m, idx) => (
+                  <div key={m.id} className={cn('grid grid-cols-[1fr_110px_130px_70px] gap-3 items-center px-4 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <div>
                       <span className="text-sm font-medium">{m.nome}</span>
                       {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
-                      {m.observacoes && <span className="ml-2 text-xs text-muted-foreground/60">· {m.observacoes}</span>}
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {m.telefone && <span className="text-xs font-mono text-muted-foreground">{m.telefone}</span>}
-                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
-                        {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </div>
+                    <span className="text-xs font-mono text-muted-foreground">{m.telefone ?? '—'}</span>
+                    <span className="text-xs text-muted-foreground truncate">{m.observacoes ?? '—'}</span>
+                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded w-fit', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
+                      {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -220,20 +232,29 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           </section>
 
           {/* Veículos */}
-          <section>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5"><Car className="h-3.5 w-3.5" />Veículos</p>
-            {veiculos.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum veículo desta facção</p>
+          <section className="space-y-2">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Car className="h-4 w-4 text-muted-foreground" />Veículos</p>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input placeholder="Buscar por placa ou modelo..." value={buscaVeiculo} onChange={e => setBuscaVeiculo(e.target.value)} className="pl-7 h-7 text-xs" />
+              </div>
+            </div>
+            {veiculosFiltrados.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
+                {buscaVeiculo ? 'Nenhum resultado' : 'Nenhum veículo desta facção'}
+              </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                {veiculos.map((v, idx) => (
-                  <div key={v.id} className={cn('flex items-center justify-between px-3 py-2', idx < veiculos.length - 1 && 'border-b border-border/50')}>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm font-semibold">{v.placa}</span>
-                      {v.modelo && <span className="text-sm text-muted-foreground">{v.modelo}</span>}
-                      {v.cor && <span className="text-xs text-muted-foreground">· {v.cor}</span>}
-                    </div>
-                    {v.observacoes && <span className="text-xs text-muted-foreground truncate max-w-[180px]">{v.observacoes}</span>}
+                <div className="grid grid-cols-[110px_1fr_90px_1fr] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Placa</span><span>Modelo</span><span>Cor</span><span>Observações</span>
+                </div>
+                {veiculosFiltrados.map((v, idx) => (
+                  <div key={v.id} className={cn('grid grid-cols-[110px_1fr_90px_1fr] gap-3 items-center px-4 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
+                    <span className="font-mono text-sm font-semibold">{v.placa}</span>
+                    <span className="text-sm text-muted-foreground">{v.modelo ?? '—'}</span>
+                    <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
+                    <span className="text-xs text-muted-foreground truncate">{v.observacoes ?? '—'}</span>
                   </div>
                 ))}
               </div>
@@ -241,28 +262,34 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           </section>
 
           {/* Produtos */}
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Produtos</p>
-              <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0}>
+          <section className="space-y-2">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produtos</p>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input placeholder="Buscar produto..." value={buscaProduto} onChange={e => setBuscaProduto(e.target.value)} className="pl-7 h-7 text-xs" />
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 ml-auto shrink-0" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0}>
                 <Plus className="h-3 w-3" />Adicionar
               </Button>
             </div>
-            {faccaoPrecos.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">Nenhum produto cadastrado</p>
+            {precosFiltrados.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
+                {buscaProduto ? 'Nenhum resultado' : 'Nenhum produto cadastrado'}
+              </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_90px_90px_70px_40px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                <div className="grid grid-cols-[1fr_100px_100px_80px_44px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
                   <span>Produto</span><span className="text-right">Sujo</span><span className="text-right">Limpo</span><span>Tipo</span><span />
                 </div>
-                {faccaoPrecos.map((preco, idx) => {
+                {precosFiltrados.map((preco, idx) => {
                   const produto = todosProdutos.find(p => p.id === preco.item_id)
                   return (
-                    <div key={preco.item_id} className={cn('grid grid-cols-[1fr_90px_90px_70px_40px] gap-2 items-center px-3 py-2', idx < faccaoPrecos.length - 1 && 'border-b border-border/50')}>
-                      <span className="text-sm">{produto?.nome ?? '—'}</span>
-                      <span className="text-xs text-right tabular-nums">{fmt(preco.preco_sujo)}</span>
-                      <span className="text-xs text-right tabular-nums">{fmt(preco.preco_limpo)}</span>
-                      <span className="text-[11px] text-muted-foreground">
+                    <div key={preco.item_id} className={cn('grid grid-cols-[1fr_100px_100px_80px_44px] gap-3 items-center px-4 py-2.5', idx < precosFiltrados.length - 1 && 'border-b border-border/40')}>
+                      <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
+                      <span className="text-sm text-right tabular-nums">{fmt(preco.preco_sujo)}</span>
+                      <span className="text-sm text-right tabular-nums">{fmt(preco.preco_limpo)}</span>
+                      <span className="text-xs text-muted-foreground">
                         {preco.tipo === 'percentual' ? `${preco.percentual != null && preco.percentual > 0 ? '-' : '+'}${Math.abs(preco.percentual ?? 0)}%` : 'fixo'}
                       </span>
                       <div className="flex gap-0.5">

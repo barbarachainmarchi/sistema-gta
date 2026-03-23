@@ -26,7 +26,7 @@ const FACTION_COLORS = [
 ]
 
 const emptyFaccaoForm: { nome: string; sigla: string; descricao: string; territorio: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', sigla: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' }
-const emptyMembroForm: { nome: string; vulgo: string; telefone: string; faccao_id: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', faccao_id: '', status: 'ativo', observacoes: '' }
+const emptyMembroForm: { nome: string; vulgo: string; telefone: string; faccao_id: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', faccao_id: 'sem', status: 'ativo', observacoes: '' }
 const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
@@ -143,12 +143,12 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [filtrFaccaoId, setFiltrFaccaoId] = useState('todas')
 
   function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroEditId(null); setMembroModal(true) }
-  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', faccao_id: m.faccao_id ?? '', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
+  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', faccao_id: m.faccao_id ?? 'sem', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
 
   async function handleSalvarMembro() {
     if (!membroForm.nome) { toast.error('Nome obrigatório'); return }
     setMembroSaving(true)
-    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, faccao_id: membroForm.faccao_id || null, status: membroForm.status, observacoes: membroForm.observacoes || null }
+    const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, status: membroForm.status, observacoes: membroForm.observacoes || null }
     if (membroEditId) {
       const { data, error } = await sb().from('membros').update(row).eq('id', membroEditId).select('*, faccoes(id, nome, cor_tag)').single()
       if (error) { toast.error('Erro ao salvar'); setMembroSaving(false); return }
@@ -596,7 +596,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <Select value={membroForm.faccao_id} onValueChange={v => setMembroForm(f => ({ ...f, faccao_id: v }))}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem facção" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sem facção</SelectItem>
+                    <SelectItem value="sem">Sem facção</SelectItem>
                     {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}
                   </SelectContent>
                 </Select>
