@@ -13,7 +13,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(grep -rn export.*revalidateTag C:/Users/barbaramarchi/projetos/sistema-gta/node_modules/next/dist/types.d.ts)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
+      "Bash(xargs wc:*)"
     ]
   }
 }

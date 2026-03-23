@@ -9,7 +9,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy } from 'lucide-react'
+import { gerarImagemFaccao } from '@/lib/gerarImagem'
+import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 
 const FACTION_COLORS = [
@@ -69,6 +71,34 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     onUpdateFaccao(data as Faccao)
     setEditando(false)
     toast.success('Facção atualizada')
+  }
+
+  // ── Compartilhar imagem ────────────────────────────────────────────────────
+  const [compartilhando, setCompartilhando] = useState(false)
+  const [linkImagem, setLinkImagem] = useState<string | null>(null)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+
+  async function handleCompartilhar() {
+    setCompartilhando(true)
+    try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada — veja Admin > Integrações'); setCompartilhando(false); return }
+      const base64 = gerarImagemFaccao({ nome: faccao.nome, sigla: faccao.sigla, cor: faccao.cor_tag, territorio: faccao.territorio, status: faccao.status, membros, veiculos, faccaoPrecos, todosProdutos })
+      const url = await uploadImgbb(base64, key, `faccao-${faccao.nome}`)
+      setLinkImagem(url)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar imagem')
+    } finally {
+      setCompartilhando(false)
+    }
+  }
+
+  function copiarLink() {
+    if (!linkImagem) return
+    navigator.clipboard.writeText(linkImagem)
+    setLinkCopiado(true)
+    setTimeout(() => setLinkCopiado(false), 2000)
+    toast.success('Link copiado!')
   }
 
   // ── Busca por seção ────────────────────────────────────────────────────────
@@ -161,9 +191,22 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             <span className={cn('text-[11px] px-2 py-0.5 rounded-full', faccao.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
               {faccao.status === 'ativo' ? 'Ativa' : 'Inativa'}
             </span>
-            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs gap-1" onClick={editando ? () => setEditando(false) : abrirEdicao}>
-              {editando ? <><X className="h-3 w-3" />Cancelar</> : <><Edit2 className="h-3 w-3" />Editar</>}
-            </Button>
+            <div className="ml-auto flex items-center gap-1.5">
+              {linkImagem && (
+                <div className="flex items-center gap-1 rounded border border-border bg-white/[0.04] px-2 h-7 max-w-[220px]">
+                  <span className="text-[11px] text-muted-foreground truncate flex-1">{linkImagem}</span>
+                  <button onClick={copiarLink} title="Copiar link" className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                    {linkCopiado ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+              )}
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleCompartilhar} disabled={compartilhando} title="Gerar imagem e enviar para imgbb">
+                {compartilhando ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageUp className="h-3 w-3" />}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={editando ? () => setEditando(false) : abrirEdicao}>
+                {editando ? <><X className="h-3 w-3" />Cancelar</> : <><Edit2 className="h-3 w-3" />Editar</>}
+              </Button>
+            </div>
           </div>
           {(faccao.territorio || faccao.descricao || faccao.deep) && (
             <div className="text-xs text-muted-foreground flex flex-wrap gap-3 pt-1 pl-8">

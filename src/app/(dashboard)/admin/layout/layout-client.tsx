@@ -42,6 +42,62 @@ interface Tema {
   categoriaCores?: CategoriaCores
 }
 
+export function ImgbbConfig({ initialKey }: { initialKey: string }) {
+  const [chave, setChave] = useState(initialKey)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSalvar() {
+    setSaving(true)
+    try {
+      const sb = createClient()
+      const { error } = await sb.from('config_sistema').upsert({ chave: 'imgbb_key', valor: chave, updated_at: new Date().toISOString() })
+      if (error) throw error
+      toast.success('Chave salva!')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex-1 p-6 max-w-2xl">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold">Integrações</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Configurações de serviços externos</p>
+        </div>
+
+        <div className="p-4 rounded-lg border border-border space-y-3">
+          <div>
+            <p className="text-sm font-medium">imgbb</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Chave de API para upload de imagens. Obtenha em{' '}
+              <span className="font-mono text-[11px] bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/10">imgbb.com → API</span>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={chave}
+              onChange={e => setChave(e.target.value)}
+              placeholder="Cole sua API key aqui..."
+              className="flex-1 h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring"
+            />
+            <button
+              onClick={handleSalvar}
+              disabled={saving}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function applyTheme(tema: Tema) {
   const hsl = `hsl(${tema.accentH}, ${tema.accentS}%, ${tema.accentL}%)`
   document.documentElement.style.setProperty('--color-primary', hsl)

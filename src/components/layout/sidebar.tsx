@@ -9,7 +9,7 @@ import {
   Search, ShoppingCart, Package, CheckSquare,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity
+  ChevronDown, Zap, Activity, HardDriveDownload
 } from 'lucide-react'
 
 const navGroups = [
@@ -21,6 +21,8 @@ const navGroups = [
       { href: '/admin/usuarios',    label: 'Usuários',     icon: Users,        perm: 'admin_usuarios' },
       { href: '/admin/layout',      label: 'Layout',       icon: Palette,      perm: 'admin_layout' },
       { href: '/admin/logs',        label: 'Logs',         icon: FileText,     perm: 'admin_logs' },
+      { href: '/admin/integracoes',  label: 'Integrações',  icon: Activity,     perm: 'admin_integracoes' },
+      { href: '/admin/backup',      label: 'Backup',       icon: HardDriveDownload, perm: 'admin_backup' },
     ],
   },
   {

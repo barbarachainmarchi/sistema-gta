@@ -9,7 +9,9 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car } from 'lucide-react'
+import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car, ImageUp, Copy, Check } from 'lucide-react'
+import { gerarImagemLoja } from '@/lib/gerarImagem'
+import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import type { Membro, Produto, Veiculo } from './faccao-detalhe'
 
@@ -131,6 +133,34 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     toast.success('Item removido')
   }
 
+  // ── Compartilhar imagem ────────────────────────────────────────────────────
+  const [compartilhando, setCompartilhando] = useState(false)
+  const [linkImagem, setLinkImagem] = useState<string | null>(null)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+
+  async function handleCompartilhar() {
+    setCompartilhando(true)
+    try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada — veja Admin > Integrações'); setCompartilhando(false); return }
+      const base64 = gerarImagemLoja({ nome: loja.nome, localizacao: loja.localizacao, tipo: loja.tipo, status: loja.status, itens, funcionarios })
+      const url = await uploadImgbb(base64, key, `loja-${loja.nome}`)
+      setLinkImagem(url)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar imagem')
+    } finally {
+      setCompartilhando(false)
+    }
+  }
+
+  function copiarLink() {
+    if (!linkImagem) return
+    navigator.clipboard.writeText(linkImagem)
+    setLinkCopiado(true)
+    setTimeout(() => setLinkCopiado(false), 2000)
+    toast.success('Link copiado!')
+  }
+
   // ── Funcionários ───────────────────────────────────────────────────────────
   const [addFunc, setAddFunc] = useState(false)
   const [newFuncId, setNewFuncId] = useState('')
@@ -183,6 +213,17 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
             <span className={cn('text-[11px] px-2 py-0.5 rounded-full font-normal', loja.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
               {loja.status === 'ativo' ? 'Ativa' : 'Inativa'}
             </span>
+            {linkImagem && (
+              <div className="flex items-center gap-1 rounded border border-border bg-white/[0.04] px-2 h-7 max-w-[200px]">
+                <span className="text-[11px] text-muted-foreground truncate flex-1">{linkImagem}</span>
+                <button onClick={copiarLink} title="Copiar link" className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                  {linkCopiado ? <Check className="h-3 w-3 text-green-400" /> : <Copy className="h-3 w-3" />}
+                </button>
+              </div>
+            )}
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleCompartilhar} disabled={compartilhando || loadingData} title="Gerar imagem e enviar para imgbb">
+              {compartilhando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageUp className="h-3.5 w-3.5" />}
+            </Button>
           </DialogTitle>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             {loja.localizacao && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{loja.localizacao}</span>}

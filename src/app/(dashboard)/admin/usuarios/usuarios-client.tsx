@@ -24,6 +24,8 @@ const MODULOS = [
   { key: 'admin_usuarios',    label: 'Usuários',     grupo: 'Admin' },
   { key: 'admin_layout',      label: 'Layout',       grupo: 'Admin' },
   { key: 'admin_logs',        label: 'Logs',         grupo: 'Admin' },
+  { key: 'admin_integracoes', label: 'Integrações',  grupo: 'Admin' },
+  { key: 'admin_backup',      label: 'Backup',       grupo: 'Admin' },
   { key: 'investigacao',      label: 'Investigação', grupo: 'Investigação' },
   { key: 'vendas',            label: 'Vendas',       grupo: 'Vendas' },
   { key: 'encomendas',        label: 'Encomendas',   grupo: 'Vendas' },
@@ -44,10 +46,21 @@ type Usuario = {
   nome: string
   cargo: string | null
   perfil_id: string | null
+  membro_id: string | null
   perfil_nome: string | null
   status: 'ativo' | 'inativo' | 'pendente'
   created_at: string
   ultimo_acesso: string | null
+}
+
+type MembroInvestigacao = {
+  id: string
+  nome: string
+  vulgo: string | null
+  faccao_id: string | null
+  cargo_faccao: string | null
+  status: string
+  faccoes: { nome: string; cor_tag: string } | null
 }
 
 type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean }
@@ -70,6 +83,7 @@ interface Props {
   perfis: Perfil[]
   convites: Convite[]
   currentUserId: string
+  membros: MembroInvestigacao[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,7 +125,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -120,6 +134,18 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [perfis, setPerfis] = useState(initialPerfis)
   const [convites, setConvites] = useState(initialConvites)
   const [busca, setBusca] = useState('')
+
+  // ── Vínculo membro <-> usuário ─────────────────────────────────────────────
+  const [vinculandoUsuarioId, setVinculandoUsuarioId] = useState<string | null>(null)
+
+  async function handleVincularMembro(usuarioId: string, membroId: string | null) {
+    setVinculandoUsuarioId(usuarioId)
+    const { error } = await sb().from('usuarios').update({ membro_id: membroId }).eq('id', usuarioId)
+    setVinculandoUsuarioId(null)
+    if (error) { toast.error('Erro ao vincular'); return }
+    setUsuarios(prev => prev.map(u => u.id === usuarioId ? { ...u, membro_id: membroId } : u))
+    toast.success(membroId ? 'Membro vinculado!' : 'Vínculo removido')
+  }
 
   // ── Gerar link de convite ──────────────────────────────────────────────────
   const [linkOpen, setLinkOpen] = useState(false)
@@ -360,6 +386,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               )}
             </TabsTrigger>
             <TabsTrigger value="perfis">Perfis de Acesso</TabsTrigger>
+            <TabsTrigger value="membros">Membros</TabsTrigger>
           </TabsList>
 
           {/* ── Aba Usuários ─────────────────────────────────────────────── */}
@@ -544,6 +571,79 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmRemoverPerfil(p)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Aba Membros ──────────────────────────────────────────────── */}
+          <TabsContent value="membros" className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Vincule cada usuário do sistema ao seu membro na investigação. Útil para identificar quem não acessa o sistema.
+            </p>
+
+            {membros.length === 0 ? (
+              <div className="rounded-lg border border-border py-10 text-center text-muted-foreground text-sm">
+                Nenhum membro ativo cadastrado na investigação
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_120px_1fr_100px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Membro (investigação)</span>
+                  <span>Facção</span>
+                  <span>Usuário do sistema</span>
+                  <span />
+                </div>
+                {membros.map((m, idx) => {
+                  const usuarioVinculado = usuarios.find(u => u.membro_id === m.id)
+                  const usuariosAtivos = usuarios.filter(u => u.status !== 'pendente')
+                  const isVinculando = vinculandoUsuarioId === (usuarioVinculado?.id ?? `new-${m.id}`)
+                  return (
+                    <div key={m.id} className={cn('grid grid-cols-[1fr_120px_1fr_100px] gap-3 items-center px-4 py-3', idx < membros.length - 1 && 'border-b border-border/40')}>
+                      <div>
+                        <span className="text-sm font-medium">{m.nome}</span>
+                        {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                        {m.cargo_faccao && <p className="text-[11px] text-muted-foreground">{m.cargo_faccao}</p>}
+                      </div>
+                      <div>
+                        {m.faccoes ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: `${m.faccoes.cor_tag}20`, color: m.faccoes.cor_tag }}>
+                            {m.faccoes.nome}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                      <div>
+                        {usuarioVinculado ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />
+                            <span className="text-sm">{usuarioVinculado.nome}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">Sem vínculo</span>
+                        )}
+                      </div>
+                      <div className="flex justify-end">
+                        {isVinculando ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        ) : usuarioVinculado ? (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive gap-1" onClick={() => handleVincularMembro(usuarioVinculado.id, null)}>
+                            <X className="h-3 w-3" />Desvincular
+                          </Button>
+                        ) : (
+                          <Select onValueChange={uid => handleVincularMembro(uid, m.id)}>
+                            <SelectTrigger className="h-7 text-xs w-28">
+                              <SelectValue placeholder="Vincular..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {usuariosAtivos.filter(u => !u.membro_id).map(u => (
+                                <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                     </div>
                   )

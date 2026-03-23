@@ -30,17 +30,21 @@ export default async function UsuariosPage() {
     { data: perfis },
     { data: permissoes },
     { data: convitesData },
+    { data: membrosData },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, perfis_acesso(id, nome)'),
+    supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
+    supabase.from('membros').select('id, nome, vulgo, faccao_id, cargo_faccao, status, faccoes(nome, cor_tag)').eq('status', 'ativo').order('nome'),
   ])
 
   const authUsers = authResult.data?.users ?? []
 
   const usuariosMap = new Map((usuariosData ?? []).map(u => [u.id, u]))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const membros = (membrosData ?? []) as any[]
 
   const usuarios = (authUsers ?? []).map(au => {
     const perfil = usuariosMap.get(au.id)
@@ -50,6 +54,7 @@ export default async function UsuariosPage() {
       nome: perfil?.nome ?? au.email?.split('@')[0] ?? '—',
       cargo: perfil?.cargo ?? null,
       perfil_id: perfil?.perfil_id ?? null,
+      membro_id: perfil?.membro_id ?? null,
       perfil_nome: (Array.isArray(perfil?.perfis_acesso) ? perfil.perfis_acesso[0]?.nome : null) ?? null,
       status: (perfil?.status ?? 'ativo') as 'ativo' | 'inativo' | 'pendente',
       created_at: au.created_at,
@@ -76,6 +81,7 @@ export default async function UsuariosPage() {
       perfis={perfisCompletos}
       convites={convites}
       currentUserId={user.id}
+      membros={membros}
     />
   )
 }
