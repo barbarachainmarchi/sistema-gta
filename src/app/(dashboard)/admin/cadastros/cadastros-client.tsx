@@ -488,30 +488,37 @@ function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClo
       const id = savedItem.id
 
       if (form.tem_craft) {
-        await sb().from('item_receita').delete().eq('item_id', id)
+        const { error: e1 } = await sb().from('item_receita').delete().eq('item_id', id)
+        if (e1) throw new Error('Erro ao limpar receita: ' + e1.message)
         if (form.receita.length > 0) {
-          await sb().from('item_receita').insert(form.receita.map(r => ({ item_id: id, ingrediente_id: r.ingrediente_id, quantidade: r.quantidade })))
+          const { error: e2 } = await sb().from('item_receita').insert(form.receita.map(r => ({ item_id: id, ingrediente_id: r.ingrediente_id, quantidade: r.quantidade })))
+          if (e2) throw new Error('Erro ao salvar receita: ' + e2.message)
         }
       }
 
       if (form.eh_meu_produto) {
         const novos = form.precos.filter(p => !p.id)
         if (novos.length > 0) {
-          await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
+          const { error: e3 } = await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
+          if (e3) throw new Error('Erro ao salvar preços: ' + e3.message)
         }
       }
 
       if (form.eh_compravel) {
-        await sb().from('loja_item_precos').delete().eq('item_id', id)
+        const { error: e4 } = await sb().from('loja_item_precos').delete().eq('item_id', id)
+        if (e4) throw new Error('Erro ao limpar preços de loja: ' + e4.message)
         if (form.loja_precos.length > 0) {
-          await sb().from('loja_item_precos').insert(form.loja_precos.map(l => ({ item_id: id, loja_id: l.loja_id, preco: l.preco })))
+          const { error: e5 } = await sb().from('loja_item_precos').insert(form.loja_precos.map(l => ({ item_id: id, loja_id: l.loja_id, preco: l.preco })))
+          if (e5) throw new Error('Erro ao salvar preços de loja: ' + e5.message)
         }
       }
 
       if (form.tem_reciclagem) {
-        await sb().from('item_reciclagem').delete().eq('item_id', id)
+        const { error: e6 } = await sb().from('item_reciclagem').delete().eq('item_id', id)
+        if (e6) throw new Error('Erro ao limpar reciclagem: ' + e6.message)
         if (form.reciclagem.length > 0) {
-          await sb().from('item_reciclagem').insert(form.reciclagem.map(r => ({ item_id: id, resultado_id: r.resultado_id, quantidade: r.quantidade })))
+          const { error: e7 } = await sb().from('item_reciclagem').insert(form.reciclagem.map(r => ({ item_id: id, resultado_id: r.resultado_id, quantidade: r.quantidade })))
+          if (e7) throw new Error('Erro ao salvar reciclagem: ' + e7.message)
         }
       }
 
