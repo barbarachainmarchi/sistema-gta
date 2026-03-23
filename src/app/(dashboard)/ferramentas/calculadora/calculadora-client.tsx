@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, memo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -50,6 +50,36 @@ function fmtKg(kg: number) {
 
 type Aba = 'favoritos' | 'meus' | 'todos'
 
+// ── Item memoizado (evita re-render de toda a lista ao mudar batch) ────────
+
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onToggleFav }: {
+  item: Item
+  isInBatch: boolean
+  isFavorito: boolean
+  onAdd: (id: string) => void
+  onToggleFav: (id: string, e: React.MouseEvent) => void
+}) {
+  return (
+    <button onClick={() => onAdd(item.id)}
+      className={cn('w-full flex items-center gap-2 px-3 py-2.5 border-b border-border/30 hover:bg-white/[0.03] text-left transition-colors',
+        isInBatch && 'bg-primary/[0.06] border-l-2 border-l-primary'
+      )}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium leading-tight truncate">{item.nome}</div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          {item.categorias_item?.nome && <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>}
+          {item.eh_meu_produto && <span className="text-[10px] text-emerald-500/70">meu</span>}
+        </div>
+      </div>
+      <button onMouseDown={e => e.preventDefault()} onClick={e => onToggleFav(item.id, e)}
+        className={cn('shrink-0 p-0.5 rounded transition-colors', isFavorito ? 'text-yellow-400' : 'text-muted-foreground/40 hover:text-yellow-400')}>
+        <Star className="h-3.5 w-3.5" fill={isFavorito ? 'currentColor' : 'none'} />
+      </button>
+    </button>
+  )
+})
+
 // ── Componente ───────────────────────────────────────────────────────────────
 
 export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, favoritosIniciais }: Props) {
@@ -95,7 +125,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
 
   // ── Favoritar ──────────────────────────────────────────────────────────────
 
-  async function toggleFavorito(itemId: string, e: React.MouseEvent) {
+  const toggleFavorito = useCallback(async (itemId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     const tinha = favoritos.has(itemId)
     setFavoritos(prev => { const n = new Set(prev); tinha ? n.delete(itemId) : n.add(itemId); return n })
@@ -106,25 +136,26 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
       const { error } = await sb().from('usuario_favoritos').insert({ usuario_id: userId, item_id: itemId })
       if (error) { toast.error('Erro ao favoritar'); setFavoritos(prev => { const n = new Set(prev); n.delete(itemId); return n }) }
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, favoritos])
 
   // ── Batch ──────────────────────────────────────────────────────────────────
 
-  function addToBatch(itemId: string) {
+  const addToBatch = useCallback((itemId: string) => {
     setBatch(prev => {
       if (prev.some(b => b.item_id === itemId)) return prev
       return [...prev, { item_id: itemId, quantidade: 1 }]
     })
-  }
+  }, [])
 
-  function removeFromBatch(itemId: string) {
+  const removeFromBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.filter(b => b.item_id !== itemId))
-  }
+  }, [])
 
-  function setQtd(itemId: string, qtd: number) {
-    if (qtd <= 0) { removeFromBatch(itemId); return }
+  const setQtd = useCallback((itemId: string, qtd: number) => {
+    if (qtd <= 0) { setBatch(prev => prev.filter(b => b.item_id !== itemId)); return }
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, quantidade: qtd } : b))
-  }
+  }, [])
 
   // ── Ingredientes agregados ─────────────────────────────────────────────────
 
@@ -206,23 +237,14 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
               {aba === 'favoritos' ? 'Nenhum favorito com craft' : 'Nenhum item com craft encontrado'}
             </p>
           ) : itensFiltrados.map(item => (
-            <button key={item.id} onClick={() => addToBatch(item.id)}
-              className={cn('w-full flex items-center gap-2 px-3 py-2.5 border-b border-border/30 hover:bg-white/[0.03] text-left transition-colors',
-                batchIds.has(item.id) && 'bg-primary/[0.06] border-l-2 border-l-primary'
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium leading-tight truncate">{item.nome}</div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  {item.categorias_item?.nome && <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>}
-                  {item.eh_meu_produto && <span className="text-[10px] text-emerald-500/70">meu</span>}
-                </div>
-              </div>
-              <button onMouseDown={e => e.preventDefault()} onClick={e => toggleFavorito(item.id, e)}
-                className={cn('shrink-0 p-0.5 rounded transition-colors', favoritos.has(item.id) ? 'text-yellow-400' : 'text-muted-foreground/40 hover:text-yellow-400')}>
-                <Star className="h-3.5 w-3.5" fill={favoritos.has(item.id) ? 'currentColor' : 'none'} />
-              </button>
-            </button>
+            <ItemBtn
+              key={item.id}
+              item={item}
+              isInBatch={batchIds.has(item.id)}
+              isFavorito={favoritos.has(item.id)}
+              onAdd={addToBatch}
+              onToggleFav={toggleFavorito}
+            />
           ))}
         </div>
       </aside>

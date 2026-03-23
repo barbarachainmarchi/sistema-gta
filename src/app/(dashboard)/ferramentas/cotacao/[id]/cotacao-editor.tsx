@@ -368,14 +368,14 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
               <Eye className="h-3 w-3" />Totais
             </Button>
             {cotacao.status === 'rascunho' && (
-              <>
-                <Button size="sm" className="h-7 text-xs" onClick={handleFinalizar}>
-                  <Check className="h-3 w-3 mr-1" />Finalizar
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmDeleteOpen(true)}>
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </>
+              <Button size="sm" className="h-7 text-xs" onClick={handleFinalizar}>
+                <Check className="h-3 w-3 mr-1" />Finalizar
+              </Button>
+            )}
+            {podeEditar && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmDeleteOpen(true)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
             )}
           </div>
         </div>

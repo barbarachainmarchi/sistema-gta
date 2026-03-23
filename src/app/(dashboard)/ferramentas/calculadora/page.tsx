@@ -10,24 +10,40 @@ export default async function CalculadoraPage() {
 
   const [
     { data: itemsData },
+    { data: receitasData },
     { data: precosData },
     { data: lojasData },
     { data: lojaPrecosData },
     { data: favoritosData },
   ] = await Promise.all([
-    supabase.from('items').select('*, categorias_item(nome), item_receita!item_receita_item_id_fkey(ingrediente_id, quantidade)').eq('status', 'ativo').order('nome'),
+    supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
+    supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
   ])
 
+  // Mesclar receitas nos items
+  const receitasPorItem: Record<string, { ingrediente_id: string; quantidade: number }[]> = {}
+  for (const r of receitasData ?? []) {
+    if (!receitasPorItem[r.item_id]) receitasPorItem[r.item_id] = []
+    receitasPorItem[r.item_id].push({ ingrediente_id: r.ingrediente_id, quantidade: r.quantidade })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = (itemsData ?? []).map((item: any) => ({
+    ...item,
+    categorias_item: Array.isArray(item.categorias_item) ? (item.categorias_item[0] ?? null) : item.categorias_item,
+    item_receita: receitasPorItem[item.id] ?? [],
+  }))
+
   return (
     <>
       <Header title="Calculadora" />
       <CalculadoraClient
         userId={user.id}
-        items={itemsData ?? []}
+        items={items}
         precos={precosData ?? []}
         lojas={lojasData ?? []}
         lojaPrecos={lojaPrecosData ?? []}
