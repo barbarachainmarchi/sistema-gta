@@ -12,9 +12,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type PrecoPadrao, type MeuProduto } from './faccao-detalhe'
+import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto } from './faccao-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
 
@@ -24,7 +25,7 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-const emptyFaccaoForm: { nome: string; descricao: string; territorio: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' }
+const emptyFaccaoForm: { nome: string; sigla: string; descricao: string; territorio: string; cor_tag: string; status: 'ativo' | 'inativo' } = { nome: '', sigla: '', descricao: '', territorio: '', cor_tag: '#6366f1', status: 'ativo' }
 const emptyMembroForm: { nome: string; vulgo: string; telefone: string; faccao_id: string; status: 'ativo' | 'inativo'; observacoes: string } = { nome: '', vulgo: '', telefone: '', faccao_id: '', status: 'ativo', observacoes: '' }
 const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
@@ -34,8 +35,7 @@ interface Props {
   initialMembros: Membro[]
   initialVeiculos: Veiculo[]
   initialLojas: Loja[]
-  meusProdutos: MeuProduto[]
-  precoPadrao: PrecoPadrao[]
+  todosProdutos: Produto[]
   initialFaccaoPrecos: FaccaoPreco[]
 }
 
@@ -49,7 +49,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, meusProdutos, precoPadrao, initialFaccaoPrecos }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -76,17 +76,17 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [buscaFaccao, setBuscaFaccao] = useState('')
 
   function openNovaFaccao() { setFaccaoForm(emptyFaccaoForm); setFaccaoEditId(null); setFaccaoModal(true) }
-  function openEditFaccao(f: Faccao) { setFaccaoForm({ nome: f.nome, descricao: f.descricao ?? '', territorio: f.territorio ?? '', cor_tag: f.cor_tag, status: f.status }); setFaccaoEditId(f.id); setFaccaoModal(true) }
+  function openEditFaccao(f: Faccao) { setFaccaoForm({ nome: f.nome, sigla: f.sigla ?? '', descricao: f.descricao ?? '', territorio: f.territorio ?? '', cor_tag: f.cor_tag, status: f.status }); setFaccaoEditId(f.id); setFaccaoModal(true) }
 
   async function handleSalvarFaccao() {
     if (!faccaoForm.nome) { toast.error('Nome obrigatório'); return }
     setFaccaoSaving(true)
     if (faccaoEditId) {
-      const { data, error } = await sb().from('faccoes').update({ ...faccaoForm, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).eq('id', faccaoEditId).select().single()
+      const { data, error } = await sb().from('faccoes').update({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).eq('id', faccaoEditId).select().single()
       if (error) { toast.error('Erro ao salvar'); setFaccaoSaving(false); return }
       setFaccoes(prev => prev.map(f => f.id === faccaoEditId ? data as Faccao : f))
     } else {
-      const { data, error } = await sb().from('faccoes').insert({ ...faccaoForm, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).select().single()
+      const { data, error } = await sb().from('faccoes').insert({ ...faccaoForm, sigla: faccaoForm.sigla.trim() || null, descricao: faccaoForm.descricao || null, territorio: faccaoForm.territorio || null }).select().single()
       if (error) { toast.error('Erro ao salvar'); setFaccaoSaving(false); return }
       setFaccoes(prev => [...prev, data as Faccao].sort((a, b) => a.nome.localeCompare(b.nome)))
     }
@@ -114,7 +114,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<Membro | null>(null)
   const [deletingMembro, setDeletingMembro] = useState(false)
   const [buscaMembro, setBuscaMembro] = useState('')
-  const [filtrFaccaoId, setFiltrFaccaoId] = useState('')
+  const [filtrFaccaoId, setFiltrFaccaoId] = useState('todas')
 
   function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroEditId(null); setMembroModal(true) }
   function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', faccao_id: m.faccao_id ?? '', status: m.status, observacoes: m.observacoes ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
@@ -147,7 +147,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   const membrosFiltrados = membros.filter(m => {
     const matchBusca = !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) || m.telefone?.includes(buscaMembro) || m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase())
-    const matchFaccao = !filtrFaccaoId || (filtrFaccaoId === 'sem' ? !m.faccao_id : m.faccao_id === filtrFaccaoId)
+    const matchFaccao = filtrFaccaoId === 'todas' || (filtrFaccaoId === 'sem' ? !m.faccao_id : m.faccao_id === filtrFaccaoId)
     return matchBusca && matchFaccao
   })
 
@@ -276,7 +276,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="h-3 w-3 rounded-full shrink-0 mt-0.5" style={{ background: f.cor_tag }} />
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold truncate">{f.nome}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-semibold truncate">{f.nome}</p>
+                              {f.sigla && <span className="text-[10px] font-mono text-muted-foreground bg-white/[0.06] px-1 py-0.5 rounded shrink-0">{f.sigla}</span>}
+                            </div>
                             {f.territorio && <p className="text-xs text-muted-foreground truncate">{f.territorio}</p>}
                           </div>
                         </div>
@@ -288,6 +291,9 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                       </div>
                       <div className="flex items-center gap-1.5 pt-1 border-t border-border/60">
                         <Button variant="ghost" size="sm" className="h-7 text-xs flex-1" onClick={() => abrirDetalhe(f)}>Ver detalhes</Button>
+                        <Link href={`/investigacao/faccao/${f.id}`} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors" title="Relatório completo">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
                         <button onClick={() => openEditFaccao(f)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
@@ -311,10 +317,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               </div>
               <Select value={filtrFaccaoId} onValueChange={setFiltrFaccaoId}>
                 <SelectTrigger className="h-8 text-sm w-44">
-                  <SelectValue placeholder="Todas as facções" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas as facções</SelectItem>
+                  <SelectItem value="todas">Todas as facções</SelectItem>
                   <SelectItem value="sem">Sem facção</SelectItem>
                   {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}
                 </SelectContent>
@@ -409,18 +415,21 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             </div>
 
             <div className="rounded-lg border border-border overflow-hidden">
-              <div className="grid grid-cols-[1fr_1fr_120px_80px_64px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
+              <div className="grid grid-cols-[1fr_1fr_120px_80px_96px] gap-2 px-4 py-2 bg-white/[0.02] border-b border-border text-[11px] text-muted-foreground font-medium">
                 <span>Nome</span><span>Localização</span><span>Tipo</span><span>Status</span><span />
               </div>
               {lojasFiltradas.length === 0 ? (
                 <div className="text-center py-10 text-muted-foreground text-sm">Nenhuma loja encontrada</div>
               ) : lojasFiltradas.map(l => (
-                <div key={l.id} className="grid grid-cols-[1fr_1fr_120px_80px_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
+                <div key={l.id} className="grid grid-cols-[1fr_1fr_120px_80px_96px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
                   <span className="text-sm font-medium">{l.nome}</span>
                   <span className="text-sm text-muted-foreground">{l.localizacao ?? '—'}</span>
                   <span className="text-sm text-muted-foreground">{l.tipo ?? '—'}</span>
                   <StatusBadge status={l.status} />
                   <div className="flex gap-1">
+                    <Link href={`/investigacao/loja/${l.id}`} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors" title="Relatório completo">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
                     <button onClick={() => openEditLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
                     <button onClick={() => setConfirmDeleteLoja(l)} className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
@@ -436,19 +445,25 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>{faccaoEditId ? 'Editar Facção' : 'Nova Facção'}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-[1fr_100px] gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome *</Label>
                 <Input value={faccaoForm.nome} onChange={e => setFaccaoForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Sigla / Tag</Label>
+                <Input value={faccaoForm.sigla} onChange={e => setFaccaoForm(f => ({ ...f, sigla: e.target.value }))} placeholder="CV, PCC..." className="h-8 text-sm" maxLength={10} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
                 <Label className="text-xs">Território</Label>
                 <Input value={faccaoForm.territorio} onChange={e => setFaccaoForm(f => ({ ...f, territorio: e.target.value }))} placeholder="Ex: Zona Sul..." className="h-8 text-sm" />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Descrição</Label>
-              <Input value={faccaoForm.descricao} onChange={e => setFaccaoForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Descrição</Label>
+                <Input value={faccaoForm.descricao} onChange={e => setFaccaoForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Cor</Label>
@@ -656,8 +671,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           faccao={detalhe}
           membros={membros.filter(m => m.faccao_id === detalhe.id)}
           veiculos={veiculos.filter(v => v.proprietario_tipo === 'faccao' && v.proprietario_id === detalhe.id)}
-          meusProdutos={meusProdutos}
-          precoPadrao={precoPadrao}
+          todosProdutos={todosProdutos}
           faccaoPrecos={faccaoPrecos.filter(p => p.faccao_id === detalhe.id)}
           open={!!detalhe}
           onClose={() => setDetalhe(null)}

@@ -19,30 +19,22 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-export type Faccao     = { id: string; nome: string; descricao: string | null; territorio: string | null; cor_tag: string; status: 'ativo' | 'inativo'; created_at: string; updated_at: string }
+export type Faccao     = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; status: 'ativo' | 'inativo'; created_at: string; updated_at: string }
 export type Membro     = { id: string; nome: string; vulgo: string | null; telefone: string | null; faccao_id: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo    = { id: string; placa: string; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
 export type FaccaoPreco = { id: string; faccao_id: string; item_id: string; tipo: 'percentual' | 'fixo'; percentual: number | null; preco_sujo: number | null; preco_limpo: number | null; observacoes: string | null }
-export type PrecoPadrao = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
-export type MeuProduto  = { id: string; nome: string }
+export type Produto     = { id: string; nome: string }
 
 function fmt(v: number | null) {
   if (v == null) return '—'
   return `R$ ${v.toLocaleString('pt-BR')}`
 }
 
-function calcPreco(padrao: number | null, tipo: string, percentual: number | null, fixo: number | null): number | null {
-  if (tipo === 'percentual' && padrao != null && percentual != null) return padrao * (1 - percentual / 100)
-  if (tipo === 'fixo' && fixo != null) return fixo
-  return null
-}
-
 interface Props {
   faccao: Faccao
   membros: Membro[]
   veiculos: Veiculo[]
-  meusProdutos: MeuProduto[]
-  precoPadrao: PrecoPadrao[]
+  todosProdutos: Produto[]
   faccaoPrecos: FaccaoPreco[]
   open: boolean
   onClose: () => void
@@ -50,19 +42,39 @@ interface Props {
   onUpdateFaccaoPrecos: (precos: FaccaoPreco[]) => void
 }
 
-export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPadrao, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos }: Props) {
+export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   // ── Aba Geral ──────────────────────────────────────────────────────────────
-  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', cor_tag: faccao.cor_tag, status: faccao.status })
+  const [geralForm, setGeralForm] = useState({
+    nome: faccao.nome,
+    sigla: faccao.sigla ?? '',
+    descricao: faccao.descricao ?? '',
+    territorio: faccao.territorio ?? '',
+    cor_tag: faccao.cor_tag,
+    status: faccao.status,
+  })
   const [geralSaving, setGeralSaving] = useState(false)
-  const geralChanged = geralForm.nome !== faccao.nome || geralForm.descricao !== (faccao.descricao ?? '') || geralForm.territorio !== (faccao.territorio ?? '') || geralForm.cor_tag !== faccao.cor_tag || geralForm.status !== faccao.status
+  const geralChanged =
+    geralForm.nome !== faccao.nome ||
+    geralForm.sigla !== (faccao.sigla ?? '') ||
+    geralForm.descricao !== (faccao.descricao ?? '') ||
+    geralForm.territorio !== (faccao.territorio ?? '') ||
+    geralForm.cor_tag !== faccao.cor_tag ||
+    geralForm.status !== faccao.status
 
   async function handleSalvarGeral() {
     if (!geralForm.nome) { toast.error('Nome obrigatório'); return }
     setGeralSaving(true)
-    const { data, error } = await sb().from('faccoes').update({ nome: geralForm.nome, descricao: geralForm.descricao || null, territorio: geralForm.territorio || null, cor_tag: geralForm.cor_tag, status: geralForm.status }).eq('id', faccao.id).select().single()
+    const { data, error } = await sb().from('faccoes').update({
+      nome: geralForm.nome,
+      sigla: geralForm.sigla.trim() || null,
+      descricao: geralForm.descricao || null,
+      territorio: geralForm.territorio || null,
+      cor_tag: geralForm.cor_tag,
+      status: geralForm.status,
+    }).eq('id', faccao.id).select().single()
     setGeralSaving(false)
     if (error) { toast.error('Erro ao salvar'); return }
     onUpdateFaccao(data as Faccao)
@@ -70,11 +82,15 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
   }
 
   // ── Aba Preços ─────────────────────────────────────────────────────────────
-  const [editPreco, setEditPreco] = useState<MeuProduto | null>(null)
+  const [editPreco, setEditPreco] = useState<Produto | null>(null)
   const [precoForm, setPrecoForm] = useState({ tipo: 'fixo' as 'percentual' | 'fixo', percentual: '', preco_sujo: '', preco_limpo: '' })
   const [precoSaving, setPrecoSaving] = useState(false)
+  const [addingPreco, setAddingPreco] = useState(false)
+  const [newItemId, setNewItemId] = useState('')
 
-  function openEditPreco(produto: MeuProduto) {
+  const produtosDisponiveis = todosProdutos.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id))
+
+  function openEditPreco(produto: Produto) {
     const existing = faccaoPrecos.find(p => p.item_id === produto.id)
     setPrecoForm({
       tipo: existing?.tipo ?? 'fixo',
@@ -85,6 +101,15 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
     setEditPreco(produto)
   }
 
+  function handleAdicionarProduto() {
+    if (!newItemId) return
+    const produto = todosProdutos.find(p => p.id === newItemId)
+    if (!produto) return
+    setAddingPreco(false)
+    setNewItemId('')
+    openEditPreco(produto)
+  }
+
   async function handleSalvarPreco() {
     if (!editPreco) return
     setPrecoSaving(true)
@@ -93,8 +118,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
       item_id: editPreco.id,
       tipo: precoForm.tipo,
       percentual: precoForm.tipo === 'percentual' && precoForm.percentual ? parseFloat(precoForm.percentual) : null,
-      preco_sujo: precoForm.tipo === 'fixo' && precoForm.preco_sujo ? parseFloat(precoForm.preco_sujo) : null,
-      preco_limpo: precoForm.tipo === 'fixo' && precoForm.preco_limpo ? parseFloat(precoForm.preco_limpo) : null,
+      preco_sujo: precoForm.preco_sujo ? parseFloat(precoForm.preco_sujo) : null,
+      preco_limpo: precoForm.preco_limpo ? parseFloat(precoForm.preco_limpo) : null,
     }
     const { data, error } = await sb().from('faccao_item_precos').upsert({ ...row }, { onConflict: 'faccao_id,item_id' }).select().single()
     setPrecoSaving(false)
@@ -108,7 +133,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
   async function handleRemoverPreco(itemId: string) {
     await sb().from('faccao_item_precos').delete().eq('faccao_id', faccao.id).eq('item_id', itemId)
     onUpdateFaccaoPrecos(faccaoPrecos.filter(p => p.item_id !== itemId))
-    toast.success('Preço removido')
+    toast.success('Produto removido')
   }
 
   const membrosCount = membros.length
@@ -121,6 +146,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
           <DialogTitle className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full shrink-0" style={{ background: faccao.cor_tag }} />
             {faccao.nome}
+            {faccao.sigla && <span className="text-xs font-mono text-muted-foreground bg-white/[0.06] px-1.5 py-0.5 rounded">{faccao.sigla}</span>}
           </DialogTitle>
         </DialogHeader>
 
@@ -129,7 +155,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="membros">Membros ({membrosCount})</TabsTrigger>
             <TabsTrigger value="veiculos">Veículos ({veiculosCount})</TabsTrigger>
-            <TabsTrigger value="precos">Preços</TabsTrigger>
+            <TabsTrigger value="precos">Produtos ({faccaoPrecos.length})</TabsTrigger>
           </TabsList>
 
           {/* ── Geral ──────────────────────────────────────────────────────── */}
@@ -140,13 +166,17 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
                 <Input value={geralForm.nome} onChange={e => setGeralForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Sigla / Tag</Label>
+                <Input value={geralForm.sigla} onChange={e => setGeralForm(f => ({ ...f, sigla: e.target.value }))} placeholder="Ex: CV, PCC, ADA..." className="h-8 text-sm" maxLength={10} />
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Território</Label>
                 <Input value={geralForm.territorio} onChange={e => setGeralForm(f => ({ ...f, territorio: e.target.value }))} placeholder="Ex: Zona Sul, Grove St..." className="h-8 text-sm" />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Descrição</Label>
-              <Input value={geralForm.descricao} onChange={e => setGeralForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Descrição</Label>
+                <Input value={geralForm.descricao} onChange={e => setGeralForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" />
+              </div>
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Cor de identificação</Label>
@@ -216,52 +246,47 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
             )}
           </TabsContent>
 
-          {/* ── Preços ──────────────────────────────────────────────────────── */}
-          <TabsContent value="precos" className="overflow-y-auto flex-1 mt-3">
-            {meusProdutos.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">Nenhum produto cadastrado como seu</p>
+          {/* ── Produtos ────────────────────────────────────────────────────── */}
+          <TabsContent value="precos" className="overflow-y-auto flex-1 mt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Produtos que esta facção vende, com preços sujo/limpo.</p>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0}>
+                <Plus className="h-3 w-3" />Adicionar produto
+              </Button>
+            </div>
+
+            {faccaoPrecos.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Nenhum produto cadastrado para esta facção</p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                {/* Header */}
-                <div className="grid grid-cols-[1fr_100px_100px_120px_120px_32px] gap-2 px-3 py-2 bg-white/[0.02] border-b border-border">
+                <div className="grid grid-cols-[1fr_90px_90px_90px_40px] gap-2 px-3 py-2 bg-white/[0.02] border-b border-border">
                   <span className="text-[11px] text-muted-foreground font-medium">Produto</span>
-                  <span className="text-[11px] text-muted-foreground text-right">Padrão S</span>
-                  <span className="text-[11px] text-muted-foreground text-right">Padrão L</span>
-                  <span className="text-[11px] text-muted-foreground text-right">Parceria S</span>
-                  <span className="text-[11px] text-muted-foreground text-right">Parceria L</span>
+                  <span className="text-[11px] text-muted-foreground text-right">Sujo</span>
+                  <span className="text-[11px] text-muted-foreground text-right">Limpo</span>
+                  <span className="text-[11px] text-muted-foreground">Tipo</span>
                   <span />
                 </div>
-                {meusProdutos.map((produto, idx) => {
-                  const padrao = precoPadrao.find(p => p.item_id === produto.id)
-                  const parceria = faccaoPrecos.find(p => p.item_id === produto.id)
-                  const parceiraS = parceria ? calcPreco(padrao?.preco_sujo ?? null, parceria.tipo, parceria.percentual, parceria.preco_sujo) : null
-                  const parceiraL = parceria ? calcPreco(padrao?.preco_limpo ?? null, parceria.tipo, parceria.percentual, parceria.preco_limpo) : null
-
+                {faccaoPrecos.map((preco, idx) => {
+                  const produto = todosProdutos.find(p => p.id === preco.item_id)
                   return (
-                    <div key={produto.id} className={cn('grid grid-cols-[1fr_100px_100px_120px_120px_32px] gap-2 items-center px-3 py-2.5', idx < meusProdutos.length - 1 && 'border-b border-border/60')}>
-                      <div>
-                        <span className="text-sm">{produto.nome}</span>
-                        {parceria && (
-                          <span className="ml-2 text-[10px] text-muted-foreground">
-                            {parceria.tipo === 'percentual'
-                              ? `${parceria.percentual && parceria.percentual > 0 ? '-' : '+'}${Math.abs(parceria.percentual ?? 0)}%`
-                              : 'fixo'}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-right text-muted-foreground">{fmt(padrao?.preco_sujo ?? null)}</span>
-                      <span className="text-xs text-right text-muted-foreground">{fmt(padrao?.preco_limpo ?? null)}</span>
-                      <span className={cn('text-xs text-right font-medium', parceiraS != null && 'text-primary')}>{fmt(parceiraS)}</span>
-                      <span className={cn('text-xs text-right font-medium', parceiraL != null && 'text-primary')}>{fmt(parceiraL)}</span>
+                    <div key={preco.item_id} className={cn('grid grid-cols-[1fr_90px_90px_90px_40px] gap-2 items-center px-3 py-2.5', idx < faccaoPrecos.length - 1 && 'border-b border-border/60')}>
+                      <span className="text-sm">{produto?.nome ?? '—'}</span>
+                      <span className="text-xs text-right font-medium">{fmt(preco.preco_sujo)}</span>
+                      <span className="text-xs text-right font-medium">{fmt(preco.preco_limpo)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {preco.tipo === 'percentual'
+                          ? `${preco.percentual != null && preco.percentual > 0 ? '-' : '+'}${Math.abs(preco.percentual ?? 0)}%`
+                          : 'fixo'}
+                      </span>
                       <div className="flex items-center gap-0.5">
-                        <button onClick={() => openEditPreco(produto)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                        <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })}
+                          className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                           <Edit2 className="h-3 w-3" />
                         </button>
-                        {parceria && (
-                          <button onClick={() => handleRemoverPreco(produto.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06] transition-colors">
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
+                        <button onClick={() => handleRemoverPreco(preco.item_id)}
+                          className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06] transition-colors">
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
                     </div>
                   )
@@ -272,11 +297,32 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
         </Tabs>
       </DialogContent>
 
-      {/* Modal: Editar preço de parceria */}
+      {/* Modal: Selecionar produto para adicionar */}
+      <Dialog open={addingPreco} onOpenChange={v => { if (!v) { setAddingPreco(false); setNewItemId('') } }}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Adicionar produto</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <Select value={newItemId} onValueChange={setNewItemId}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar produto..." /></SelectTrigger>
+              <SelectContent>
+                {produtosDisponiveis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setAddingPreco(false); setNewItemId('') }}>Cancelar</Button>
+            <Button size="sm" onClick={handleAdicionarProduto} disabled={!newItemId}>Continuar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar preço do produto */}
       <Dialog open={!!editPreco} onOpenChange={v => !v && setEditPreco(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Preço de parceria — {editPreco?.nome}</DialogTitle>
+            <DialogTitle className="text-sm">Preço — {editPreco?.nome}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -284,8 +330,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
               <Select value={precoForm.tipo} onValueChange={v => setPrecoForm(f => ({ ...f, tipo: v as 'percentual' | 'fixo' }))}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fixo">Valor fixo</SelectItem>
-                  <SelectItem value="percentual">Percentual</SelectItem>
+                  <SelectItem value="fixo">Valor fixo (sujo/limpo)</SelectItem>
+                  <SelectItem value="percentual">Percentual sobre referência</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -294,16 +340,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, meusProdutos, precoPa
               <div className="space-y-1.5">
                 <Label className="text-xs">% (positivo = desconto, negativo = acréscimo)</Label>
                 <Input type="number" placeholder="Ex: 10 para 10% de desconto" value={precoForm.percentual} onChange={e => setPrecoForm(f => ({ ...f, percentual: e.target.value }))} className="h-8 text-sm" />
-                {precoForm.percentual && (() => {
-                  const p = parseFloat(precoForm.percentual)
-                  const padraoItem = precoPadrao.find(pp => pp.item_id === editPreco?.id)
-                  return (
-                    <div className="text-xs text-muted-foreground space-y-0.5">
-                      {padraoItem?.preco_sujo != null && <p>Sujo: {fmt(padraoItem.preco_sujo * (1 - p / 100))}</p>}
-                      {padraoItem?.preco_limpo != null && <p>Limpo: {fmt(padraoItem.preco_limpo * (1 - p / 100))}</p>}
-                    </div>
-                  )
-                })()}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">

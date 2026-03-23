@@ -12,16 +12,14 @@ export default async function InvestigacaoPage() {
     { data: membros },
     { data: veiculos },
     { data: lojas },
-    { data: meusProdutos },
-    { data: precoPadrao },
+    { data: todosProdutos },
     { data: faccaoPrecos },
   ] = await Promise.all([
     supabase.from('faccoes').select('*').order('nome'),
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
     supabase.from('veiculos').select('*').order('placa'),
     supabase.from('lojas').select('*').order('nome'),
-    supabase.from('items').select('id, nome').eq('eh_meu_produto', true).eq('status', 'ativo').order('nome'),
-    supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
+    supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('faccao_item_precos').select('*'),
   ])
 
@@ -31,8 +29,7 @@ export default async function InvestigacaoPage() {
       initialMembros={membros ?? []}
       initialVeiculos={veiculos ?? []}
       initialLojas={lojas ?? []}
-      meusProdutos={meusProdutos ?? []}
-      precoPadrao={precoPadrao ?? []}
+      todosProdutos={todosProdutos ?? []}
       initialFaccaoPrecos={faccaoPrecos ?? []}
     />
   )
