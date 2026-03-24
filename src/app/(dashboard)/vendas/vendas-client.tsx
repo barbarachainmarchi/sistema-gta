@@ -11,8 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw
+  Plus, Minus, X, Edit2, Truck, ChevronDown, ChevronUp,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search,
 } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ interface Props {
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` }
 function fmtData(s: string) { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR') }
+function today() { return new Date().toISOString().split('T')[0] }
 
 const STATUS_INFO: Record<StatusVenda, { label: string; cls: string }> = {
   fabricando: { label: 'Fabricando', cls: 'text-blue-400 bg-blue-500/15' },
@@ -94,7 +95,6 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
     return <p className="text-xs text-muted-foreground px-4 py-3 italic">Nenhum item marcado para fabricar.</p>
   }
 
-  // Agregar ingredientes
   const ingredMap: Record<string, { nome: string; necessario: number }> = {}
   for (const it of fabricarItens) {
     const receita = receitaMap[it.item_id!] ?? []
@@ -195,8 +195,8 @@ function VendaCard({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0 group relative">
-          <span className="text-[10px] text-muted-foreground/50 group-hover:text-muted-foreground transition-colors cursor-default" title={`Criado por: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue por: ${venda.entregue_por_nome}` : ''}`}>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[10px] text-muted-foreground/50 cursor-default" title={`Criado por: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue por: ${venda.entregue_por_nome}` : ''}`}>
             {venda.criado_por_nome ?? '—'}
           </span>
         </div>
@@ -263,7 +263,6 @@ function VendaCard({
       {/* Ações */}
       {podeEditar && (
         <div className="px-4 py-2.5 border-t border-border/40 flex items-center gap-2 bg-white/[0.01] flex-wrap">
-          {/* Status */}
           {!entregue && venda.status !== 'cancelado' && (
             <Select
               value={venda.status}
@@ -281,21 +280,18 @@ function VendaCard({
             </Select>
           )}
 
-          {/* Entregar */}
           {podeEntregar && (
             <Button size="sm" className="h-7 text-xs gap-1" onClick={() => onEntregar(venda)}>
               <Truck className="h-3 w-3" />Entregar
             </Button>
           )}
 
-          {/* Desfazer entrega */}
           {entregue && (
             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => onDesfazerEntrega(venda.id)}>
               <RotateCcw className="h-3 w-3" />Desfazer entrega
             </Button>
           )}
 
-          {/* Reabrir cancelado */}
           {venda.status === 'cancelado' && (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onStatusChange(venda.id, 'fabricando')}>
               Reabrir
@@ -303,13 +299,11 @@ function VendaCard({
           )}
 
           <div className="ml-auto flex gap-1">
-            {/* Descontar estoque */}
             {!venda.estoque_descontado && (venda.status === 'pronto' || entregue) && (
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-orange-400 border-orange-500/30 hover:bg-orange-500/10" onClick={() => onDescontarEstoque(venda)}>
                 <Package className="h-3 w-3" />Descontar estoque
               </Button>
             )}
-            {/* Editar */}
             {!entregue && venda.status !== 'cancelado' && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onEdit(venda)}>
                 <Edit2 className="h-3 w-3" />
@@ -324,25 +318,39 @@ function VendaCard({
 
 // ── Formulário de pedido ──────────────────────────────────────────────────────
 
+type CatalogoItem = {
+  item_id: string; nome: string
+  preco_limpo: number | null; preco_sujo: number | null
+  tem_craft: boolean
+}
+
 function OrderDialog({
-  open, onOpenChange, editando, faccoes, allItems, meuPrecoMap, estoqueMap,
-  onSave, saving,
+  open, onOpenChange, editando, faccoes, allItems,
+  lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId,
+  estoqueMap, onSave, saving,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; allItems: ItemSimples[]
-  meuPrecoMap: Record<string, { preco_limpo: number | null; preco_sujo: number | null }>
+  lojaPrecos: LojaPreco[]; faccaoPrecos: FaccaoPrecoItem[]
+  meuLojaId: string | null; meuFaccaoId: string | null
   estoqueMap: Record<string, Record<string, number>>
   onSave: (form: FormState) => void; saving: boolean
 }) {
   const emptyForm = (): FormState => ({
     faccao_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
-    desconto_pct: '0', notas: '', data_encomenda: '', status: 'fabricando', itens: []
+    desconto_pct: '0', notas: '', data_encomenda: today(), status: 'fabricando', itens: []
   })
 
   const [form, setForm] = useState<FormState>(emptyForm)
-  const [faccaoBusca, setFaccaoBusca] = useState('')
-  const [itemBusca, setItemBusca] = useState('')
-  const [itemBuscaAberta, setItemBuscaAberta] = useState(false)
+  const [faccaoNome, setFaccaoNome] = useState('')
+  const [faccaoAberta, setFaccaoAberta] = useState(false)
+  const [catalogoAba, setCatalogoAba] = useState<'faccao' | 'loja'>(meuFaccaoId ? 'faccao' : 'loja')
+  const [buscaProd, setBuscaProd] = useState('')
+  const [catalogoQtds, setCatalogoQtds] = useState<Record<string, number>>({})
+  const [catalogoOrigem, setCatalogoOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
+  const [catalogoPrecos, setCatalogoPrecos] = useState<Record<string, string>>({})
+
+  const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
 
   // Quando abre o dialog
   const prevOpen = useRef(false)
@@ -357,102 +365,180 @@ function OrderDialog({
           tipo_dinheiro: editando.tipo_dinheiro,
           desconto_pct: String(editando.desconto_pct),
           notas: editando.notas ?? '',
-          data_encomenda: editando.data_encomenda ?? '',
+          data_encomenda: editando.data_encomenda ?? today(),
           status: editando.status,
-          itens: editando.itens.map(it => ({
-            tempId: it.id, item_id: it.item_id ?? '', item_nome: it.item_nome,
-            quantidade: String(it.quantidade), preco_unit: String(it.preco_unit), origem: it.origem,
-          }))
+          itens: [],
         })
-        setFaccaoBusca(editando.cliente_nome)
+        const f = faccoes.find(x => x.id === editando.faccao_id)
+        setFaccaoNome(f?.nome ?? '')
+        // Restaurar catálogo dos itens existentes
+        const qtds: Record<string, number> = {}
+        const origem: Record<string, 'fabricar' | 'estoque'> = {}
+        const precos: Record<string, string> = {}
+        for (const it of editando.itens) {
+          if (it.item_id) {
+            qtds[it.item_id] = it.quantidade
+            origem[it.item_id] = it.origem
+            precos[it.item_id] = String(it.preco_unit)
+          }
+        }
+        setCatalogoQtds(qtds)
+        setCatalogoOrigem(origem)
+        setCatalogoPrecos(precos)
       } else {
         setForm(emptyForm())
-        setFaccaoBusca('')
+        setFaccaoNome('')
+        setCatalogoQtds({})
+        setCatalogoOrigem({})
+        setCatalogoPrecos({})
       }
-      setItemBusca('')
+      setBuscaProd('')
+      setFaccaoAberta(false)
     }
   }
 
   function selecionarFaccao(f: Faccao) {
     setForm(prev => ({
-      ...prev, faccao_id: f.id, cliente_nome: f.nome,
+      ...prev, faccao_id: f.id,
       cliente_telefone: f.telefone ?? prev.cliente_telefone,
       desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct,
     }))
-    setFaccaoBusca(f.nome)
+    setFaccaoNome(f.nome)
+    setFaccaoAberta(false)
   }
-
-  function adicionarItem(item: ItemSimples) {
-    const preco = form.tipo_dinheiro === 'sujo'
-      ? (meuPrecoMap[item.id]?.preco_sujo ?? meuPrecoMap[item.id]?.preco_limpo ?? 0)
-      : (meuPrecoMap[item.id]?.preco_limpo ?? 0)
-    setForm(prev => ({
-      ...prev, itens: [...prev.itens, {
-        tempId: crypto.randomUUID(), item_id: item.id, item_nome: item.nome,
-        quantidade: '1', preco_unit: String(preco ?? 0),
-        origem: item.tem_craft ? 'fabricar' : 'estoque',
-      }]
-    }))
-    setItemBusca(''); setItemBuscaAberta(false)
-  }
-
-  function removerItem(tempId: string) {
-    setForm(prev => ({ ...prev, itens: prev.itens.filter(it => it.tempId !== tempId) }))
-  }
-
-  function updateItem(tempId: string, field: keyof FormItem, value: string) {
-    setForm(prev => ({ ...prev, itens: prev.itens.map(it => it.tempId === tempId ? { ...it, [field]: value } : it) }))
-  }
-
-  const itensFiltrados = useMemo(() => {
-    if (!itemBusca.trim()) return allItems.slice(0, 15)
-    const q = itemBusca.toLowerCase()
-    return allItems.filter(i => i.nome.toLowerCase().includes(q)).slice(0, 10)
-  }, [allItems, itemBusca])
 
   const faccoesSugestoes = useMemo(() => {
-    if (!faccaoBusca.trim()) return []
-    const q = faccaoBusca.toLowerCase()
+    if (!faccaoAberta || !faccaoNome.trim()) return []
+    const q = faccaoNome.toLowerCase()
     return faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q)).slice(0, 6)
-  }, [faccoes, faccaoBusca])
+  }, [faccoes, faccaoNome, faccaoAberta])
 
-  const subtotal = form.itens.reduce((s, it) => s + (parseFloat(it.quantidade) || 0) * (parseFloat(it.preco_unit) || 0), 0)
+  // Catálogo de produtos
+  const catalogoItems = useMemo((): CatalogoItem[] => {
+    if (catalogoAba === 'faccao' && meuFaccaoId) {
+      return faccaoPrecos
+        .filter(fp => fp.faccao_id === meuFaccaoId)
+        .map(fp => ({
+          item_id: fp.item_id,
+          nome: itemMap[fp.item_id]?.nome ?? fp.item_id,
+          preco_limpo: fp.preco_limpo,
+          preco_sujo: fp.preco_sujo,
+          tem_craft: itemMap[fp.item_id]?.tem_craft ?? false,
+        }))
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+    }
+    if (catalogoAba === 'loja' && meuLojaId) {
+      return lojaPrecos
+        .filter(lp => lp.loja_id === meuLojaId)
+        .map(lp => ({
+          item_id: lp.item_id,
+          nome: itemMap[lp.item_id]?.nome ?? lp.item_id,
+          preco_limpo: lp.preco,
+          preco_sujo: lp.preco_sujo ?? null,
+          tem_craft: itemMap[lp.item_id]?.tem_craft ?? false,
+        }))
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+    }
+    return []
+  }, [catalogoAba, faccaoPrecos, lojaPrecos, meuFaccaoId, meuLojaId, itemMap])
+
+  const catalogoFiltrado = useMemo(() => {
+    if (!buscaProd.trim()) return catalogoItems
+    const q = buscaProd.toLowerCase()
+    return catalogoItems.filter(c => c.nome.toLowerCase().includes(q))
+  }, [catalogoItems, buscaProd])
+
+  function setQtd(item_id: string, qtd: number, item: CatalogoItem) {
+    if (qtd < 0) return
+    setCatalogoQtds(prev => {
+      if (qtd === 0) { const next = { ...prev }; delete next[item_id]; return next }
+      return { ...prev, [item_id]: qtd }
+    })
+    // Definir origem e preço padrão ao adicionar
+    if (qtd > 0) {
+      if (!catalogoOrigem[item_id]) {
+        setCatalogoOrigem(prev => ({ ...prev, [item_id]: item.tem_craft ? 'fabricar' : 'estoque' }))
+      }
+      if (!catalogoPrecos[item_id]) {
+        const preco = form.tipo_dinheiro === 'sujo'
+          ? (item.preco_sujo ?? item.preco_limpo ?? 0)
+          : (item.preco_limpo ?? 0)
+        setCatalogoPrecos(prev => ({ ...prev, [item_id]: String(preco) }))
+      }
+    }
+  }
+
+  function buildItens(): FormItem[] {
+    return Object.entries(catalogoQtds)
+      .filter(([, qty]) => qty > 0)
+      .map(([item_id, qty]) => {
+        const cat = catalogoItems.find(c => c.item_id === item_id)
+        const precoDefault = form.tipo_dinheiro === 'sujo'
+          ? (cat?.preco_sujo ?? cat?.preco_limpo ?? 0)
+          : (cat?.preco_limpo ?? 0)
+        return {
+          tempId: item_id,
+          item_id,
+          item_nome: itemMap[item_id]?.nome ?? item_id,
+          quantidade: String(qty),
+          preco_unit: catalogoPrecos[item_id] ?? String(precoDefault),
+          origem: catalogoOrigem[item_id] ?? (itemMap[item_id]?.tem_craft ? 'fabricar' : 'estoque'),
+        }
+      })
+  }
+
+  const itensComQtd = Object.entries(catalogoQtds).filter(([, qty]) => qty > 0)
+  const subtotal = itensComQtd.reduce((s, [item_id, qty]) => {
+    const preco = parseFloat(catalogoPrecos[item_id] ?? '0') || 0
+    return s + qty * preco
+  }, 0)
   const total = subtotal * (1 - (parseFloat(form.desconto_pct) || 0) / 100)
+
+  const hasTabs = !!(meuFaccaoId && meuLojaId)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined} className="sm:max-w-2xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0">
+      <DialogContent aria-describedby={undefined} className="sm:max-w-2xl max-h-[92vh] flex flex-col p-0 gap-0">
+        {/* Header */}
+        <DialogHeader className="px-5 pt-5 pb-4 shrink-0 border-b border-border">
           <div className="flex items-center gap-3">
             <DialogTitle className="text-sm">{editando ? 'Editar Pedido' : 'Novo Pedido'}</DialogTitle>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Limpo</span>
+              <span className={cn('text-xs', form.tipo_dinheiro !== 'sujo' && 'text-emerald-400 font-medium')}>Limpo</span>
               <Switch
                 checked={form.tipo_dinheiro === 'sujo'}
                 onCheckedChange={v => setForm(prev => ({ ...prev, tipo_dinheiro: v ? 'sujo' : 'limpo' }))}
               />
-              <span className="text-xs text-muted-foreground">Sujo</span>
+              <span className={cn('text-xs', form.tipo_dinheiro === 'sujo' && 'text-orange-400 font-medium')}>Sujo</span>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-5 py-2 pr-1">
+        <div className="flex-1 overflow-y-auto">
 
-          {/* Cliente */}
-          <section className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cliente</p>
+          {/* ── Cliente ─────────────────────────────────────────── */}
+          <section className="px-5 py-4 space-y-3 border-b border-border/50">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cliente</p>
+
             <div className="grid grid-cols-2 gap-3">
+
+              {/* Facção */}
               <div className="space-y-1.5 relative">
-                <Label className="text-xs">Facção / Nome</Label>
+                <Label className="text-xs">Facção</Label>
                 <Input
-                  value={faccaoBusca}
-                  onChange={e => { setFaccaoBusca(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value, faccao_id: '' })) }}
-                  placeholder="Buscar facção ou digitar nome..."
+                  value={faccaoNome}
+                  onChange={e => {
+                    setFaccaoNome(e.target.value)
+                    setForm(prev => ({ ...prev, faccao_id: '' }))
+                    setFaccaoAberta(true)
+                  }}
+                  onFocus={() => setFaccaoAberta(true)}
+                  onBlur={() => setTimeout(() => setFaccaoAberta(false), 150)}
+                  placeholder="Buscar facção..."
                   className="h-8 text-sm"
-                  autoFocus
                 />
-                {faccoesSugestoes.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                {faccaoAberta && faccoesSugestoes.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
                     {faccoesSugestoes.map(f => (
                       <button key={f.id} type="button"
                         onMouseDown={e => { e.preventDefault(); selecionarFaccao(f) }}
@@ -465,16 +551,55 @@ function OrderDialog({
                   </div>
                 )}
               </div>
+
+              {/* Nome / Membro */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nome / Membro</Label>
+                <Input
+                  value={form.cliente_nome}
+                  onChange={e => setForm(prev => ({ ...prev, cliente_nome: e.target.value }))}
+                  placeholder="Nome da pessoa..."
+                  className="h-8 text-sm"
+                  autoFocus
+                />
+              </div>
+
+              {/* Telefone */}
               <div className="space-y-1.5">
                 <Label className="text-xs">Telefone</Label>
-                <Input value={form.cliente_telefone} onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))} placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
+                <Input
+                  value={form.cliente_telefone}
+                  onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))}
+                  placeholder="(xx) xxxxx-xxxx"
+                  className="h-8 text-sm"
+                />
               </div>
+
+              {/* Desconto */}
               <div className="space-y-1.5">
                 <Label className="text-xs">Desconto (%)</Label>
-                <Input type="number" min="0" max="100" value={form.desconto_pct} onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))} className="h-8 text-sm" />
+                <Input
+                  type="number" min="0" max="100"
+                  value={form.desconto_pct}
+                  onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
+                  className="h-8 text-sm"
+                />
               </div>
+
+              {/* Data */}
               <div className="space-y-1.5">
-                <Label className="text-xs">Status inicial</Label>
+                <Label className="text-xs">Data</Label>
+                <Input
+                  type="date"
+                  value={form.data_encomenda}
+                  onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Status</Label>
                 <Select value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as StatusVenda }))}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -484,99 +609,149 @@ function OrderDialog({
                   </SelectContent>
                 </Select>
               </div>
-              {form.status === 'encomenda' && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Data da encomenda</Label>
-                  <Input type="date" value={form.data_encomenda} onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))} className="h-8 text-sm" />
-                </div>
-              )}
             </div>
           </section>
 
-          {/* Itens */}
-          <section className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Produtos</p>
-
-            {/* Busca de item */}
-            <div className="relative">
-              <Input
-                placeholder="Adicionar produto..."
-                value={itemBusca}
-                onChange={e => { setItemBusca(e.target.value); setItemBuscaAberta(true) }}
-                onFocus={() => setItemBuscaAberta(true)}
-                onBlur={() => setTimeout(() => setItemBuscaAberta(false), 150)}
-                className="h-8 text-sm"
-              />
-              {itemBuscaAberta && itensFiltrados.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-md border border-border bg-popover shadow-md max-h-40 overflow-y-auto">
-                  {itensFiltrados.map(item => (
-                    <button key={item.id} onMouseDown={() => adicionarItem(item)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                      <span>{item.nome}</span>
-                      {item.categorias_item?.nome && <span className="text-muted-foreground ml-1">{item.categorias_item.nome}</span>}
-                      {meuPrecoMap[item.id]?.preco_limpo != null && (
-                        <span className="ml-auto text-emerald-400 tabular-nums">
-                          {fmt(form.tipo_dinheiro === 'sujo'
-                            ? (meuPrecoMap[item.id].preco_sujo ?? meuPrecoMap[item.id].preco_limpo!)
-                            : meuPrecoMap[item.id].preco_limpo!)}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+          {/* ── Produtos ────────────────────────────────────────── */}
+          <section className="px-5 py-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Produtos</p>
+              {itensComQtd.length > 0 && (
+                <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full font-medium">
+                  {itensComQtd.length} selecionado{itensComQtd.length > 1 ? 's' : ''}
+                </span>
+              )}
+              {/* Tabs Facção / Loja */}
+              {hasTabs && (
+                <div className="ml-auto flex rounded border border-border overflow-hidden text-[10px] font-medium">
+                  <button
+                    onClick={() => setCatalogoAba('faccao')}
+                    className={cn('px-2.5 py-1 transition-colors',
+                      catalogoAba === 'faccao' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                    )}>
+                    Facção
+                  </button>
+                  <button
+                    onClick={() => setCatalogoAba('loja')}
+                    className={cn('px-2.5 py-1 border-l border-border transition-colors',
+                      catalogoAba === 'loja' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                    )}>
+                    Loja
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Linhas de itens */}
-            {form.itens.length > 0 && (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_60px_90px_110px_28px] gap-2 px-3 py-1.5 bg-white/[0.02] text-[10px] text-muted-foreground font-medium border-b border-border/50">
-                  <span>Item</span><span className="text-center">Qtd</span><span className="text-center">Preço unit.</span><span className="text-center">Fabricar / Estoque</span><span />
-                </div>
-                {form.itens.map(it => {
-                  const estoqueDisp = estoqueMap[it.item_id]?.produto_final ?? 0
+            {/* Busca */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Filtrar produtos..."
+                value={buscaProd}
+                onChange={e => setBuscaProd(e.target.value)}
+                className="h-8 text-sm pl-8"
+              />
+            </div>
+
+            {/* Tabela de itens */}
+            <div className="rounded-lg border border-border overflow-hidden">
+              {/* Header fixo */}
+              <div className="grid grid-cols-[1fr_70px_80px_90px] gap-2 px-3 py-1.5 bg-white/[0.03] text-[10px] text-muted-foreground font-medium border-b border-border/60 sticky top-0">
+                <span>Produto</span>
+                <span className="text-right">Preço</span>
+                <span className="text-center">Qtd</span>
+                <span className="text-center">Origem</span>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto divide-y divide-border/30">
+                {catalogoFiltrado.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">
+                    {catalogoItems.length === 0 ? 'Nenhum produto cadastrado no catálogo' : 'Nenhum produto encontrado'}
+                  </p>
+                ) : catalogoFiltrado.map(item => {
+                  const qty = catalogoQtds[item.item_id] ?? 0
+                  const isSelected = qty > 0
+                  const precoExibir = form.tipo_dinheiro === 'sujo'
+                    ? (item.preco_sujo ?? item.preco_limpo)
+                    : item.preco_limpo
+                  const origemAtual = catalogoOrigem[item.item_id] ?? (item.tem_craft ? 'fabricar' : 'estoque')
+                  const estoqueDisp = estoqueMap[item.item_id]?.produto_final ?? 0
+
                   return (
-                    <div key={it.tempId} className="border-b border-border/30 last:border-0">
-                      <div className="grid grid-cols-[1fr_60px_90px_110px_28px] gap-2 items-center px-3 py-2">
-                        <span className="text-xs font-medium truncate">{it.item_nome}</span>
-                        <Input type="number" min="1" value={it.quantidade} onChange={e => updateItem(it.tempId, 'quantidade', e.target.value)} className="h-7 text-xs text-center px-1" />
-                        <Input type="number" min="0" value={it.preco_unit} onChange={e => updateItem(it.tempId, 'preco_unit', e.target.value)} className="h-7 text-xs text-center px-1" />
-                        <div className="flex rounded overflow-hidden border border-border h-7">
-                          <button onClick={() => updateItem(it.tempId, 'origem', 'fabricar')}
-                            className={cn('flex-1 text-[10px] font-medium transition-colors', it.origem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'text-muted-foreground hover:text-foreground')}>
+                    <div key={item.item_id}
+                      className={cn(
+                        'grid grid-cols-[1fr_70px_80px_90px] gap-2 items-center px-3 py-2 transition-colors',
+                        isSelected ? 'bg-primary/[0.06]' : 'hover:bg-white/[0.02]'
+                      )}>
+                      <div className="min-w-0">
+                        <span className="text-xs font-medium truncate block">{item.nome}</span>
+                        {isSelected && origemAtual === 'estoque' && (
+                          <span className={cn('text-[10px]', estoqueDisp >= qty ? 'text-green-400/70' : 'text-red-400/80')}>
+                            estoque: {estoqueDisp}
+                            {estoqueDisp < qty && ' ⚠'}
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="text-[11px] text-right tabular-nums text-muted-foreground">
+                        {precoExibir != null ? fmt(precoExibir) : '—'}
+                      </span>
+
+                      {/* Qtd controls */}
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          onClick={() => setQtd(item.item_id, qty - 1, item)}
+                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-colors">
+                          <Minus className="h-2.5 w-2.5" />
+                        </button>
+                        <span className={cn('text-xs w-7 text-center tabular-nums', isSelected && 'font-semibold text-foreground')}>
+                          {qty || ''}
+                        </span>
+                        <button
+                          onClick={() => setQtd(item.item_id, qty + 1, item)}
+                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-colors">
+                          <Plus className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+
+                      {/* Fab / Est toggle */}
+                      {isSelected ? (
+                        <div className="flex rounded overflow-hidden border border-border h-6">
+                          <button
+                            onClick={() => setCatalogoOrigem(prev => ({ ...prev, [item.item_id]: 'fabricar' }))}
+                            className={cn('flex-1 text-[9px] font-medium transition-colors',
+                              origemAtual === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'text-muted-foreground hover:text-foreground'
+                            )}>
                             Fab.
                           </button>
-                          <button onClick={() => updateItem(it.tempId, 'origem', 'estoque')}
-                            className={cn('flex-1 text-[10px] font-medium transition-colors border-l border-border', it.origem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'text-muted-foreground hover:text-foreground')}>
+                          <button
+                            onClick={() => setCatalogoOrigem(prev => ({ ...prev, [item.item_id]: 'estoque' }))}
+                            className={cn('flex-1 text-[9px] font-medium transition-colors border-l border-border',
+                              origemAtual === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'text-muted-foreground hover:text-foreground'
+                            )}>
                             Est.
                           </button>
                         </div>
-                        <button onClick={() => removerItem(it.tempId)} className="flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      {it.origem === 'estoque' && (
-                        <div className={cn('px-3 pb-1.5 text-[10px]', estoqueDisp >= (parseFloat(it.quantidade) || 0) ? 'text-green-400/70' : 'text-red-400/80')}>
-                          Estoque disponível: {estoqueDisp} un.
-                          {estoqueDisp < (parseFloat(it.quantidade) || 0) && ' ⚠ insuficiente'}
-                        </div>
-                      )}
+                      ) : <span />}
                     </div>
                   )
                 })}
-                <div className="grid grid-cols-[1fr_60px_90px_110px_28px] gap-2 px-3 py-2 bg-white/[0.02] border-t border-border/50">
-                  <span className="text-xs text-muted-foreground col-span-3">
-                    {parseFloat(form.desconto_pct) > 0 ? `Subtotal ${fmt(subtotal)} · Total após desc.` : 'Total'}
-                  </span>
-                  <span className="text-sm font-bold text-primary tabular-nums text-center">{fmt(total)}</span>
-                  <span />
-                </div>
               </div>
-            )}
+
+              {/* Totais */}
+              {itensComQtd.length > 0 && (
+                <div className="flex items-center justify-between px-3 py-2 border-t border-border/50 bg-white/[0.02]">
+                  <span className="text-[11px] text-muted-foreground">
+                    {parseFloat(form.desconto_pct) > 0 ? `Subtotal ${fmt(subtotal)} · desc ${form.desconto_pct}%` : `${itensComQtd.length} produto${itensComQtd.length > 1 ? 's' : ''}`}
+                  </span>
+                  <span className="text-sm font-bold text-primary tabular-nums">{fmt(total)}</span>
+                </div>
+              )}
+            </div>
           </section>
 
-          {/* Observações */}
-          <section className="space-y-1.5">
+          {/* ── Observações ─────────────────────────────────────── */}
+          <section className="px-5 pb-5 space-y-1.5">
             <Label className="text-xs">Observações</Label>
             <textarea
               value={form.notas}
@@ -588,9 +763,14 @@ function OrderDialog({
           </section>
         </div>
 
-        <div className="flex justify-end gap-2 shrink-0 pt-2 border-t border-border">
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border shrink-0">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button size="sm" onClick={() => onSave(form)} disabled={saving || !form.cliente_nome.trim() || form.itens.length === 0}>
+          <Button
+            size="sm"
+            onClick={() => onSave({ ...form, itens: buildItens() })}
+            disabled={saving || !form.cliente_nome.trim() || itensComQtd.length === 0}
+          >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editando ? 'Salvar' : 'Criar Pedido'}
           </Button>
         </div>
@@ -634,23 +814,6 @@ export function VendasClient({
     return map
   }, [estoqueState])
 
-  const meuPrecoMap = useMemo(() => {
-    const map: Record<string, { preco_limpo: number | null; preco_sujo: number | null }> = {}
-    precosVigentes.forEach(p => { map[p.item_id] = { preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo } })
-    if (meuLojaId) {
-      lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => {
-        map[lp.item_id] = { preco_limpo: lp.preco, preco_sujo: lp.preco_sujo }
-      })
-    }
-    if (meuFaccaoId) {
-      faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => {
-        if (!meuLojaId || !lojaPrecos.some(lp => lp.loja_id === meuLojaId && lp.item_id === fp.item_id))
-          map[fp.item_id] = { preco_limpo: fp.preco_limpo, preco_sujo: fp.preco_sujo }
-      })
-    }
-    return map
-  }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
-
   // ── Filtro ─────────────────────────────────────────────────────────────────
 
   const vendasFiltradas = useMemo(() => {
@@ -667,7 +830,6 @@ export function VendasClient({
     setSaving(true)
     try {
       if (editando) {
-        // Update venda
         const { error } = await sb().from('vendas').update({
           faccao_id: form.faccao_id || null,
           cliente_nome: form.cliente_nome.trim(),
@@ -680,7 +842,6 @@ export function VendasClient({
         }).eq('id', editando.id)
         if (error) { toast.error('Erro ao salvar: ' + error.message); return }
 
-        // Replace items
         await sb().from('venda_itens').delete().eq('venda_id', editando.id)
         const novosItens = form.itens.map(it => ({
           venda_id: editando.id, item_id: it.item_id || null, item_nome: it.item_nome,
@@ -698,7 +859,6 @@ export function VendasClient({
         } : v))
         toast.success('Pedido atualizado!')
       } else {
-        // Create venda
         const { data: venda, error: vendaErr } = await sb().from('vendas').insert({
           faccao_id: form.faccao_id || null,
           cliente_nome: form.cliente_nome.trim(),
@@ -746,7 +906,6 @@ export function VendasClient({
       : v
     ))
     toast.success('Entrega registrada!')
-    // Desconta estoque automaticamente se não foi feito
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
   }
 
@@ -764,21 +923,19 @@ export function VendasClient({
 
   async function handleDescontarEstoque(venda: Venda) {
     if (venda.estoque_descontado) { toast.info('Estoque já foi descontado para este pedido'); return }
-    // Calcular deduções
     const deducoes: Record<string, { tipo: 'materia_prima' | 'produto_final'; qtd: number }> = {}
     for (const it of venda.itens) {
       if (!it.item_id) continue
       if (it.origem === 'estoque') {
         if (!deducoes[it.item_id]) deducoes[it.item_id] = { tipo: 'produto_final', qtd: 0 }
         deducoes[it.item_id].qtd += it.quantidade
-      } else { // fabricar
+      } else {
         for (const r of receitaMap[it.item_id] ?? []) {
           if (!deducoes[r.ingrediente_id]) deducoes[r.ingrediente_id] = { tipo: 'materia_prima', qtd: 0 }
           deducoes[r.ingrediente_id].qtd += r.quantidade * it.quantidade
         }
       }
     }
-    // Aplicar deduções
     for (const [item_id, { tipo, qtd }] of Object.entries(deducoes)) {
       const atual = estoqueMap[item_id]?.[tipo] ?? 0
       const nova = Math.max(0, atual - qtd)
@@ -817,10 +974,8 @@ export function VendasClient({
                 filtro === f.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
               )}>
               {f.label}
-              {f.key !== 'todos' && f.key !== 'entregue' && f.key !== 'cancelado' && (
-                <span className="ml-1 opacity-60">
-                  {vendas.filter(v => v.status === f.key).length > 0 && `(${vendas.filter(v => v.status === f.key).length})`}
-                </span>
+              {f.key !== 'todos' && f.key !== 'entregue' && f.key !== 'cancelado' && vendas.filter(v => v.status === f.key).length > 0 && (
+                <span className="ml-1 opacity-60">({vendas.filter(v => v.status === f.key).length})</span>
               )}
             </button>
           ))}
@@ -870,7 +1025,10 @@ export function VendasClient({
         editando={editando}
         faccoes={faccoes}
         allItems={allItems}
-        meuPrecoMap={meuPrecoMap}
+        lojaPrecos={lojaPrecos}
+        faccaoPrecos={faccaoPrecos}
+        meuLojaId={meuLojaId}
+        meuFaccaoId={meuFaccaoId}
         estoqueMap={estoqueMap}
         onSave={handleSave}
         saving={saving}
