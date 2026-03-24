@@ -679,15 +679,28 @@ function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClo
                   : <div className="space-y-1.5">
                     <p className="text-xs text-muted-foreground">Histórico (mais recente primeiro)</p>
                     {form.precos.map((p, i) => (
-                      <div key={i} className={cn('rounded-md px-3 py-2 flex items-center justify-between', i === 0 ? 'bg-white/5 border border-border' : 'bg-muted/30')}>
-                        <span className="text-xs text-muted-foreground tabular-nums">
+                      <div key={i} className={cn('rounded-md px-3 py-2 flex items-center gap-2', i === 0 ? 'bg-white/5 border border-border' : 'bg-muted/30')}>
+                        <span className="text-xs text-muted-foreground tabular-nums w-20 shrink-0">
                           {new Date(p.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR')}
                         </span>
-                        <div className="flex gap-4 text-xs">
+                        <div className="flex gap-4 text-xs flex-1">
                           {p.preco_sujo != null && <span>Sujo <strong>R${p.preco_sujo.toLocaleString('pt-BR')}</strong></span>}
                           {p.preco_limpo != null && <span>Limpo <strong>R${p.preco_limpo.toLocaleString('pt-BR')}</strong></span>}
                         </div>
-                        {i === 0 && <span className="text-[10px] text-emerald-400 font-medium">Vigente</span>}
+                        {i === 0 && <span className="text-[10px] text-emerald-400 font-medium shrink-0">Vigente</span>}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (p.id) {
+                              const { error } = await sb().from('item_precos').delete().eq('id', p.id)
+                              if (error) { toast.error('Erro ao deletar preço'); return }
+                            }
+                            setForm(prev => ({ ...prev, precos: prev.precos.filter((_, j) => j !== i) }))
+                          }}
+                          className="shrink-0 h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-colors"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </div>
                     ))}
                   </div>
