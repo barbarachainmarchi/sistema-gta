@@ -51,7 +51,10 @@ CREATE TABLE IF NOT EXISTS venda_itens (
              CHECK (origem IN ('fabricar', 'estoque'))
 );
 
+DROP TRIGGER IF EXISTS vendas_updated_at ON vendas;
 CREATE TRIGGER vendas_updated_at BEFORE UPDATE ON vendas
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS estoque_updated_at ON estoque;
 CREATE TRIGGER estoque_updated_at BEFORE UPDATE ON estoque
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

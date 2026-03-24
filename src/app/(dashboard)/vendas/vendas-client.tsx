@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Minus, X, Edit2, Truck, ChevronDown, ChevronUp,
+  Plus, Minus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, Store, Users, ShoppingCart,
 } from 'lucide-react'
 
@@ -88,40 +88,36 @@ type WpItem = { item_id: string; nome: string; tem_craft: boolean; preco_limpo: 
 
 function ProductBrowserDialog({
   open, onClose, onConfirm,
-  faccoes, lojas, meuFaccaoId, meuLojaId,
-  tipoDinheiro, initialCart,
+  meuFaccaoId, meuFaccaoNome, meuLojaId, meuLojaName,
+  tipoDinheiro, descontoPct, initialCart,
 }: {
   open: boolean; onClose: () => void; onConfirm: (items: CartItem[]) => void
-  faccoes: Faccao[]; lojas: Loja[]
-  meuFaccaoId: string | null; meuLojaId: string | null
-  tipoDinheiro: 'sujo' | 'limpo'; initialCart: CartItem[]
+  meuFaccaoId: string | null; meuFaccaoNome: string | null
+  meuLojaId: string | null; meuLojaName: string | null
+  tipoDinheiro: 'sujo' | 'limpo'; descontoPct: number; initialCart: CartItem[]
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
+  const temAmbos = !!(meuFaccaoId && meuLojaId)
   const [tab, setTab] = useState<'faccao' | 'loja'>(meuFaccaoId ? 'faccao' : 'loja')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [produtos, setProdutos] = useState<WpItem[]>([])
   const [loadingProd, setLoadingProd] = useState(false)
-  const [busca, setBusca] = useState('')
   const [buscaProd, setBuscaProd] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
+
+  const selectedId = tab === 'faccao' ? meuFaccaoId : meuLojaId
 
   // Inicializar ao abrir
   useEffect(() => {
     if (!open) return
     setCart(initialCart)
-    setBusca('')
     setBuscaProd('')
-    // Auto-selecionar o local de trabalho do usuário
-    const defaultTab = meuFaccaoId ? 'faccao' : (meuLojaId ? 'loja' : 'faccao')
-    setTab(defaultTab)
-    const defaultId = defaultTab === 'faccao' ? meuFaccaoId : meuLojaId
-    setSelectedId(defaultId)
+    setTab(meuFaccaoId ? 'faccao' : 'loja')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Buscar produtos ao selecionar estabelecimento
+  // Buscar produtos ao abrir / mudar tab
   useEffect(() => {
     if (!selectedId || !open) { setProdutos([]); return }
     setLoadingProd(true)
@@ -135,11 +131,9 @@ function ProductBrowserDialog({
           if (error) { toast.error('Erro ao carregar: ' + error.message); setLoadingProd(false); return }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           setProdutos((data ?? []).map((r: any) => ({
-            item_id: r.item_id,
-            nome: r.items?.nome ?? r.item_id,
+            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
             tem_craft: r.items?.tem_craft ?? false,
-            preco_limpo: r.preco_limpo,
-            preco_sujo: r.preco_sujo,
+            preco_limpo: r.preco_limpo, preco_sujo: r.preco_sujo,
           })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
           setLoadingProd(false)
         })
@@ -152,24 +146,15 @@ function ProductBrowserDialog({
           if (error) { toast.error('Erro ao carregar: ' + error.message); setLoadingProd(false); return }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           setProdutos((data ?? []).map((r: any) => ({
-            item_id: r.item_id,
-            nome: r.items?.nome ?? r.item_id,
+            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
             tem_craft: r.items?.tem_craft ?? false,
-            preco_limpo: r.preco ?? null,
-            preco_sujo: r.preco_sujo ?? null,
+            preco_limpo: r.preco ?? null, preco_sujo: r.preco_sujo ?? null,
           })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
           setLoadingProd(false)
         })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, tab, open])
-
-  const lista = tab === 'faccao' ? faccoes : lojas
-  const listaFiltrada = useMemo(() => {
-    if (!busca.trim()) return lista
-    const q = busca.toLowerCase()
-    return lista.filter(f => f.nome.toLowerCase().includes(q) || ('sigla' in f && (f as Faccao).sigla?.toLowerCase().includes(q)))
-  }, [lista, busca])
 
   const produtosFiltrados = useMemo(() => {
     if (!buscaProd.trim()) return produtos
@@ -199,65 +184,36 @@ function ProductBrowserDialog({
     return s + c.quantidade * p
   }, 0), [cart, tipoDinheiro])
 
+  const totalComDesconto = descontoPct > 0 ? totalCarrinho * (1 - descontoPct / 100) : totalCarrinho
+
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0">
+      <DialogContent className="max-w-2xl max-h-[88vh] flex flex-col overflow-hidden p-0 gap-0">
         <DialogHeader className="px-5 pt-4 pb-3 shrink-0 border-b border-border">
           <DialogTitle className="text-sm">Selecionar Produtos</DialogTitle>
         </DialogHeader>
 
+        {/* Tabs só aparecem se o usuário trabalha nos dois tipos */}
+        {temAmbos && (
+          <div className="flex shrink-0 border-b border-border">
+            <button onClick={() => setTab('faccao')}
+              className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
+                tab === 'faccao' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
+              )}>
+              <Users className="h-3 w-3" />{meuFaccaoNome ?? 'Facção'}
+            </button>
+            <button onClick={() => setTab('loja')}
+              className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors border-l border-border',
+                tab === 'loja' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
+              )}>
+              <Store className="h-3 w-3" />{meuLojaName ?? 'Loja'}
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-1 overflow-hidden min-h-0">
 
-          {/* Painel esquerdo: estabelecimentos */}
-          <div className="w-48 shrink-0 border-r border-border flex flex-col">
-            {/* Tabs */}
-            <div className="flex shrink-0 border-b border-border">
-              <button onClick={() => { setTab('faccao'); setSelectedId(null); setBusca('') }}
-                className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
-                  tab === 'faccao' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
-                )}>
-                <Users className="h-3 w-3" />Facções
-              </button>
-              <button onClick={() => { setTab('loja'); setSelectedId(null); setBusca('') }}
-                className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors border-l border-border',
-                  tab === 'loja' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
-                )}>
-                <Store className="h-3 w-3" />Lojas
-              </button>
-            </div>
-            {/* Busca */}
-            <div className="px-2 py-2 shrink-0">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <Input placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)} className="h-7 text-xs pl-6" />
-              </div>
-            </div>
-            {/* Lista */}
-            <div className="flex-1 overflow-y-auto">
-              {listaFiltrada.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6 px-2">Nenhum encontrado</p>
-              ) : listaFiltrada.map(item => {
-                const isMeu = tab === 'faccao'
-                  ? item.id === meuFaccaoId
-                  : item.id === meuLojaId
-                return (
-                  <button key={item.id} onClick={() => setSelectedId(item.id)}
-                    className={cn(
-                      'w-full text-left px-3 py-2.5 text-xs border-b border-border/30 transition-colors',
-                      selectedId === item.id ? 'bg-primary/10 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.02]'
-                    )}>
-                    <span>{item.nome}</span>
-                    {'sigla' in item && (item as Faccao).sigla && (
-                      <span className="ml-1 text-[10px] opacity-60">[{(item as Faccao).sigla}]</span>
-                    )}
-                    {isMeu && <span className="ml-1 text-[9px] text-primary">★</span>}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Painel central: produtos */}
+          {/* Painel de produtos */}
           <div className="flex-1 flex flex-col min-w-0 border-r border-border">
             <div className="px-3 py-2 shrink-0 border-b border-border">
               <div className="relative">
@@ -268,14 +224,15 @@ function ProductBrowserDialog({
             <div className="flex-1 overflow-y-auto">
               {!selectedId ? (
                 <p className="text-xs text-muted-foreground text-center py-10 px-4">
-                  Selecione {tab === 'faccao' ? 'uma facção' : 'uma loja'} ao lado
+                  Nenhum local de trabalho configurado
                 </p>
               ) : loadingProd ? (
                 <div className="flex items-center justify-center py-10"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
               ) : produtosFiltrados.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-8 px-3">Nenhum produto cadastrado</p>
               ) : produtosFiltrados.map(p => {
-                const preco = tipoDinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
+                const precoBase = tipoDinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
+                const precoFinal = descontoPct > 0 && precoBase != null ? precoBase * (1 - descontoPct / 100) : precoBase
                 const noCarrinho = cart.find(c => c.item_id === p.item_id)
                 return (
                   <div key={p.item_id} className={cn(
@@ -285,7 +242,11 @@ function ProductBrowserDialog({
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{p.nome}</p>
                       <p className="text-[10px] text-muted-foreground tabular-nums">
-                        {preco != null ? fmt(preco) : '—'}
+                        {precoBase != null ? (
+                          descontoPct > 0 && precoFinal != null ? (
+                            <><span className="line-through opacity-50">{fmt(precoBase)}</span>{' → '}<span className="text-green-400">{fmt(precoFinal)}</span></>
+                          ) : fmt(precoBase)
+                        ) : '—'}
                       </p>
                     </div>
                     {noCarrinho && <span className="text-[10px] text-primary font-medium shrink-0">×{noCarrinho.quantidade}</span>}
@@ -354,8 +315,15 @@ function ProductBrowserDialog({
               })}
             </div>
             {cart.length > 0 && (
-              <div className="p-3 border-t border-border shrink-0 space-y-2">
-                <p className="text-sm font-bold text-primary tabular-nums">{fmt(totalCarrinho)}</p>
+              <div className="p-3 border-t border-border shrink-0 space-y-1.5">
+                {descontoPct > 0 ? (
+                  <>
+                    <p className="text-[10px] text-muted-foreground tabular-nums line-through">{fmt(totalCarrinho)}</p>
+                    <p className="text-sm font-bold text-green-400 tabular-nums">{fmt(totalComDesconto)} <span className="text-[10px] font-normal opacity-70">(-{descontoPct}%)</span></p>
+                  </>
+                ) : (
+                  <p className="text-sm font-bold text-primary tabular-nums">{fmt(totalCarrinho)}</p>
+                )}
                 <Button size="sm" className="w-full h-7 text-xs" onClick={() => { onConfirm(cart); onClose() }}>
                   Confirmar
                 </Button>
@@ -419,23 +387,26 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
-function VendaCard({ venda, receitaMap, estoqueMap, itemMap, podeEditar,
-  onStatusChange, onEntregar, onDesfazerEntrega, onDescontarEstoque, onEdit }: {
+function VendaCard({ venda, faccoes, receitaMap, estoqueMap, itemMap, podeEditar,
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onDelete }: {
   venda: Venda
+  faccoes: Faccao[]
   receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, Record<string, number>>; itemMap: Record<string, ItemSimples>
   podeEditar: boolean
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
-  onDesfazerEntrega: (id: string) => void; onDescontarEstoque: (v: Venda) => void; onEdit: (v: Venda) => void
+  onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void; onDelete: (id: string) => void
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
+  const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? null
   const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
-  const descValor = subtotal * (venda.desconto_pct / 100)
-  const total = subtotal - descValor
+  const total = subtotal * (1 - venda.desconto_pct / 100)
   const entregue = venda.status === 'entregue'
   const podeEntregar = venda.status === 'encomenda' || venda.status === 'pronto'
   const temFabricar = venda.itens.some(it => it.origem === 'fabricar')
+  const ativo = !entregue && venda.status !== 'cancelado'
 
   return (
     <div className={cn(
@@ -443,28 +414,28 @@ function VendaCard({ venda, receitaMap, estoqueMap, itemMap, podeEditar,
       entregue ? 'border-emerald-500/20 bg-emerald-500/[0.02]' : 'border-border',
       venda.status === 'cancelado' && 'opacity-60'
     )}>
-      <div className="px-4 py-3 bg-white/[0.02] border-b border-border/50 flex items-start gap-3">
+      {/* Header */}
+      <div className="px-3 py-2.5 bg-white/[0.02] border-b border-border/50 flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', STATUS_INFO[venda.status].cls)}>
+          <div className="flex items-center gap-1.5 flex-wrap mb-1">
+            <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full', STATUS_INFO[venda.status].cls)}>
               {STATUS_INFO[venda.status].label}
             </span>
-            {venda.data_encomenda && (
-              <span className="text-[10px] text-muted-foreground/70">{fmtData(venda.data_encomenda)}</span>
-            )}
             <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
               venda.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
             )}>
               {venda.tipo_dinheiro === 'sujo' ? 'Sujo' : 'Limpo'}
             </span>
+            {venda.data_encomenda && (
+              <span className="text-[10px] text-muted-foreground/70">{fmtData(venda.data_encomenda)}</span>
+            )}
           </div>
-          <p className="text-sm font-semibold mt-1 truncate">{venda.cliente_nome}</p>
-          {(venda.cliente_telefone || venda.desconto_pct > 0) && (
-            <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
-              {venda.cliente_telefone && <span>📞 {venda.cliente_telefone}</span>}
-              {venda.desconto_pct > 0 && <span>{venda.desconto_pct}% desc.</span>}
-            </div>
-          )}
+          <p className="text-sm font-semibold truncate">{venda.cliente_nome}</p>
+          <div className="flex items-center gap-2.5 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
+            {faccaoNome && <span className="text-primary/70 font-medium">{faccaoNome}</span>}
+            {venda.cliente_telefone && <span>{venda.cliente_telefone}</span>}
+            {venda.desconto_pct > 0 && <span className="text-green-400">-{venda.desconto_pct}%</span>}
+          </div>
         </div>
         <span className="text-[10px] text-muted-foreground/40 shrink-0 cursor-default"
           title={`Criado: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue: ${venda.entregue_por_nome}` : ''}`}>
@@ -472,43 +443,53 @@ function VendaCard({ venda, receitaMap, estoqueMap, itemMap, podeEditar,
         </span>
       </div>
 
+      {/* Itens */}
       <div className="flex-1">
         {venda.itens.length === 0
-          ? <p className="text-xs text-muted-foreground px-4 py-3 italic">Sem itens</p>
-          : <div className="divide-y divide-border/30">
-              {venda.itens.map(it => (
-                <div key={it.id} className="grid grid-cols-[1fr_50px_80px_80px] gap-2 items-center px-4 py-2">
-                  <div className="min-w-0">
-                    <span className="text-sm font-medium truncate block">{it.item_nome}</span>
-                    <span className={cn('text-[10px]', it.origem === 'fabricar' ? 'text-blue-400/70' : 'text-purple-400/70')}>
-                      {it.origem === 'fabricar' ? 'fabricar' : 'estoque'}
+          ? <p className="text-xs text-muted-foreground px-3 py-2.5 italic">Sem itens</p>
+          : <>
+              <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1 text-[10px] text-muted-foreground/50 border-b border-border/20">
+                <span /><span>Item</span><span className="text-right">Qtd</span>
+                <span className="text-right">Unit.</span><span className="text-right">Total</span>
+              </div>
+              <div className="divide-y divide-border/20">
+                {venda.itens.map(it => (
+                  <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1.5">
+                    <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
+                      it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
+                    )}>
+                      {it.origem === 'fabricar' ? 'Fab' : 'Est'}
                     </span>
+                    <span className="text-xs font-medium truncate">{it.item_nome}</span>
+                    <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
+                    <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
+                    <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
                   </div>
-                  <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
-                  <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
-                  <span className="text-sm text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              <div className="px-3 py-2 border-t border-border/30 flex items-center justify-end gap-2">
+                {venda.desconto_pct > 0 && (
+                  <span className="text-xs text-muted-foreground tabular-nums line-through">{fmt(subtotal)}</span>
+                )}
+                <span className="text-sm font-bold tabular-nums text-primary">{fmt(total)}</span>
+                {venda.desconto_pct > 0 && (
+                  <span className="text-[10px] text-green-400">-{venda.desconto_pct}%</span>
+                )}
+              </div>
+            </>
         }
-        <div className="px-4 py-2.5 border-t border-border/40 bg-white/[0.01] flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {venda.desconto_pct > 0 && `Subtotal ${fmt(subtotal)} · -${fmt(descValor)}`}
-          </span>
-          <span className="text-sm font-bold tabular-nums text-primary">{fmt(total)}</span>
-        </div>
       </div>
 
       {venda.notas && (
-        <div className="px-4 py-2 border-t border-border/30 text-xs text-muted-foreground italic bg-white/[0.01]">{venda.notas}</div>
+        <div className="px-3 py-1.5 border-t border-border/30 text-[11px] text-muted-foreground italic">{venda.notas}</div>
       )}
 
       {temFabricar && (
         <div className="border-t border-border/40">
           <button onClick={() => setMateriaisAberto(v => !v)}
-            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.02] transition-colors">
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.02] transition-colors">
             {materiaisAberto ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-            Ver materiais necessários
+            Materiais necessários
           </button>
           {materiaisAberto && (
             <div className="border-t border-border/30">
@@ -519,12 +500,12 @@ function VendaCard({ venda, receitaMap, estoqueMap, itemMap, podeEditar,
       )}
 
       {podeEditar && (
-        <div className="px-4 py-2.5 border-t border-border/40 flex items-center gap-2 bg-white/[0.01] flex-wrap">
-          {!entregue && venda.status !== 'cancelado' && (
+        <div className="px-3 py-2 border-t border-border/40 flex items-center gap-1.5 bg-white/[0.01] flex-wrap">
+          {ativo && (
             <Select value={venda.status}
               onValueChange={v => { setLoadingStatus(true); onStatusChange(venda.id, v as StatusVenda) }}
               disabled={loadingStatus}>
-              <SelectTrigger className="h-7 text-xs w-36"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {([venda.status, ...STATUS_TRANSICOES[venda.status]] as StatusVenda[])
                   .filter((v, i, a) => a.indexOf(v) === i)
@@ -539,23 +520,31 @@ function VendaCard({ venda, receitaMap, estoqueMap, itemMap, podeEditar,
           )}
           {entregue && (
             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => onDesfazerEntrega(venda.id)}>
-              <RotateCcw className="h-3 w-3" />Desfazer entrega
+              <RotateCcw className="h-3 w-3" />Desfazer
             </Button>
           )}
           {venda.status === 'cancelado' && (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onStatusChange(venda.id, 'fabricando')}>Reabrir</Button>
           )}
-          <div className="ml-auto flex gap-1">
-            {!venda.estoque_descontado && (venda.status === 'pronto' || entregue) && (
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-orange-400 border-orange-500/30 hover:bg-orange-500/10"
-                onClick={() => onDescontarEstoque(venda)}>
-                <Package className="h-3 w-3" />Descontar estoque
-              </Button>
-            )}
-            {!entregue && venda.status !== 'cancelado' && (
+          <div className="ml-auto flex items-center gap-1">
+            {ativo && !confirmDelete && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onEdit(venda)}>
                 <Edit2 className="h-3 w-3" />
               </Button>
+            )}
+            {ativo && !confirmDelete && (
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+            {confirmDelete && (
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" className="h-7 text-xs px-2"
+                  onClick={() => setConfirmDelete(false)}>Não</Button>
+                <Button size="sm" className="h-7 text-xs px-2.5 bg-red-500/80 hover:bg-red-500 text-white border-0"
+                  onClick={() => onDelete(venda.id)}>Excluir</Button>
+              </div>
             )}
           </div>
         </div>
@@ -647,12 +636,13 @@ function OrderDialog({
     setFaccaoAberta(false)
   }
 
-  // Membro autocomplete
+  // Membro autocomplete (filtrado pela facção selecionada)
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta || !membroNome.trim()) return []
     const q = membroNome.toLowerCase()
-    return membros.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)).slice(0, 8)
-  }, [membros, membroNome, membroAberta])
+    const pool = form.faccao_id ? membros.filter(m => m.faccao_id === form.faccao_id) : membros
+    return pool.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)).slice(0, 8)
+  }, [membros, membroNome, membroAberta, form.faccao_id])
 
   function selecionarMembro(m: Membro) {
     setMembroNome(m.nome)
@@ -718,59 +708,6 @@ function OrderDialog({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cliente</p>
               <div className="grid grid-cols-2 gap-3">
 
-                {/* Nome/Membro */}
-                <div className="space-y-1.5 relative">
-                  <Label className="text-xs">Nome / Membro <span className="text-destructive">*</span></Label>
-                  <Input value={membroNome}
-                    onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
-                    onFocus={() => setMembroAberta(true)}
-                    onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
-                    placeholder="Nome da pessoa..." className="h-8 text-sm" autoFocus />
-                  {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                      {membrosSugestoes.map(m => (
-                        <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                          <span className="font-medium">{m.nome}</span>
-                          {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
-                          {m.telefone && <span className="ml-auto text-muted-foreground tabular-nums text-[10px]">{m.telefone}</span>}
-                        </button>
-                      ))}
-                      {membroNaoEncontrado && (
-                        <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
-                          <p className="text-[11px] text-muted-foreground">
-                            &quot;{membroNome.trim()}&quot; não encontrado. Cadastrar agora?
-                          </p>
-                          <div className="flex gap-1.5">
-                            <Input
-                              placeholder="Telefone (opcional)"
-                              value={novoMembroTel}
-                              onChange={e => setNovoMembroTel(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
-                              className="h-7 text-xs flex-1"
-                              onMouseDown={e => e.stopPropagation()}
-                            />
-                            <button type="button" disabled={criandoMembro}
-                              onMouseDown={e => { e.preventDefault(); handleCadastrarMembro() }}
-                              className="h-7 px-2.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 shrink-0 flex items-center gap-1">
-                              {criandoMembro ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                              Cadastrar
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Telefone */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Telefone</Label>
-                  <Input value={form.cliente_telefone}
-                    onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))}
-                    placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
-                </div>
-
                 {/* Facção */}
                 <div className="space-y-1.5 relative">
                   <Label className="text-xs">Facção / Estabelecimento</Label>
@@ -778,9 +715,9 @@ function OrderDialog({
                     onChange={e => { setFaccaoNome(e.target.value); setForm(prev => ({ ...prev, faccao_id: '' })); setFaccaoAberta(true) }}
                     onFocus={() => setFaccaoAberta(true)}
                     onBlur={() => setTimeout(() => setFaccaoAberta(false), 150)}
-                    placeholder="Opcional..." className="h-8 text-sm" />
+                    placeholder="Opcional..." className="h-8 text-sm" autoFocus />
                   {faccaoNome && (
-                    <button type="button" onClick={() => { setFaccaoNome(''); setForm(prev => ({ ...prev, faccao_id: '' })) }}
+                    <button type="button" onClick={() => { setFaccaoNome(''); setForm(prev => ({ ...prev, faccao_id: '' })); setMembroNome(''); setForm(prev => ({ ...prev, cliente_nome: '', faccao_id: '' })) }}
                       className="absolute right-2 top-[34px] text-muted-foreground hover:text-foreground">
                       <X className="h-3 w-3" />
                     </button>
@@ -805,6 +742,63 @@ function OrderDialog({
                   <Input type="number" min="0" max="100" value={form.desconto_pct}
                     onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
                     className="h-8 text-sm" />
+                </div>
+
+                {/* Nome/Membro */}
+                <div className="space-y-1.5 relative">
+                  <Label className="text-xs">Nome / Membro <span className="text-destructive">*</span></Label>
+                  <Input value={membroNome}
+                    onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
+                    onFocus={() => setMembroAberta(true)}
+                    onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
+                    placeholder={form.faccao_id ? 'Buscar na facção...' : 'Nome da pessoa...'}
+                    className="h-8 text-sm" />
+                  {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
+                    <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                      {membrosSugestoes.map(m => (
+                        <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                          <span className="font-medium">{m.nome}</span>
+                          {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
+                          {m.telefone && <span className="ml-auto text-muted-foreground tabular-nums text-[10px]">{m.telefone}</span>}
+                        </button>
+                      ))}
+                      {membroNaoEncontrado && (
+                        <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
+                          <p className="text-[11px] text-muted-foreground">
+                            {form.faccao_id
+                              ? <>&quot;{membroNome.trim()}&quot; não está nessa facção. Adicionar à investigação?</>
+                              : <>&quot;{membroNome.trim()}&quot; não encontrado. Cadastrar agora?</>
+                            }
+                          </p>
+                          <div className="flex gap-1.5">
+                            <Input
+                              placeholder="Telefone (opcional)"
+                              value={novoMembroTel}
+                              onChange={e => setNovoMembroTel(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
+                              className="h-7 text-xs flex-1"
+                              onMouseDown={e => e.stopPropagation()}
+                            />
+                            <button type="button" disabled={criandoMembro}
+                              onMouseDown={e => { e.preventDefault(); handleCadastrarMembro() }}
+                              className="h-7 px-2.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 shrink-0 flex items-center gap-1">
+                              {criandoMembro ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                              Adicionar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Telefone */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Telefone</Label>
+                  <Input value={form.cliente_telefone}
+                    onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))}
+                    placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
                 </div>
 
                 {/* Data */}
@@ -938,11 +932,12 @@ function OrderDialog({
         open={browserOpen}
         onClose={() => setBrowserOpen(false)}
         onConfirm={items => setCart(items)}
-        faccoes={faccoes}
-        lojas={lojas}
         meuFaccaoId={meuFaccao?.id ?? null}
+        meuFaccaoNome={meuFaccao?.nome ?? null}
         meuLojaId={meuLoja?.id ?? null}
+        meuLojaName={meuLoja?.nome ?? null}
         tipoDinheiro={form.tipo_dinheiro}
+        descontoPct={parseFloat(form.desconto_pct) || 0}
         initialCart={cart}
       />
     </>
@@ -1053,6 +1048,13 @@ export function VendasClient({
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
   }
 
+  async function handleDelete(id: string) {
+    const { error } = await sb().from('vendas').delete().eq('id', id)
+    if (error) { toast.error('Erro ao excluir pedido'); return }
+    setVendas(prev => prev.filter(v => v.id !== id))
+    toast.success('Pedido excluído')
+  }
+
   async function handleDesfazerEntrega(id: string) {
     const { error } = await sb().from('vendas').update({
       status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null,
@@ -1137,13 +1139,14 @@ export function VendasClient({
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
             {vendasFiltradas.map(venda => (
               <VendaCard key={venda.id} venda={venda}
+                faccoes={faccoes}
                 receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
                 podeEditar={podeEditar}
                 onStatusChange={handleStatusChange}
                 onEntregar={handleEntregar}
                 onDesfazerEntrega={handleDesfazerEntrega}
-                onDescontarEstoque={handleDescontarEstoque}
                 onEdit={v => { setEditando(v); setFormOpen(true) }}
+                onDelete={handleDelete}
               />
             ))}
           </div>
