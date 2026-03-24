@@ -22,16 +22,18 @@ type Item = {
   item_receita: { ingrediente_id: string; quantidade: number }[]
 }
 
-type PrecoVigente = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
 type Loja = { id: string; nome: string }
 type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
+type FaccaoPreco = { faccao_id: string; item_id: string; preco_limpo: number | null; preco_sujo: number | null }
 
 interface Props {
   userId: string
   items: Item[]
-  precos: PrecoVigente[]
   lojas: Loja[]
   lojaPrecos: LojaPreco[]
+  faccaoPrecos: FaccaoPreco[]
+  meuLojaId: string | null
+  meuFaccaoId: string | null
   favoritosIniciais: string[]
   podeEditar?: boolean
 }
@@ -51,10 +53,11 @@ function fmtKg(kg: number) {
 
 // ── Item com botão + ──────────────────────────────────────────────────────────
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onToggleFav, podeEditar }: {
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, onAdd, onToggleFav, podeEditar }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
+  isMeu: boolean
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
   podeEditar: boolean
@@ -70,7 +73,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onTo
           {item.categorias_item?.nome && (
             <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>
           )}
-          {item.eh_meu_produto && <span className="text-[10px] text-emerald-500/70">meu</span>}
+          {isMeu && <span className="text-[10px] text-emerald-500/70">meu</span>}
           {item.item_receita.length === 0 && (
             <span className="text-[10px] text-orange-500/60">sem receita</span>
           )}
@@ -101,7 +104,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onTo
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, favoritosIniciais, podeEditar = true }: Props) {
+export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, favoritosIniciais, podeEditar = true }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -120,7 +123,23 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
 
   const itemMap   = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const lojaMap   = useMemo(() => Object.fromEntries(lojas.map(l => [l.id, l])), [lojas])
-  const precoMap  = useMemo(() => Object.fromEntries(precos.map(p => [p.item_id, p])), [precos])
+  // Preços de venda do usuário (loja ou facção do local de trabalho)
+  const meuPrecoMap = useMemo(() => {
+    const map: Record<string, { preco_limpo: number | null; preco_sujo: number | null }> = {}
+    if (meuLojaId) {
+      lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => {
+        map[lp.item_id] = { preco_limpo: lp.preco, preco_sujo: lp.preco_sujo }
+      })
+    }
+    if (meuFaccaoId) {
+      faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => {
+        if (!map[fp.item_id]) map[fp.item_id] = { preco_limpo: fp.preco_limpo, preco_sujo: fp.preco_sujo }
+      })
+    }
+    return map
+  }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
+
+  const meusItemIds = useMemo(() => new Set(Object.keys(meuPrecoMap)), [meuPrecoMap])
 
   const lojaPrecoPorItem = useMemo(() => {
     const map: Record<string, LojaPreco[]> = {}
@@ -132,7 +151,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
   const itensFiltrados = useMemo(() => {
     let lista = itensCraft
     if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
-    if (aba === 'meus') lista = lista.filter(i => i.eh_meu_produto)
+    if (aba === 'meus') lista = lista.filter(i => meusItemIds.has(i.id))
     if (busca.trim()) {
       const q = busca.toLowerCase()
       lista = lista.filter(i =>
@@ -140,7 +159,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
       )
     }
     return lista
-  }, [itensCraft, aba, favoritos, busca])
+  }, [itensCraft, aba, favoritos, busca, meusItemIds])
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
 
@@ -247,6 +266,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
               key={item.id} item={item}
               isInBatch={batchIds.has(item.id)}
               isFavorito={favoritos.has(item.id)}
+              isMeu={meusItemIds.has(item.id)}
               onAdd={addToBatch} onToggleFav={toggleFavorito}
               podeEditar={podeEditar}
             />
@@ -328,16 +348,16 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
             )}
 
             {/* Preços de venda */}
-            {batch.some(b => itemMap[b.item_id]?.eh_meu_produto && precoMap[b.item_id]) && (() => {
+            {batch.some(b => meusItemIds.has(b.item_id) && meuPrecoMap[b.item_id]) && (() => {
               const linhas = batch
-                .filter(b => itemMap[b.item_id]?.eh_meu_produto && precoMap[b.item_id])
+                .filter(b => meusItemIds.has(b.item_id) && meuPrecoMap[b.item_id])
                 .map(({ item_id, quantidade }) => ({
                   nome:         itemMap[item_id]!.nome,
                   quantidade,
-                  unitSujo:     precoMap[item_id]?.preco_sujo ?? null,
-                  unitLimpo:    precoMap[item_id]?.preco_limpo ?? null,
-                  totalSujo:    precoMap[item_id]?.preco_sujo  != null ? precoMap[item_id]!.preco_sujo!  * quantidade : null,
-                  totalLimpo:   precoMap[item_id]?.preco_limpo != null ? precoMap[item_id]!.preco_limpo! * quantidade : null,
+                  unitSujo:     meuPrecoMap[item_id]?.preco_sujo ?? null,
+                  unitLimpo:    meuPrecoMap[item_id]?.preco_limpo ?? null,
+                  totalSujo:    meuPrecoMap[item_id]?.preco_sujo  != null ? meuPrecoMap[item_id]!.preco_sujo!  * quantidade : null,
+                  totalLimpo:   meuPrecoMap[item_id]?.preco_limpo != null ? meuPrecoMap[item_id]!.preco_limpo! * quantidade : null,
                 }))
               const somaSujo  = linhas.reduce((s, l) => l.totalSujo  != null ? s + l.totalSujo  : s, 0)
               const somaLimpo = linhas.reduce((s, l) => l.totalLimpo != null ? s + l.totalLimpo : s, 0)

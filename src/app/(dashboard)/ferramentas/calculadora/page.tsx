@@ -11,20 +11,28 @@ export default async function CalculadoraPage() {
   const [
     { data: itemsData },
     { data: receitasData },
-    { data: precosData },
     { data: lojasData },
     { data: lojaPrecosData },
     { data: favoritosData },
     { data: permRow },
+    { data: usuarioRow },
   ] = await Promise.all([
     supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
-    supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
   ])
+
+  const meuLojaId    = usuarioRow?.local_trabalho_loja_id ?? null
+  const meuFaccaoId  = usuarioRow?.local_trabalho_faccao_id ?? null
+
+  // Buscar preços da facção do usuário (se tiver)
+  const { data: faccaoPrecosData } = meuFaccaoId
+    ? await supabase.from('faccao_item_precos').select('faccao_id, item_id, preco_limpo, preco_sujo').eq('faccao_id', meuFaccaoId)
+    : { data: [] }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
@@ -51,9 +59,11 @@ export default async function CalculadoraPage() {
       <CalculadoraClient
         userId={user.id}
         items={items}
-        precos={precosData ?? []}
         lojas={lojasData ?? []}
         lojaPrecos={lojaPrecosData ?? []}
+        faccaoPrecos={faccaoPrecosData ?? []}
+        meuLojaId={meuLojaId}
+        meuFaccaoId={meuFaccaoId}
         favoritosIniciais={(favoritosData ?? []).map(f => f.item_id)}
         podeEditar={podeEditar}
       />

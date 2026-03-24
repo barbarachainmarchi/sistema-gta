@@ -675,10 +675,24 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                               <span className="text-xs text-muted-foreground">{fmtData(m.data_entrada)}</span>
                               <div>
                                 {usuarioVinculado ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', usuarioVinculado.status === 'ativo' ? 'bg-green-400' : 'bg-zinc-500')} />
-                                    <span className="text-sm">{usuarioVinculado.nome}</span>
-                                    {usuarioVinculado.status !== 'ativo' && <span className="text-[10px] text-zinc-500">(inativo)</span>}
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', usuarioVinculado.status === 'ativo' ? 'bg-green-400' : 'bg-zinc-500')} />
+                                      <span className="text-sm">{usuarioVinculado.nome}</span>
+                                      {usuarioVinculado.status !== 'ativo' && <span className="text-[10px] text-zinc-500">(inativo)</span>}
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-wrap pl-3">
+                                      {usuarioVinculado.local_trabalho_loja_id && (
+                                        <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">
+                                          {lojas.find(l => l.id === usuarioVinculado.local_trabalho_loja_id)?.nome ?? 'Loja'}
+                                        </span>
+                                      )}
+                                      {usuarioVinculado.local_trabalho_faccao_id && (
+                                        <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">
+                                          {faccoes.find(f => f.id === usuarioVinculado.local_trabalho_faccao_id)?.nome ?? 'Facção'}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 ) : (
                                   <Select onValueChange={uid => handleVincularMembro(uid, m.id)}>
