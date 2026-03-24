@@ -66,12 +66,14 @@ interface Props {
   userId: string; userNome: string | null
   contasIniciais: Conta[]; lancamentosIniciais: Lancamento[]
   lavagensIniciais: Lavagem[]; membros: Membro[]; cotacoesFinaliz: Cotacao[]
+  podeEditar: boolean
+  tabPadrao?: string
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function FinanceiroClient({
-  userId, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz,
+  userId, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, tabPadrao,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb: SbClient = useCallback(() => {
@@ -79,7 +81,7 @@ export function FinanceiroClient({
     return sbRef.current
   }, [])
 
-  const [aba, setAba]               = useState<Aba>('extrato')
+  const [aba, setAba]               = useState<Aba>((tabPadrao as Aba) || 'extrato')
   const [contas, setContas]         = useState<Conta[]>(contasIniciais)
   const [lancamentos, setLancamentos] = useState<Lancamento[]>(lancamentosIniciais)
   const [lavagens, setLavagens]     = useState<Lavagem[]>(lavagensIniciais)
@@ -123,6 +125,7 @@ export function FinanceiroClient({
           lancamentos={lancamentos} setLancamentos={setLancamentos}
           atualizarSaldo={atualizarSaldo} userId={userId}
           cotacoesFinaliz={cotacoesFinaliz} membros={membros} sb={sb}
+          podeEditar={podeEditar}
         />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'banco' && 'hidden')}>
@@ -132,17 +135,20 @@ export function FinanceiroClient({
         <TransferenciasAba
           contas={contas} lancamentos={lancamentos} setLancamentos={setLancamentos}
           atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
+          podeEditar={podeEditar}
         />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'lavagem' && 'hidden')}>
         <LavagemAba
           contas={contas} lavagens={lavagens} setLavagens={setLavagens}
           atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
+          podeEditar={podeEditar}
         />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'contas' && 'hidden')}>
         <ContasAba
           contas={contas} setContas={setContas} membros={membros} sb={sb}
+          podeEditar={podeEditar}
         />
       </div>
     </div>

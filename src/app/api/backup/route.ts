@@ -34,7 +34,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (modulo === 'financeiro' || modulo === 'tudo') {
-    // tabelas futuras — vazio por enquanto
+    await q('financeiro_contas', 'financeiro_contas')
+    await q('financeiro_lancamentos', 'financeiro_lancamentos')
+    await q('financeiro_lavagem', 'financeiro_lavagem')
   }
 
   return NextResponse.json({
@@ -58,7 +60,8 @@ export async function POST(req: NextRequest) {
   const ORDEM_UPSERT: Record<string, string[]> = {
     produtos: ['categorias_item', 'items', 'item_receita', 'item_precos', 'item_reciclagem'],
     investigacao: ['faccoes', 'membros', 'veiculos', 'lojas', 'loja_item_precos', 'loja_membros', 'faccao_item_precos'],
-    tudo: ['categorias_item', 'items', 'item_receita', 'item_precos', 'item_reciclagem', 'faccoes', 'membros', 'veiculos', 'lojas', 'loja_item_precos', 'loja_membros', 'faccao_item_precos'],
+    financeiro: ['financeiro_contas', 'financeiro_lancamentos', 'financeiro_lavagem'],
+    tudo: ['categorias_item', 'items', 'item_receita', 'item_precos', 'item_reciclagem', 'faccoes', 'membros', 'veiculos', 'lojas', 'loja_item_precos', 'loja_membros', 'faccao_item_precos', 'financeiro_contas', 'financeiro_lancamentos', 'financeiro_lavagem'],
   }
 
   const ordem = ORDEM_UPSERT[modulo] ?? Object.keys(tabelas)

@@ -72,12 +72,13 @@ interface Props {
   cotacoesFinaliz: Cotacao[]
   membros: Membro[]
   sb: SbClient
+  podeEditar: boolean
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function ExtratoAba({
-  contas, setContas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, membros, sb,
+  contas, setContas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, membros, sb, podeEditar,
 }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [browseOpen, setBrowseOpen] = useState(false)
@@ -336,9 +337,11 @@ export function ExtratoAba({
 
         <span className="text-xs text-muted-foreground ml-1">{lancFiltrados.length} registros</span>
 
-        <Button size="sm" className="h-8 text-xs gap-1 ml-auto" onClick={abrirNovo}>
-          <Plus className="h-3.5 w-3.5" /> Adicionar movimentação
-        </Button>
+        {podeEditar && (
+          <Button size="sm" className="h-8 text-xs gap-1 ml-auto" onClick={abrirNovo}>
+            <Plus className="h-3.5 w-3.5" /> Adicionar movimentação
+          </Button>
+        )}
       </div>
 
       {/* ── Tabela ── */}

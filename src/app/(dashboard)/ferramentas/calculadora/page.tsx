@@ -15,6 +15,7 @@ export default async function CalculadoraPage() {
     { data: lojasData },
     { data: lojaPrecosData },
     { data: favoritosData },
+    { data: permRow },
   ] = await Promise.all([
     supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
@@ -22,7 +23,13 @@ export default async function CalculadoraPage() {
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
+    supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
   ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'calculadora')?.pode_editar ?? false)
 
   // Mesclar receitas nos items
   const receitasPorItem: Record<string, { ingrediente_id: string; quantidade: number }[]> = {}
@@ -48,6 +55,7 @@ export default async function CalculadoraPage() {
         lojas={lojasData ?? []}
         lojaPrecos={lojaPrecosData ?? []}
         favoritosIniciais={(favoritosData ?? []).map(f => f.item_id)}
+        podeEditar={podeEditar}
       />
     </>
   )

@@ -33,6 +33,7 @@ interface Props {
   lojas: Loja[]
   lojaPrecos: LojaPreco[]
   favoritosIniciais: string[]
+  podeEditar?: boolean
 }
 
 type BatchEntry = { item_id: string; quantidade: number }
@@ -50,12 +51,13 @@ function fmtKg(kg: number) {
 
 // ── Item com botão + ──────────────────────────────────────────────────────────
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onToggleFav }: {
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onToggleFav, podeEditar }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
+  podeEditar: boolean
 }) {
   return (
     <div className={cn(
@@ -74,9 +76,11 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onTo
           )}
         </div>
       </div>
-      <button onMouseDown={e => e.preventDefault()} onClick={e => onToggleFav(item.id, e)}
+      <button onMouseDown={e => e.preventDefault()} onClick={e => podeEditar && onToggleFav(item.id, e)}
+        disabled={!podeEditar}
         className={cn('shrink-0 p-0.5 rounded transition-colors',
-          isFavorito ? 'text-yellow-400' : 'text-muted-foreground/40 hover:text-yellow-400'
+          isFavorito ? 'text-yellow-400' : 'text-muted-foreground/40 hover:text-yellow-400',
+          !podeEditar && 'opacity-40 cursor-default'
         )}>
         <Star className="h-3.5 w-3.5" fill={isFavorito ? 'currentColor' : 'none'} />
       </button>
@@ -97,7 +101,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, onAdd, onTo
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, favoritosIniciais }: Props) {
+export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, favoritosIniciais, podeEditar = true }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -217,7 +221,7 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
     <div className="h-[calc(100vh-3rem)] flex overflow-hidden">
 
       {/* ── Col 1: Lista de itens ── */}
-      <aside className="w-56 shrink-0 flex flex-col border-r border-border">
+      <aside className="w-60 shrink-0 flex flex-col border-r border-border">
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -244,13 +248,14 @@ export function CalculadoraClient({ userId, items, precos, lojas, lojaPrecos, fa
               isInBatch={batchIds.has(item.id)}
               isFavorito={favoritos.has(item.id)}
               onAdd={addToBatch} onToggleFav={toggleFavorito}
+              podeEditar={podeEditar}
             />
           ))}
         </div>
       </aside>
 
       {/* ── Col 2: Itens a produzir + Preços ── */}
-      <div className="w-[360px] shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-y-auto">
+      <div className="flex-1 flex flex-col border-r border-border bg-muted/[0.03] overflow-y-auto">
         {batch.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
             <Package className="h-10 w-10 text-muted-foreground/20" />

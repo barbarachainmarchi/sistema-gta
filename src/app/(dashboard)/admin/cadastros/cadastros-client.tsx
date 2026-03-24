@@ -30,6 +30,7 @@ type Item = {
   eh_meu_produto: boolean
   eh_compravel: boolean
   tem_reciclagem: boolean
+  meu_produto_usuario_id: string | null
   created_at: string
   updated_at: string
   categorias_item: { id: string; nome: string } | null
@@ -38,7 +39,8 @@ type Item = {
 type Categoria = { id: string; nome: string; descricao: string | null; created_at: string }
 type Loja = { id: string; nome: string; localizacao: string | null }
 type Faccao = { id: string; nome: string; tag: string | null }
-type LocalTrabalho = { tipo: 'loja' | 'faccao'; id: string; nome: string }
+type LocalTrabalhoLoja = { id: string; nome: string }
+type LocalTrabalhoFaccao = { id: string; nome: string }
 
 type ReceitaIngrediente = { id?: string; ingrediente_id: string; ingrediente_nome: string; quantidade: number }
 type ReciclagemResultado = { id?: string; resultado_id: string; resultado_nome: string; quantidade: number }
@@ -63,12 +65,13 @@ interface Props {
   lojas: Loja[]
   faccoes: Faccao[]
   userId: string
-  localTrabalho: LocalTrabalho | null
+  localTrabalhoLoja: LocalTrabalhoLoja | null
+  localTrabalhoFaccao: LocalTrabalhoFaccao | null
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas, faccoes, userId, localTrabalho }: Props) {
+export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas, faccoes, userId, localTrabalhoLoja, localTrabalhoFaccao }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -106,7 +109,8 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
             faccoes={faccoes}
             allItems={items}
             userId={userId}
-            localTrabalho={localTrabalho}
+            localTrabalhoLoja={localTrabalhoLoja}
+            localTrabalhoFaccao={localTrabalhoFaccao}
             sb={sb}
           />
         )}
@@ -133,7 +137,8 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               lojas={lojas}
               faccoes={faccoes}
               userId={userId}
-              localTrabalho={localTrabalho}
+              localTrabalhoLoja={localTrabalhoLoja}
+              localTrabalhoFaccao={localTrabalhoFaccao}
               sb={sb}
               onUpdated={updated => setItems(p => p.map(i => i.id === updated.id ? updated : i))}
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'item' })}
@@ -180,13 +185,14 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
 
 // ─── ABA ITENS ────────────────────────────────────────────────────────────────
 
-function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb, onUpdated, onDelete, onItemCreated }: {
+function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalhoLoja, localTrabalhoFaccao, sb, onUpdated, onDelete, onItemCreated }: {
   items: Item[]
   categorias: Categoria[]
   lojas: Loja[]
   faccoes: Faccao[]
   userId: string
-  localTrabalho: LocalTrabalho | null
+  localTrabalhoLoja: LocalTrabalhoLoja | null
+  localTrabalhoFaccao: LocalTrabalhoFaccao | null
   sb: () => ReturnType<typeof createClient>
   onUpdated: (item: Item) => void
   onDelete: (id: string, nome: string) => void
@@ -205,10 +211,11 @@ function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb
     const matchTipo = filterTipo === 'todos'
       || (filterTipo === 'craft' && item.tem_craft)
       || (filterTipo === 'meu_produto' && item.eh_meu_produto)
+      || (filterTipo === 'meus' && item.eh_meu_produto && item.meu_produto_usuario_id === userId)
       || (filterTipo === 'compravel' && item.eh_compravel)
       || (filterTipo === 'reciclagem' && item.tem_reciclagem)
     return matchSearch && matchStatus && matchCategoria && matchTipo
-  }), [items, search, filterStatus, filterCategoria, filterTipo])
+  }), [items, search, filterStatus, filterCategoria, filterTipo, userId])
 
   return (
     <>
@@ -229,6 +236,7 @@ function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb
               <SelectItem value="todos">Todos os tipos</SelectItem>
               <SelectItem value="craft">Craft</SelectItem>
               <SelectItem value="meu_produto">Venda</SelectItem>
+              <SelectItem value="meus">Meus</SelectItem>
               <SelectItem value="compravel">Compra</SelectItem>
               <SelectItem value="reciclagem">Reciclagem</SelectItem>
             </SelectContent>
@@ -315,7 +323,8 @@ function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb
           faccoes={faccoes}
           allItems={items}
           userId={userId}
-          localTrabalho={localTrabalho}
+          localTrabalhoLoja={localTrabalhoLoja}
+          localTrabalhoFaccao={localTrabalhoFaccao}
           sb={sb}
           onClose={() => setEditingItem(null)}
           onSaved={updated => { onUpdated(updated); setEditingItem(null) }}
@@ -328,14 +337,15 @@ function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb
 
 // ─── BOTÃO NOVO ITEM ──────────────────────────────────────────────────────────
 
-function BtnNovoItem({ onCreated, categorias, lojas, faccoes, allItems, userId, localTrabalho, sb }: {
+function BtnNovoItem({ onCreated, categorias, lojas, faccoes, allItems, userId, localTrabalhoLoja, localTrabalhoFaccao, sb }: {
   onCreated: (item: Item) => void
   categorias: Categoria[]
   lojas: Loja[]
   faccoes: Faccao[]
   allItems: Item[]
   userId: string
-  localTrabalho: LocalTrabalho | null
+  localTrabalhoLoja: LocalTrabalhoLoja | null
+  localTrabalhoFaccao: LocalTrabalhoFaccao | null
   sb: () => ReturnType<typeof createClient>
 }) {
   const [open, setOpen] = useState(false)
@@ -352,7 +362,8 @@ function BtnNovoItem({ onCreated, categorias, lojas, faccoes, allItems, userId, 
           faccoes={faccoes}
           allItems={allItems}
           userId={userId}
-          localTrabalho={localTrabalho}
+          localTrabalhoLoja={localTrabalhoLoja}
+          localTrabalhoFaccao={localTrabalhoFaccao}
           sb={sb}
           onClose={() => setOpen(false)}
           onSaved={item => { onCreated(item); setOpen(false) }}
@@ -365,14 +376,15 @@ function BtnNovoItem({ onCreated, categorias, lojas, faccoes, allItems, userId, 
 
 // ─── DIALOG DE ITEM ───────────────────────────────────────────────────────────
 
-function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, userId, localTrabalho, sb, onClose, onSaved, onItemCreated }: {
+function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, userId, localTrabalhoLoja, localTrabalhoFaccao, sb, onClose, onSaved, onItemCreated }: {
   item: Item | null
   categorias: Categoria[]
   lojas: Loja[]
   faccoes: Faccao[]
   allItems: Item[]
   userId: string
-  localTrabalho: LocalTrabalho | null
+  localTrabalhoLoja: LocalTrabalhoLoja | null
+  localTrabalhoFaccao: LocalTrabalhoFaccao | null
   sb: () => ReturnType<typeof createClient>
   onClose: () => void
   onSaved: (item: Item) => void
@@ -529,20 +541,19 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
           const { error: e3 } = await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
           if (e3) throw new Error('Erro ao salvar preços: ' + e3.message)
         }
-        // Auto-vincular ao local de trabalho do usuário
-        if (localTrabalho && form.precos.length > 0) {
-          const precoVigente = form.precos[0]
-          if (localTrabalho.tipo === 'loja') {
-            await sb().from('loja_item_precos').upsert(
-              { item_id: id, loja_id: localTrabalho.id, preco: precoVigente.preco_limpo ?? 0, preco_sujo: precoVigente.preco_sujo ?? null },
-              { onConflict: 'item_id,loja_id' }
-            )
-          } else {
-            await sb().from('faccao_item_precos').upsert(
-              { item_id: id, faccao_id: localTrabalho.id, tipo: 'fixo', preco_limpo: precoVigente.preco_limpo ?? null, preco_sujo: precoVigente.preco_sujo ?? null },
-              { onConflict: 'faccao_id,item_id' }
-            )
-          }
+        if (localTrabalhoLoja && form.precos.length > 0) {
+          const p = form.precos[0]
+          await sb().from('loja_item_precos').upsert(
+            { item_id: id, loja_id: localTrabalhoLoja.id, preco: p.preco_limpo ?? 0, preco_sujo: p.preco_sujo ?? null },
+            { onConflict: 'item_id,loja_id' }
+          )
+        }
+        if (localTrabalhoFaccao && form.precos.length > 0) {
+          const p = form.precos[0]
+          await sb().from('faccao_item_precos').upsert(
+            { item_id: id, faccao_id: localTrabalhoFaccao.id, tipo: 'fixo', preco_limpo: p.preco_limpo ?? null, preco_sujo: p.preco_sujo ?? null },
+            { onConflict: 'faccao_id,item_id' }
+          )
         }
       }
 
@@ -696,11 +707,14 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
 
               {/* ── PREÇO ── */}
               <TabsContent value="preco" className="space-y-3 pt-3">
-                {localTrabalho ? (
+                {(localTrabalhoLoja || localTrabalhoFaccao) ? (
                   <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 flex items-center gap-2">
                     <ShoppingBag className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                     <p className="text-xs text-emerald-300">
-                      Preço vigente será vinculado automaticamente à{localTrabalho.tipo === 'loja' ? ' loja' : ' facção'} <strong>{localTrabalho.nome}</strong>
+                      Preço vigente será vinculado automaticamente
+                      {localTrabalhoLoja && <> à loja <strong>{localTrabalhoLoja.nome}</strong></>}
+                      {localTrabalhoLoja && localTrabalhoFaccao && ' e'}
+                      {localTrabalhoFaccao && <> à facção <strong>{localTrabalhoFaccao.nome}</strong></>}
                     </p>
                   </div>
                 ) : (

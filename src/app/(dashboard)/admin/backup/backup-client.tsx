@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 const MODULOS = [
   { key: 'produtos',      label: 'Produtos',      descricao: 'Itens, categorias, receitas, preços, reciclagem', icon: Package },
   { key: 'investigacao',  label: 'Investigação',   descricao: 'Facções, membros, veículos, lojas, preços',      icon: Search },
-  { key: 'financeiro',    label: 'Financeiro',     descricao: 'Dados financeiros (em breve)',                   icon: DollarSign, desabilitado: true },
+  { key: 'financeiro',    label: 'Financeiro',     descricao: 'Contas, lançamentos e lavagem',                  icon: DollarSign },
   { key: 'tudo',          label: 'Tudo',           descricao: 'Backup completo de todos os módulos',            icon: Database },
 ]
 
@@ -91,8 +91,7 @@ export function BackupClient() {
               <div
                 key={m.key}
                 className={cn(
-                  'flex items-center justify-between p-4 rounded-lg border border-border bg-card/30',
-                  m.desabilitado && 'opacity-50'
+                  'flex items-center justify-between p-4 rounded-lg border border-border bg-card/30'
                 )}
               >
                 <div className="flex items-center gap-3">
@@ -107,7 +106,7 @@ export function BackupClient() {
                   variant="outline"
                   className="h-8 text-xs gap-1.5 shrink-0"
                   onClick={() => handleExportar(m.key)}
-                  disabled={!!baixando || !!m.desabilitado}
+                  disabled={!!baixando}
                 >
                   {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   {loading ? 'Exportando...' : 'Exportar'}

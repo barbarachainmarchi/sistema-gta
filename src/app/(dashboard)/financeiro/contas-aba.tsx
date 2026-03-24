@@ -27,11 +27,12 @@ interface Props {
   setContas: React.Dispatch<React.SetStateAction<Conta[]>>
   membros: Membro[]
   sb: SbClient
+  podeEditar: boolean
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function ContasAba({ contas, setContas, membros, sb }: Props) {
+export function ContasAba({ contas, setContas, membros, sb, podeEditar }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm]           = useState({ ...EMPTY_FORM })
   const [salvando, setSalvando]   = useState(false)
@@ -109,9 +110,11 @@ export function ContasAba({ contas, setContas, membros, sb }: Props) {
             </button>
           ))}
         </div>
-        <Button size="sm" className="h-8 text-xs gap-1" onClick={abrirNova}>
-          <Plus className="h-3.5 w-3.5" /> Nova conta
-        </Button>
+        {podeEditar && (
+          <Button size="sm" className="h-8 text-xs gap-1" onClick={abrirNova}>
+            <Plus className="h-3.5 w-3.5" /> Nova conta
+          </Button>
+        )}
       </div>
 
       {/* ── Lista ── */}

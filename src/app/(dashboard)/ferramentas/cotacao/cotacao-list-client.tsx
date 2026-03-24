@@ -34,13 +34,14 @@ interface Props {
   faccoes: Faccao[]
   lojas: Loja[]
   membros: Membro[]
+  podeEditar: boolean
 }
 
 const statusIcon = { rascunho: Clock, finalizada: CheckCircle2, cancelada: XCircle }
 const statusLabel = { rascunho: 'Rascunho', finalizada: 'Finalizada', cancelada: 'Cancelada' }
 const statusColor = { rascunho: 'text-yellow-400', finalizada: 'text-green-400', cancelada: 'text-zinc-500' }
 
-export function CotacaoListClient({ userId, userNome, cotacoes, faccoes, lojas, membros }: Props) {
+export function CotacaoListClient({ userId, userNome, cotacoes, faccoes, lojas, membros, podeEditar }: Props) {
   const router = useRouter()
   const [novaOpen, setNovaOpen] = useState(false)
   const [criando, setCriando] = useState(false)
@@ -92,18 +93,22 @@ export function CotacaoListClient({ userId, userNome, cotacoes, faccoes, lojas, 
         <p className="text-sm text-muted-foreground">
           {cotacoes.length === 0 ? 'Nenhuma cotação ainda' : `${cotacoes.length} cotação${cotacoes.length !== 1 ? 'ões' : ''}`}
         </p>
-        <Button size="sm" className="gap-1.5" onClick={() => setNovaOpen(true)}>
-          <Plus className="h-3.5 w-3.5" />Nova Cotação
-        </Button>
+        {podeEditar && (
+          <Button size="sm" className="gap-1.5" onClick={() => setNovaOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />Nova Cotação
+          </Button>
+        )}
       </div>
 
       {cotacoes.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center space-y-2">
           <FileText className="h-8 w-8 text-muted-foreground/30 mx-auto" />
           <p className="text-sm text-muted-foreground">Crie uma cotação para montar um pedido de compra</p>
-          <Button variant="outline" size="sm" className="mt-2" onClick={() => setNovaOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />Nova Cotação
-          </Button>
+          {podeEditar && (
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => setNovaOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />Nova Cotação
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

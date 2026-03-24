@@ -40,6 +40,8 @@ interface Tema {
   accentL: number
   nomeSistema: string
   categoriaCores?: CategoriaCores
+  paginaInicial?: string
+  financeiroTabPadrao?: string
 }
 
 export function ImgbbConfig({ initialKey }: { initialKey: string }) {
@@ -315,6 +317,46 @@ export function LayoutClient({ initialTema }: { initialTema: Tema }) {
                 </div>
               )
             })}
+          </div>
+        </section>
+
+        <div className="h-px bg-border" />
+
+        {/* Comportamento */}
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold">Comportamento</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Redirecionamentos e abas padrão</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Página inicial</Label>
+              <select
+                value={preview.paginaInicial ?? 'ferramentas/calculadora'}
+                onChange={e => updatePreview({ ...preview, paginaInicial: e.target.value })}
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring"
+              >
+                <option value="ferramentas/calculadora">Calculadora</option>
+                <option value="financeiro">Financeiro</option>
+                <option value="admin/cadastros">Cadastros</option>
+                <option value="investigacao">Investigação</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tab padrão do Financeiro</Label>
+              <select
+                value={preview.financeiroTabPadrao ?? 'extrato'}
+                onChange={e => updatePreview({ ...preview, financeiroTabPadrao: e.target.value })}
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring"
+              >
+                <option value="extrato">Extrato</option>
+                <option value="banco">Banco</option>
+                <option value="transferencias">Transferências</option>
+                <option value="lavagem">Lavagem</option>
+                <option value="contas">Cadastro de Contas</option>
+              </select>
+            </div>
           </div>
         </section>
 

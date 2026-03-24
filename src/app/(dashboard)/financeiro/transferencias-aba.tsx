@@ -32,11 +32,12 @@ interface Props {
   atualizarSaldo: (contaId: string, deltaSujo: number, deltaLimpo: number) => Promise<void>
   userId: string
   sb: SbClient
+  podeEditar: boolean
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function TransferenciasAba({ contas, lancamentos, setLancamentos, atualizarSaldo, userId, sb }: Props) {
+export function TransferenciasAba({ contas, lancamentos, setLancamentos, atualizarSaldo, userId, sb, podeEditar }: Props) {
   const [salvando, setSalvando]   = useState(false)
   const [deleteId, setDeleteId]   = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -103,7 +104,7 @@ export function TransferenciasAba({ contas, lancamentos, setLancamentos, atualiz
     <div className="h-full overflow-y-auto p-6 space-y-6 max-w-2xl">
 
       {/* ── Formulário ── */}
-      <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+      {podeEditar && <div className="rounded-lg border border-border bg-card p-5 space-y-4">
         <h3 className="text-sm font-medium">Nova transferência</h3>
 
         <div className="grid grid-cols-2 gap-3">
@@ -174,7 +175,7 @@ export function TransferenciasAba({ contas, lancamentos, setLancamentos, atualiz
             Transferir
           </Button>
         </div>
-      </div>
+      </div>}
 
       {/* ── Histórico ── */}
       <div>
