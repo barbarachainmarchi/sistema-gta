@@ -20,7 +20,9 @@
       "Bash(rmdir \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]\")",
       "Bash(npx next:*)",
       "Bash(wc:*)",
-      "Bash(grep -r \"itens_loja\\\\|loja_precos\\\\|faccao_produto\\\\|faccao_preco\" C:/Users/barbaramarchi/projetos/sistema-gta/src --include=*.tsx -l)"
+      "Bash(grep -r \"itens_loja\\\\|loja_precos\\\\|faccao_produto\\\\|faccao_preco\" C:/Users/barbaramarchi/projetos/sistema-gta/src --include=*.tsx -l)",
+      "Bash(find \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\" -maxdepth 2 -type d)",
+      "Bash(grep:*)"
     ]
   }
 }
