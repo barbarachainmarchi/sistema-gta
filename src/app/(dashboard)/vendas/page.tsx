@@ -68,6 +68,7 @@ export default async function VendasPage() {
         allItems={items}
         receitas={receitasData ?? []}
         estoque={estoqueData ?? []}
+        lojas={lojasData ?? []}
         membros={membrosData ?? []}
         meuLoja={meuLoja ? { id: meuLoja.id, nome: meuLoja.nome } : null}
         meuFaccao={meuFaccao ? { id: meuFaccao.id, nome: meuFaccao.nome } : null}
