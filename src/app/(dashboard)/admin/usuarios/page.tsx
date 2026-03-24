@@ -35,7 +35,7 @@ export default async function UsuariosPage() {
     { data: faccoesData },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, perfis_acesso(id, nome)'),
+    admin.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),

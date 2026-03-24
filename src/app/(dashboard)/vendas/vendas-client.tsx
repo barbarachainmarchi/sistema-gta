@@ -1046,6 +1046,46 @@ export function VendasClient({
       ? { ...v, status: 'entregue', entregue_por: userId, entregue_por_nome: userNome, entregue_em: agora } : v))
     toast.success('Entrega registrada!')
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
+    await registrarLancamentoFinanceiro(venda)
+  }
+
+  async function registrarLancamentoFinanceiro(venda: Venda) {
+    const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+    const totalVenda = subtotal * (1 - venda.desconto_pct / 100)
+    if (totalVenda <= 0) return
+
+    let contaId: string | null = null
+
+    if (venda.faccao_id) {
+      // Buscar conta já existente para essa facção
+      const { data: contaExistente } = await sb().from('financeiro_contas')
+        .select('id').eq('faccao_id', venda.faccao_id).eq('status', 'ativo').maybeSingle()
+      if (contaExistente) {
+        contaId = contaExistente.id
+      } else {
+        // Auto-criar conta para a facção
+        const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? 'Facção'
+        const { data: novaConta } = await sb().from('financeiro_contas').insert({
+          nome: faccaoNome, tipo: 'faccao', faccao_id: venda.faccao_id,
+          saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
+        }).select('id').single()
+        if (novaConta) contaId = novaConta.id
+      }
+    }
+
+    await sb().from('financeiro_lancamentos').insert({
+      conta_id: contaId,
+      venda_id: venda.id,
+      tipo: 'venda',
+      tipo_dinheiro: venda.tipo_dinheiro,
+      valor: totalVenda,
+      descricao: `Venda: ${venda.cliente_nome}`,
+      categoria: 'venda',
+      data: new Date().toISOString().split('T')[0],
+      vai_para_faccao: !!venda.faccao_id,
+      origem: 'venda',
+      created_by: userId,
+    })
   }
 
   async function handleDelete(id: string) {
