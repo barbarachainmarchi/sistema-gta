@@ -37,6 +37,8 @@ type Item = {
 
 type Categoria = { id: string; nome: string; descricao: string | null; created_at: string }
 type Loja = { id: string; nome: string; localizacao: string | null }
+type Faccao = { id: string; nome: string; tag: string | null }
+type LocalTrabalho = { tipo: 'loja' | 'faccao'; id: string; nome: string }
 
 type ReceitaIngrediente = { id?: string; ingrediente_id: string; ingrediente_nome: string; quantidade: number }
 type ReciclagemResultado = { id?: string; resultado_id: string; resultado_nome: string; quantidade: number }
@@ -59,11 +61,14 @@ interface Props {
   initialItems: Item[]
   categorias: Categoria[]
   lojas: Loja[]
+  faccoes: Faccao[]
+  userId: string
+  localTrabalho: LocalTrabalho | null
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas }: Props) {
+export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas, faccoes, userId, localTrabalho }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -98,7 +103,10 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
             onCreated={item => setItems(p => [...p, item].sort((a,b) => a.nome.localeCompare(b.nome)))}
             categorias={categorias}
             lojas={lojas}
+            faccoes={faccoes}
             allItems={items}
+            userId={userId}
+            localTrabalho={localTrabalho}
             sb={sb}
           />
         )}
@@ -123,6 +131,9 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               items={items}
               categorias={categorias}
               lojas={lojas}
+              faccoes={faccoes}
+              userId={userId}
+              localTrabalho={localTrabalho}
               sb={sb}
               onUpdated={updated => setItems(p => p.map(i => i.id === updated.id ? updated : i))}
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'item' })}
@@ -169,10 +180,13 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
 
 // ─── ABA ITENS ────────────────────────────────────────────────────────────────
 
-function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete, onItemCreated }: {
+function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalho, sb, onUpdated, onDelete, onItemCreated }: {
   items: Item[]
   categorias: Categoria[]
   lojas: Loja[]
+  faccoes: Faccao[]
+  userId: string
+  localTrabalho: LocalTrabalho | null
   sb: () => ReturnType<typeof createClient>
   onUpdated: (item: Item) => void
   onDelete: (id: string, nome: string) => void
@@ -298,7 +312,10 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete, onItemCre
           item={editingItem}
           categorias={categorias}
           lojas={lojas}
+          faccoes={faccoes}
           allItems={items}
+          userId={userId}
+          localTrabalho={localTrabalho}
           sb={sb}
           onClose={() => setEditingItem(null)}
           onSaved={updated => { onUpdated(updated); setEditingItem(null) }}
@@ -311,11 +328,14 @@ function ItemsTab({ items, categorias, lojas, sb, onUpdated, onDelete, onItemCre
 
 // ─── BOTÃO NOVO ITEM ──────────────────────────────────────────────────────────
 
-function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
+function BtnNovoItem({ onCreated, categorias, lojas, faccoes, allItems, userId, localTrabalho, sb }: {
   onCreated: (item: Item) => void
   categorias: Categoria[]
   lojas: Loja[]
+  faccoes: Faccao[]
   allItems: Item[]
+  userId: string
+  localTrabalho: LocalTrabalho | null
   sb: () => ReturnType<typeof createClient>
 }) {
   const [open, setOpen] = useState(false)
@@ -329,7 +349,10 @@ function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
           item={null}
           categorias={categorias}
           lojas={lojas}
+          faccoes={faccoes}
           allItems={allItems}
+          userId={userId}
+          localTrabalho={localTrabalho}
           sb={sb}
           onClose={() => setOpen(false)}
           onSaved={item => { onCreated(item); setOpen(false) }}
@@ -342,11 +365,14 @@ function BtnNovoItem({ onCreated, categorias, lojas, allItems, sb }: {
 
 // ─── DIALOG DE ITEM ───────────────────────────────────────────────────────────
 
-function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClose, onSaved, onItemCreated }: {
+function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, userId, localTrabalho, sb, onClose, onSaved, onItemCreated }: {
   item: Item | null
   categorias: Categoria[]
   lojas: Loja[]
+  faccoes: Faccao[]
   allItems: Item[]
+  userId: string
+  localTrabalho: LocalTrabalho | null
   sb: () => ReturnType<typeof createClient>
   onClose: () => void
   onSaved: (item: Item) => void
@@ -471,6 +497,7 @@ function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClo
         peso: form.peso !== '' ? parseFloat(form.peso) : null,
         tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto,
         eh_compravel: form.eh_compravel, tem_reciclagem: form.tem_reciclagem,
+        meu_produto_usuario_id: form.eh_meu_produto ? userId || null : null,
         updated_at: new Date().toISOString(),
       }
 
@@ -501,6 +528,21 @@ function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClo
         if (novos.length > 0) {
           const { error: e3 } = await sb().from('item_precos').insert(novos.map(p => ({ item_id: id, preco_sujo: p.preco_sujo, preco_limpo: p.preco_limpo, data_inicio: p.data_inicio })))
           if (e3) throw new Error('Erro ao salvar preços: ' + e3.message)
+        }
+        // Auto-vincular ao local de trabalho do usuário
+        if (localTrabalho && form.precos.length > 0) {
+          const precoVigente = form.precos[0]
+          if (localTrabalho.tipo === 'loja') {
+            await sb().from('loja_item_precos').upsert(
+              { item_id: id, loja_id: localTrabalho.id, preco: precoVigente.preco_limpo ?? 0, preco_sujo: precoVigente.preco_sujo ?? null },
+              { onConflict: 'item_id,loja_id' }
+            )
+          } else {
+            await sb().from('faccao_item_precos').upsert(
+              { item_id: id, faccao_id: localTrabalho.id, tipo: 'fixo', preco_limpo: precoVigente.preco_limpo ?? null, preco_sujo: precoVigente.preco_sujo ?? null },
+              { onConflict: 'faccao_id,item_id' }
+            )
+          }
         }
       }
 
@@ -654,6 +696,21 @@ function ItemDialog({ item, categorias, lojas, allItems: allItemsProp, sb, onClo
 
               {/* ── PREÇO ── */}
               <TabsContent value="preco" className="space-y-3 pt-3">
+                {localTrabalho ? (
+                  <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 flex items-center gap-2">
+                    <ShoppingBag className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <p className="text-xs text-emerald-300">
+                      Preço vigente será vinculado automaticamente à{localTrabalho.tipo === 'loja' ? ' loja' : ' facção'} <strong>{localTrabalho.nome}</strong>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <p className="text-xs text-amber-300">
+                      Nenhum local de trabalho configurado. Peça ao administrador para vincular sua conta a uma loja ou facção.
+                    </p>
+                  </div>
+                )}
                 <div className="rounded-lg border border-border bg-muted/10 p-3 space-y-3">
                   <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Novo Reajuste</p>
                   <div className="grid grid-cols-3 gap-2">

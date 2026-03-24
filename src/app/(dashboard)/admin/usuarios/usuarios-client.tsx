@@ -47,11 +47,16 @@ type Usuario = {
   cargo: string | null
   perfil_id: string | null
   membro_id: string | null
+  local_trabalho_tipo: 'loja' | 'faccao' | null
+  local_trabalho_id: string | null
   perfil_nome: string | null
   status: 'ativo' | 'inativo' | 'pendente'
   created_at: string
   ultimo_acesso: string | null
 }
+
+type LojaSimples = { id: string; nome: string }
+type FaccaoSimples = { id: string; nome: string; tag: string | null }
 
 type MembroInvestigacao = {
   id: string
@@ -87,6 +92,8 @@ interface Props {
   convites: Convite[]
   currentUserId: string
   membros: MembroInvestigacao[]
+  lojas: LojaSimples[]
+  faccoes: FaccaoSimples[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -128,7 +135,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros, lojas, faccoes }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -257,12 +264,21 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
   // ── Editar usuário ─────────────────────────────────────────────────────────
   const [editUsuario, setEditUsuario] = useState<Usuario | null>(null)
-  const [editForm, setEditForm] = useState({ nome: '', cargo: '', perfil_id: '', status: 'ativo' as 'ativo' | 'inativo' })
+  const [editForm, setEditForm] = useState({
+    nome: '', cargo: '', perfil_id: '', status: 'ativo' as 'ativo' | 'inativo',
+    local_trabalho_tipo: '' as 'loja' | 'faccao' | '',
+    local_trabalho_id: '',
+  })
   const [editSaving, setEditSaving] = useState(false)
 
   function openEdit(u: Usuario) {
     setEditUsuario(u)
-    setEditForm({ nome: u.nome, cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '', status: u.status === 'pendente' ? 'ativo' : u.status })
+    setEditForm({
+      nome: u.nome, cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '',
+      status: u.status === 'pendente' ? 'ativo' : u.status,
+      local_trabalho_tipo: u.local_trabalho_tipo ?? '',
+      local_trabalho_id: u.local_trabalho_id ?? '',
+    })
   }
 
   async function handleSalvarUsuario() {
@@ -271,16 +287,30 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editUsuario.id, ...editForm }),
+      body: JSON.stringify({ id: editUsuario.id, nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status }),
     })
     const json = await res.json()
+    if (!res.ok) { setEditSaving(false); toast.error(json.error ?? 'Erro ao salvar'); return }
+
+    // Salva local de trabalho e, se mudou, limpa "meu produto"
+    const novoLocalId = editForm.local_trabalho_id || null
+    const novoLocalTipo = editForm.local_trabalho_tipo || null
+    const localMudou = novoLocalId !== editUsuario.local_trabalho_id
+    await sb().from('usuarios').update({
+      local_trabalho_tipo: novoLocalTipo,
+      local_trabalho_id: novoLocalId,
+    }).eq('id', editUsuario.id)
+    if (localMudou) {
+      // Remove "meu produto" dos itens que eram desse usuário
+      await sb().from('items').update({ eh_meu_produto: false, meu_produto_usuario_id: null }).eq('meu_produto_usuario_id', editUsuario.id)
+    }
+
     setEditSaving(false)
-    if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar'); return }
     toast.success('Usuário atualizado')
     const perfilNome = perfis.find(p => p.id === editForm.perfil_id)?.nome ?? null
     setUsuarios(prev => prev.map(u =>
       u.id === editUsuario.id
-        ? { ...u, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status }
+        ? { ...u, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status, local_trabalho_tipo: novoLocalTipo, local_trabalho_id: novoLocalId }
         : u
     ))
     setEditUsuario(null)
@@ -847,6 +877,38 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <span className="text-xs text-muted-foreground">{editForm.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
                 <Switch checked={editForm.status === 'ativo'} onCheckedChange={v => setEditForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
               </div>
+            </div>
+            <div className="space-y-1.5 pt-1 border-t border-border">
+              <Label className="text-xs text-muted-foreground">Local de Trabalho (Meus Produtos)</Label>
+              <div className="flex gap-2">
+                <Select value={editForm.local_trabalho_tipo} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_tipo: v as 'loja' | 'faccao' | '', local_trabalho_id: '' }))}>
+                  <SelectTrigger className="h-8 text-sm w-28 shrink-0"><SelectValue placeholder="Tipo..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Nenhum</SelectItem>
+                    <SelectItem value="loja">Loja</SelectItem>
+                    <SelectItem value="faccao">Facção</SelectItem>
+                  </SelectContent>
+                </Select>
+                {editForm.local_trabalho_tipo === 'loja' && (
+                  <Select value={editForm.local_trabalho_id} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_id: v }))}>
+                    <SelectTrigger className="h-8 text-sm flex-1"><SelectValue placeholder="Selecionar loja..." /></SelectTrigger>
+                    <SelectContent>
+                      {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+                {editForm.local_trabalho_tipo === 'faccao' && (
+                  <Select value={editForm.local_trabalho_id} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_id: v }))}>
+                    <SelectTrigger className="h-8 text-sm flex-1"><SelectValue placeholder="Selecionar facção..." /></SelectTrigger>
+                    <SelectContent>
+                      {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              {editForm.local_trabalho_id !== (editUsuario?.local_trabalho_id ?? '') && editUsuario?.local_trabalho_id && (
+                <p className="text-[10px] text-amber-400">⚠ Mudança de local removerá "Meu Produto" dos itens vinculados a este usuário</p>
+              )}
             </div>
           </div>
           <DialogFooter>

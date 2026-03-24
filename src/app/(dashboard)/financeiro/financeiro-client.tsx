@@ -116,35 +116,34 @@ export function FinanceiroClient({
       </div>
 
       {/* ── Conteúdo ─────────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-hidden">
-        {aba === 'extrato' && (
-          <ExtratoAba
-            contas={contas} setContas={setContas}
-            lancamentos={lancamentos} setLancamentos={setLancamentos}
-            atualizarSaldo={atualizarSaldo} userId={userId}
-            cotacoesFinaliz={cotacoesFinaliz} membros={membros} sb={sb}
-          />
-        )}
-        {aba === 'banco' && (
-          <BancoAba contas={contas} lancamentos={lancamentos} />
-        )}
-        {aba === 'transferencias' && (
-          <TransferenciasAba
-            contas={contas} lancamentos={lancamentos} setLancamentos={setLancamentos}
-            atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
-          />
-        )}
-        {aba === 'lavagem' && (
-          <LavagemAba
-            contas={contas} lavagens={lavagens} setLavagens={setLavagens}
-            atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
-          />
-        )}
-        {aba === 'contas' && (
-          <ContasAba
-            contas={contas} setContas={setContas} membros={membros} sb={sb}
-          />
-        )}
+      {/* Todas as abas ficam montadas; só a ativa fica visível (evita remount/reload) */}
+      <div className={cn('flex-1 overflow-hidden', aba !== 'extrato' && 'hidden')}>
+        <ExtratoAba
+          contas={contas} setContas={setContas}
+          lancamentos={lancamentos} setLancamentos={setLancamentos}
+          atualizarSaldo={atualizarSaldo} userId={userId}
+          cotacoesFinaliz={cotacoesFinaliz} membros={membros} sb={sb}
+        />
+      </div>
+      <div className={cn('flex-1 overflow-hidden', aba !== 'banco' && 'hidden')}>
+        <BancoAba contas={contas} lancamentos={lancamentos} />
+      </div>
+      <div className={cn('flex-1 overflow-hidden', aba !== 'transferencias' && 'hidden')}>
+        <TransferenciasAba
+          contas={contas} lancamentos={lancamentos} setLancamentos={setLancamentos}
+          atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
+        />
+      </div>
+      <div className={cn('flex-1 overflow-hidden', aba !== 'lavagem' && 'hidden')}>
+        <LavagemAba
+          contas={contas} lavagens={lavagens} setLavagens={setLavagens}
+          atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
+        />
+      </div>
+      <div className={cn('flex-1 overflow-hidden', aba !== 'contas' && 'hidden')}>
+        <ContasAba
+          contas={contas} setContas={setContas} membros={membros} sb={sb}
+        />
       </div>
     </div>
   )

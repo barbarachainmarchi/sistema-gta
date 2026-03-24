@@ -31,13 +31,17 @@ export default async function UsuariosPage() {
     { data: permissoes },
     { data: convitesData },
     { data: membrosData },
+    { data: lojasData },
+    { data: faccoesData },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, perfis_acesso(id, nome)'),
+    supabase.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_tipo, local_trabalho_id, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
     supabase.from('membros').select('id, nome, vulgo, faccao_id, cargo_faccao, status, membro_proprio, data_entrada, data_saida, faccoes(nome, cor_tag)').eq('membro_proprio', true).order('nome'),
+    supabase.from('lojas').select('id, nome').order('nome'),
+    supabase.from('faccoes').select('id, nome, tag').order('nome'),
   ])
 
   const authUsers = authResult.data?.users ?? []
@@ -55,6 +59,8 @@ export default async function UsuariosPage() {
       cargo: perfil?.cargo ?? null,
       perfil_id: perfil?.perfil_id ?? null,
       membro_id: perfil?.membro_id ?? null,
+      local_trabalho_tipo: (perfil?.local_trabalho_tipo ?? null) as 'loja' | 'faccao' | null,
+      local_trabalho_id: perfil?.local_trabalho_id ?? null,
       perfil_nome: (Array.isArray(perfil?.perfis_acesso) ? perfil.perfis_acesso[0]?.nome : null) ?? null,
       status: (perfil?.status ?? 'ativo') as 'ativo' | 'inativo' | 'pendente',
       created_at: au.created_at,
@@ -82,6 +88,8 @@ export default async function UsuariosPage() {
       convites={convites}
       currentUserId={user.id}
       membros={membros}
+      lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}
+      faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: f.tag ?? null }))}
     />
   )
 }
