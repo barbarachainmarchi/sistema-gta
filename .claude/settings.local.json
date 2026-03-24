@@ -15,7 +15,9 @@
       "Bash(grep -rn export.*revalidateTag C:/Users/barbaramarchi/projetos/sistema-gta/node_modules/next/dist/types.d.ts)",
       "Bash(npx tsc:*)",
       "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(rm -f \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]/page.tsx\" \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]/extrato-client.tsx\")",
+      "Bash(rmdir \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]\")"
     ]
   }
 }
