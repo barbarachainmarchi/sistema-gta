@@ -94,6 +94,8 @@ interface Props {
   membros: MembroInvestigacao[]
   lojas: LojaSimples[]
   faccoes: FaccaoSimples[]
+  defaultLojaId: string | null
+  defaultFaccaoId: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -135,7 +137,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros, lojas, faccoes }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros, lojas, faccoes, defaultLojaId, defaultFaccaoId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -276,8 +278,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setEditForm({
       nome: u.nome, cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '',
       status: u.status === 'pendente' ? 'ativo' : u.status,
-      local_trabalho_loja_id: u.local_trabalho_loja_id ?? '',
-      local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? '',
+      // Se o usuário ainda não tem local definido, usa o padrão do admin
+      local_trabalho_loja_id: u.local_trabalho_loja_id ?? defaultLojaId ?? '',
+      local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? defaultFaccaoId ?? '',
     })
   }
 
@@ -754,7 +757,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
       {/* ── Modal: Gerar Link ───────────────────────────────────────────────── */}
       <Dialog open={linkOpen} onOpenChange={v => { setLinkOpen(v); if (!v) setLinkGerado(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Gerar Link de Convite</DialogTitle>
           </DialogHeader>
@@ -811,7 +814,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
       {/* ── Modal: Ativar Pendente ──────────────────────────────────────────── */}
       <Dialog open={!!ativarUsuario} onOpenChange={v => !v && setAtivarUsuario(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Ativar — {ativarUsuario?.nome}</DialogTitle>
           </DialogHeader>
@@ -822,12 +825,12 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Perfil de Acesso</Label>
-              <Select value={ativarForm.perfil_id} onValueChange={v => setAtivarForm(f => ({ ...f, perfil_id: v }))}>
+              <Select value={ativarForm.perfil_id || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="Selecionar perfil..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem perfil</SelectItem>
+                  <SelectItem value="_none">Sem perfil</SelectItem>
                   {perfis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -844,7 +847,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
       {/* ── Modal: Editar Usuário ───────────────────────────────────────────── */}
       <Dialog open={!!editUsuario} onOpenChange={v => !v && setEditUsuario(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Editar — {editUsuario?.nome}</DialogTitle>
           </DialogHeader>
@@ -859,12 +862,12 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Perfil de Acesso</Label>
-              <Select value={editForm.perfil_id} onValueChange={v => setEditForm(f => ({ ...f, perfil_id: v }))}>
+              <Select value={editForm.perfil_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem perfil</SelectItem>
+                  <SelectItem value="_none">Sem perfil</SelectItem>
                   {perfis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -911,7 +914,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
       {/* ── Modal: Criar/Editar Perfil ──────────────────────────────────────── */}
       <Dialog open={perfilOpen} onOpenChange={setPerfilOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{editPerfil ? 'Editar Perfil' : 'Novo Perfil'}</DialogTitle>
           </DialogHeader>

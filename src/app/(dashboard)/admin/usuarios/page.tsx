@@ -81,6 +81,11 @@ export default async function UsuariosPage() {
     criado_em: c.created_at,
   }))
 
+  // Local de trabalho padrão = do próprio admin (currentUser)
+  const adminRow = usuariosMap.get(user.id)
+  const defaultLojaId    = adminRow?.local_trabalho_loja_id ?? null
+  const defaultFaccaoId  = adminRow?.local_trabalho_faccao_id ?? null
+
   return (
     <UsuariosClient
       usuarios={usuarios}
@@ -90,6 +95,8 @@ export default async function UsuariosPage() {
       membros={membros}
       lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}
       faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: f.tag ?? null }))}
+      defaultLojaId={defaultLojaId}
+      defaultFaccaoId={defaultFaccaoId}
     />
   )
 }
