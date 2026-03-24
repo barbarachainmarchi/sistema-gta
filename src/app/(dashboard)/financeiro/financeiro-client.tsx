@@ -499,41 +499,60 @@ export function FinanceiroClient({ userId, membros, contasIniciais, lancamentosI
 
       {/* ── Dialog: Compra (saída via cotação) ── */}
       <Dialog open={compraOpen} onOpenChange={v => !v && setCompraOpen(false)}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-sm">
-          <DialogHeader><DialogTitle className="text-sm">Registrar Compra</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground -mt-1">Compra da facção vinculada a uma cotação.</p>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Bolso da facção</Label>
-              <Select value={compraForm.conta_id} onValueChange={v => setCompraForm(f => ({ ...f, conta_id: v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                <SelectContent>
-                  {faccaoContas.map(c => <SelectItem key={c.id} value={c.id}>{c.nome} <span className={cn('ml-1 text-xs', subtipoColor[c.subtipo])}>({c.subtipo})</span></SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md">
+          <DialogHeader><DialogTitle className="text-sm">Registrar Compra da Facção</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-1">
+
+            {/* Cotações como lista selecionável */}
             <div className="space-y-1.5">
               <Label className="text-xs">Cotação finalizada</Label>
               {cotacoesFinaliz.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nenhuma cotação finalizada disponível</p>
+                <p className="text-xs text-muted-foreground py-2">Nenhuma cotação finalizada disponível</p>
               ) : (
-                <Select value={compraForm.cotacao_id} onValueChange={v => setCompraForm(f => ({ ...f, cotacao_id: v }))}>
+                <div className="rounded-md border border-border overflow-hidden max-h-52 overflow-y-auto divide-y divide-border/40">
+                  {cotacoesFinaliz.map(c => {
+                    const sel = compraForm.cotacao_id === c.id
+                    const tipoLabel = c.fornecedor_tipo === 'faccao' ? 'Facção' : c.fornecedor_tipo === 'loja' ? 'Loja' : 'Livre'
+                    return (
+                      <button key={c.id} type="button"
+                        onClick={() => setCompraForm(f => ({ ...f, cotacao_id: c.id }))}
+                        className={cn('w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors',
+                          sel ? 'bg-primary/10' : 'hover:bg-white/[0.03]'
+                        )}>
+                        <div className={cn('w-1.5 h-1.5 rounded-full shrink-0 mt-0.5', sel ? 'bg-primary' : 'bg-border')} />
+                        <div className="flex-1 min-w-0">
+                          {c.titulo && <p className="text-sm font-medium truncate">{c.titulo}</p>}
+                          <p className={cn('text-sm truncate', c.titulo ? 'text-xs text-muted-foreground' : 'font-medium')}>
+                            {c.fornecedor_nome}
+                          </p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0 capitalize">{tipoLabel}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Bolso da facção</Label>
+                <Select value={compraForm.conta_id} onValueChange={v => setCompraForm(f => ({ ...f, conta_id: v }))}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                   <SelectContent>
-                    {cotacoesFinaliz.map(c => (
+                    {faccaoContas.map(c => (
                       <SelectItem key={c.id} value={c.id}>
-                        {c.titulo ?? c.fornecedor_nome}
-                        <span className="text-muted-foreground ml-1 capitalize">({c.fornecedor_tipo})</span>
+                        {c.nome} — {c.subtipo}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Valor total pago</Label>
-              <Input type="number" placeholder="0" min="0" value={compraForm.valor}
-                onChange={e => setCompraForm(f => ({ ...f, valor: e.target.value }))} className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Valor total pago</Label>
+                <Input type="number" placeholder="0" min="0" value={compraForm.valor}
+                  onChange={e => setCompraForm(f => ({ ...f, valor: e.target.value }))} className="h-8 text-sm" />
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2">

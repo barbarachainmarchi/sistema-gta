@@ -50,12 +50,18 @@ const navGroups = [
     ],
   },
   {
+    key: 'financeiro',
+    label: 'Financeiro',
+    items: [
+      { href: '/financeiro',        label: 'Financeiro',   icon: DollarSign,   perm: 'financeiro' },
+    ],
+  },
+  {
     key: 'gestao',
     label: 'Gestão',
     items: [
       { href: '/metas',             label: 'Metas',        icon: Target,       perm: 'metas' },
       { href: '/acao',              label: 'Ação',         icon: Zap,          perm: 'acao' },
-      { href: '/financeiro',        label: 'Financeiro',   icon: DollarSign,   perm: 'financeiro' },
     ],
   },
 ]
