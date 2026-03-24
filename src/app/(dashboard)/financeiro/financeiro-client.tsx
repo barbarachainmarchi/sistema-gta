@@ -30,6 +30,7 @@ export type Lancamento = {
   preco: number | null; quantidade: number | null; total: number | null
   conta_destino_id: string | null; cotacao_id: string | null
   vai_para_faccao: boolean; acao_referencia: string | null
+  origem: string | null
   created_by: string | null; created_at: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cotacoes?: any
@@ -118,9 +119,10 @@ export function FinanceiroClient({
       <div className="flex-1 overflow-hidden">
         {aba === 'extrato' && (
           <ExtratoAba
-            contas={contas} lancamentos={lancamentos} setLancamentos={setLancamentos}
+            contas={contas} setContas={setContas}
+            lancamentos={lancamentos} setLancamentos={setLancamentos}
             atualizarSaldo={atualizarSaldo} userId={userId}
-            cotacoesFinaliz={cotacoesFinaliz} sb={sb}
+            cotacoesFinaliz={cotacoesFinaliz} membros={membros} sb={sb}
           />
         )}
         {aba === 'banco' && (

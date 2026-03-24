@@ -18,7 +18,9 @@
       "Bash(xargs wc:*)",
       "Bash(rm -f \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]/page.tsx\" \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]/extrato-client.tsx\")",
       "Bash(rmdir \"C:/Users/barbaramarchi/projetos/sistema-gta/src/app/\\(dashboard\\)/financeiro/[conta_id]\")",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(wc:*)",
+      "Bash(grep -r \"itens_loja\\\\|loja_precos\\\\|faccao_produto\\\\|faccao_preco\" C:/Users/barbaramarchi/projetos/sistema-gta/src --include=*.tsx -l)"
     ]
   }
 }

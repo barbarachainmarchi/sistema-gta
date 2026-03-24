@@ -4,14 +4,16 @@ import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, TrendingUp, TrendingDown, ArrowLeftRight, Trash2, Pencil, Loader2, ShoppingCart,
+  Plus, TrendingUp, TrendingDown, ArrowLeftRight, Trash2, Pencil, Loader2,
+  ShoppingCart, PackageSearch,
 } from 'lucide-react'
-import type { Conta, Lancamento, Cotacao, SbClient } from './financeiro-client'
+import type { Conta, Lancamento, Cotacao, Membro, SbClient } from './financeiro-client'
+import { BrowseFornecedorDialog, type BrowseResult } from './browse-fornecedor-dialog'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,98 +29,109 @@ function fmtData(s: string | null) {
   const d = new Date(s + (s.includes('T') ? '' : 'T00:00:00'))
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
-function today() {
-  return new Date().toISOString().split('T')[0]
-}
+function today() { return new Date().toISOString().split('T')[0] }
+
 function impactSaldo(l: Lancamento): { deltaSujo: number; deltaLimpo: number } {
-  const v = l.valor
-  const sujo  = l.tipo_dinheiro === 'sujo'
-  if (l.tipo === 'entrada' || l.tipo === 'venda')
-    return { deltaSujo: sujo ? v : 0, deltaLimpo: sujo ? 0 : v }
-  if (l.tipo === 'saida')
-    return { deltaSujo: sujo ? -v : 0, deltaLimpo: sujo ? 0 : -v }
+  const v = l.valor; const sujo = l.tipo_dinheiro === 'sujo'
+  if (l.tipo === 'entrada' || l.tipo === 'venda') return { deltaSujo: sujo ? v : 0, deltaLimpo: sujo ? 0 : v }
+  if (l.tipo === 'saida')  return { deltaSujo: sujo ? -v : 0, deltaLimpo: sujo ? 0 : -v }
   return { deltaSujo: 0, deltaLimpo: 0 }
 }
 
-// ── Tipos internos ────────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type FiltroTipo = 'todos' | 'entradas' | 'saidas' | 'vendas' | 'transferencias'
+type FiltroTipo    = 'todos' | 'entradas' | 'saidas' | 'vendas' | 'transferencias'
 type FiltroDinheiro = 'todos' | 'sujo' | 'limpo'
 
 const EMPTY_FORM = {
-  id: null as string | null,
-  tipo_mov: 'entrada' as 'entrada' | 'saida',
-  is_compra: false,
-  data: today(),
+  id:            null as string | null,
+  tipo_mov:      'entrada' as 'entrada' | 'saida',
+  is_compra:     false,
+  data:          today(),
   tipo_dinheiro: 'limpo' as 'sujo' | 'limpo',
-  origem_tipo: '' as '' | 'faccao' | 'loja' | 'pessoa',
+  origem:        '',           // texto livre
   item_descricao: '',
-  categoria: '',
-  preco: '',
-  quantidade: '',
-  total: '',
-  conta_id: '',
-  cotacao_id: '',
-  descricao: '',
+  categoria:     '',
+  preco:         '',
+  quantidade:    '',
+  total:         '',
+  responsavel:   '',           // "conta:{uuid}" ou "membro:{uuid}"
+  cotacao_id:    '',
+  descricao:     '',
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   contas: Conta[]
+  setContas: React.Dispatch<React.SetStateAction<Conta[]>>
   lancamentos: Lancamento[]
   setLancamentos: React.Dispatch<React.SetStateAction<Lancamento[]>>
   atualizarSaldo: (contaId: string, deltaSujo: number, deltaLimpo: number) => Promise<void>
   userId: string
   cotacoesFinaliz: Cotacao[]
+  membros: Membro[]
   sb: SbClient
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, sb }: Props) {
-  const [modalOpen, setModalOpen]   = useState(false)
-  const [form, setForm]             = useState({ ...EMPTY_FORM })
-  const [salvando, setSalvando]     = useState(false)
-  const [deleteId, setDeleteId]     = useState<string | null>(null)
+export function ExtratoAba({
+  contas, setContas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, membros, sb,
+}: Props) {
+  const [modalOpen, setModalOpen] = useState(false)
+  const [browseOpen, setBrowseOpen] = useState(false)
+  const [form, setForm]           = useState({ ...EMPTY_FORM })
+  const [salvando, setSalvando]   = useState(false)
+  const [deleteId, setDeleteId]   = useState<string | null>(null)
 
   // Filtros
-  const [filtroTipo, setFiltroTipo]           = useState<FiltroTipo>('todos')
-  const [filtroDinheiro, setFiltroDinheiro]   = useState<FiltroDinheiro>('todos')
+  const [filtroTipo,      setFiltroTipo]      = useState<FiltroTipo>('todos')
+  const [filtroDinheiro,  setFiltroDinheiro]  = useState<FiltroDinheiro>('todos')
   const [filtroCategoria, setFiltroCategoria] = useState('')
-  const [filtroDataDe, setFiltroDataDe]       = useState('')
-  const [filtroDataAte, setFiltroDataAte]     = useState('')
+  const [filtroDataDe,    setFiltroDataDe]    = useState('')
+  const [filtroDataAte,   setFiltroDataAte]   = useState('')
 
   const contaMap = useMemo(() => Object.fromEntries(contas.map(c => [c.id, c])), [contas])
 
   // Histórico para datalist
   const histDescricao = useMemo(() => [...new Set(lancamentos.map(l => l.item_descricao).filter(Boolean))], [lancamentos])
   const histCategoria = useMemo(() => [...new Set(lancamentos.map(l => l.categoria).filter(Boolean))], [lancamentos])
+  const histOrigem    = useMemo(() => [...new Set(lancamentos.map(l => l.origem ?? null).filter(Boolean))], [lancamentos])
 
-  // Resumo
+  // Membros sem conta própria (para mostrar no select de responsável)
+  const membrosComConta = useMemo(
+    () => new Set(contas.filter(c => c.tipo === 'membro' && c.membro_id).map(c => c.membro_id!)),
+    [contas]
+  )
+  const membrosSemConta = useMemo(
+    () => membros.filter(m => !membrosComConta.has(m.id)),
+    [membros, membrosComConta]
+  )
+
+  // ── Resumo ────────────────────────────────────────────────────────────────
+
   const resumo = useMemo(() => {
-    let entradasSujo = 0, entradasLimpo = 0, gastosSujo = 0, gastosLimpo = 0
+    let entSujo = 0, entLimpo = 0, venSujo = 0, venLimpo = 0, gasSujo = 0, gasLimpo = 0
     lancamentos.forEach(l => {
       const v = l.valor
-      if (l.tipo === 'entrada' || l.tipo === 'venda') {
-        if (l.tipo_dinheiro === 'sujo')  entradasSujo  += v
-        else                             entradasLimpo += v
-      } else if (l.tipo === 'saida') {
-        if (l.tipo_dinheiro === 'sujo')  gastosSujo  += v
-        else                             gastosLimpo += v
-      }
+      const s = l.tipo_dinheiro === 'sujo'
+      if (l.tipo === 'entrada') { s ? (entSujo += v) : (entLimpo += v) }
+      else if (l.tipo === 'venda')  { s ? (venSujo += v) : (venLimpo += v) }
+      else if (l.tipo === 'saida')  { s ? (gasSujo += v) : (gasLimpo += v) }
     })
-    return { entradasSujo, entradasLimpo, gastosSujo, gastosLimpo }
+    return { entSujo, entLimpo, venSujo, venLimpo, gasSujo, gasLimpo }
   }, [lancamentos])
 
-  // Filtros aplicados
+  // ── Filtros ───────────────────────────────────────────────────────────────
+
   const lancFiltrados = useMemo(() => {
     return lancamentos.filter(l => {
-      if (filtroTipo === 'entradas'      && l.tipo !== 'entrada')      return false
-      if (filtroTipo === 'saidas'        && l.tipo !== 'saida')        return false
-      if (filtroTipo === 'vendas'        && l.tipo !== 'venda')        return false
-      if (filtroTipo === 'transferencias'&& l.tipo !== 'transferencia') return false
-      if (filtroDinheiro !== 'todos'     && l.tipo_dinheiro !== filtroDinheiro) return false
+      if (filtroTipo === 'entradas'       && l.tipo !== 'entrada')       return false
+      if (filtroTipo === 'saidas'         && l.tipo !== 'saida')         return false
+      if (filtroTipo === 'vendas'         && l.tipo !== 'venda')         return false
+      if (filtroTipo === 'transferencias' && l.tipo !== 'transferencia') return false
+      if (filtroDinheiro !== 'todos'  && l.tipo_dinheiro !== filtroDinheiro) return false
       if (filtroCategoria && !l.categoria?.toLowerCase().includes(filtroCategoria.toLowerCase())) return false
       const dataL = l.data ?? l.created_at.split('T')[0]
       if (filtroDataDe  && dataL < filtroDataDe)  return false
@@ -127,76 +140,101 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
     })
   }, [lancamentos, filtroTipo, filtroDinheiro, filtroCategoria, filtroDataDe, filtroDataAte])
 
-  // ── Auto-cálculo ─────────────────────────────────────────────────────────
+  // ── Auto-cálculo ──────────────────────────────────────────────────────────
 
-  function setF(patch: Partial<typeof EMPTY_FORM>) {
-    setForm(prev => ({ ...prev, ...patch }))
-  }
+  function setF(patch: Partial<typeof EMPTY_FORM>) { setForm(prev => ({ ...prev, ...patch })) }
 
   function onPrecoChange(val: string) {
-    const p = parseFloat(val) || 0
-    const q = parseFloat(form.quantidade) || 0
+    const p = parseFloat(val) || 0; const q = parseFloat(form.quantidade) || 0
     setF({ preco: val, ...(p && q ? { total: String(p * q) } : {}) })
   }
   function onQtdChange(val: string) {
-    const q = parseFloat(val) || 0
-    const p = parseFloat(form.preco) || 0
-    const t = parseFloat(form.total) || 0
+    const q = parseFloat(val) || 0; const p = parseFloat(form.preco) || 0; const t = parseFloat(form.total) || 0
     if (p && q) { setF({ quantidade: val, total: String(p * q) }); return }
     if (t && q) { setF({ quantidade: val, preco: String(t / q) }); return }
     setF({ quantidade: val })
   }
   function onTotalChange(val: string) {
-    const t = parseFloat(val) || 0
-    const q = parseFloat(form.quantidade) || 0
-    const p = parseFloat(form.preco) || 0
+    const t = parseFloat(val) || 0; const q = parseFloat(form.quantidade) || 0; const p = parseFloat(form.preco) || 0
     if (q && t) { setF({ total: val, preco: String(t / q) }); return }
     if (p && t) { setF({ total: val, quantidade: String(t / p) }); return }
     setF({ total: val })
   }
 
-  // ── Abrir modal ──────────────────────────────────────────────────────────
+  // ── Browse result ─────────────────────────────────────────────────────────
 
-  function abrirNovo() {
-    setForm({ ...EMPTY_FORM })
-    setModalOpen(true)
+  function onBrowseConfirm(result: BrowseResult) {
+    setF({
+      item_descricao: result.descricao,
+      total: result.total != null ? String(result.total) : form.total,
+      preco: '', quantidade: '',
+    })
   }
+
+  // ── Resolver conta_id a partir do campo responsavel ───────────────────────
+
+  async function resolveContaId(): Promise<string | null> {
+    if (!form.responsavel || form.responsavel === 'sem') return null
+    if (form.responsavel.startsWith('conta:')) return form.responsavel.slice(6)
+    if (form.responsavel.startsWith('membro:')) {
+      const membroId = form.responsavel.slice(7)
+      const membro = membros.find(m => m.id === membroId)
+      if (!membro) return null
+      const existing = contas.find(c => c.tipo === 'membro' && c.membro_id === membroId && c.status === 'ativo')
+      if (existing) return existing.id
+      // Auto-criar conta para o membro
+      const { data, error } = await sb().from('financeiro_contas').insert({
+        nome: membro.nome, tipo: 'membro', membro_id: membroId, saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
+      }).select().single()
+      if (error) { toast.error('Erro ao criar conta para membro'); return null }
+      setContas(prev => [...prev, data as Conta].sort((a, b) => a.nome.localeCompare(b.nome)))
+      return (data as Conta).id
+    }
+    return null
+  }
+
+  // ── Abrir modais ──────────────────────────────────────────────────────────
+
+  function abrirNovo() { setForm({ ...EMPTY_FORM }); setModalOpen(true) }
+
   function abrirEditar(l: Lancamento) {
     setForm({
-      id: l.id,
-      tipo_mov: l.tipo === 'saida' ? 'saida' : 'entrada',
-      is_compra: !!l.cotacao_id,
-      data: l.data ?? today(),
-      tipo_dinheiro: l.tipo_dinheiro ?? 'limpo',
-      origem_tipo: l.origem_tipo ?? '',
+      id:             l.id,
+      tipo_mov:       l.tipo === 'saida' ? 'saida' : 'entrada',
+      is_compra:      !!l.cotacao_id,
+      data:           l.data ?? today(),
+      tipo_dinheiro:  l.tipo_dinheiro ?? 'limpo',
+      origem:         l.origem ?? '',
       item_descricao: l.item_descricao ?? '',
-      categoria: l.categoria ?? '',
-      preco: l.preco != null ? String(l.preco) : '',
-      quantidade: l.quantidade != null ? String(l.quantidade) : '',
-      total: l.total != null ? String(l.total) : String(l.valor),
-      conta_id: l.conta_id,
-      cotacao_id: l.cotacao_id ?? '',
-      descricao: l.descricao ?? '',
+      categoria:      l.categoria ?? '',
+      preco:          l.preco != null ? String(l.preco) : '',
+      quantidade:     l.quantidade != null ? String(l.quantidade) : '',
+      total:          l.total != null ? String(l.total) : String(l.valor),
+      responsavel:    l.conta_id ? `conta:${l.conta_id}` : '',
+      cotacao_id:     l.cotacao_id ?? '',
+      descricao:      l.descricao ?? '',
     })
     setModalOpen(true)
   }
 
-  // ── Salvar ───────────────────────────────────────────────────────────────
+  // ── Salvar ────────────────────────────────────────────────────────────────
 
   async function handleSalvar() {
     const valorNum = parseFloat(form.total) || (parseFloat(form.preco) * parseFloat(form.quantidade)) || 0
     if (!valorNum || valorNum <= 0) { toast.error('Informe o total'); return }
-    if (!form.conta_id)             { toast.error('Selecione o responsável'); return }
     if (form.is_compra && !form.cotacao_id) { toast.error('Selecione a cotação'); return }
+
+    setSalvando(true)
+    const conta_id = await resolveContaId()
+    if (!conta_id) { setSalvando(false); toast.error('Selecione o responsável'); return }
 
     const tipo_db = form.tipo_mov === 'saida' ? 'saida' : 'entrada'
     const payload = {
-      conta_id:       form.conta_id,
-      tipo:           tipo_db,
+      conta_id, tipo: tipo_db,
       tipo_dinheiro:  form.tipo_dinheiro,
       valor:          valorNum,
       data:           form.data || null,
-      origem_tipo:    form.origem_tipo || null,
+      origem:         form.origem.trim() || null,
       item_descricao: form.item_descricao.trim() || null,
       descricao:      form.descricao.trim() || null,
       categoria:      form.categoria.trim() || null,
@@ -207,32 +245,26 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
       created_by:     userId,
     }
 
-    setSalvando(true)
-
     if (form.id) {
-      // Editar: reverter impacto antigo, aplicar novo
       const old = lancamentos.find(l => l.id === form.id)
       if (old) {
         const { deltaSujo: ds, deltaLimpo: dl } = impactSaldo(old)
         await atualizarSaldo(old.conta_id, -ds, -dl)
-        // Se mudou de conta, reverter na conta antiga; se mesma conta, ok
       }
-      const { data, error } = await sb()
-        .from('financeiro_lancamentos').update(payload).eq('id', form.id)
+      const { data, error } = await sb().from('financeiro_lancamentos')
+        .update(payload).eq('id', form.id)
         .select('*, cotacoes(titulo, fornecedor_nome)').single()
       if (error) { setSalvando(false); toast.error(error.message); return }
-      const novo: Lancamento = data as Lancamento
+      const novo = data as Lancamento
       const { deltaSujo, deltaLimpo } = impactSaldo(novo)
       await atualizarSaldo(novo.conta_id, deltaSujo, deltaLimpo)
       setLancamentos(prev => prev.map(l => l.id === form.id ? novo : l))
       toast.success('Lançamento atualizado!')
     } else {
-      // Novo
-      const { data, error } = await sb()
-        .from('financeiro_lancamentos').insert(payload)
-        .select('*, cotacoes(titulo, fornecedor_nome)').single()
+      const { data, error } = await sb().from('financeiro_lancamentos')
+        .insert(payload).select('*, cotacoes(titulo, fornecedor_nome)').single()
       if (error) { setSalvando(false); toast.error(error.message); return }
-      const novo: Lancamento = data as Lancamento
+      const novo = data as Lancamento
       const { deltaSujo, deltaLimpo } = impactSaldo(novo)
       await atualizarSaldo(novo.conta_id, deltaSujo, deltaLimpo)
       setLancamentos(prev => [novo, ...prev])
@@ -243,7 +275,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
     setModalOpen(false)
   }
 
-  // ── Deletar ──────────────────────────────────────────────────────────────
+  // ── Deletar ───────────────────────────────────────────────────────────────
 
   async function handleDelete(id: string) {
     const l = lancamentos.find(x => x.id === id)
@@ -259,20 +291,22 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const saldoLimpo = resumo.entLimpo + resumo.venLimpo - resumo.gasLimpo
+  const saldoSujo  = resumo.entSujo  + resumo.venSujo  - resumo.gasSujo
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
 
-      {/* ── Resumo ── */}
-      <div className="shrink-0 px-6 pt-5 pb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <ResumoCard label="Entradas Limpo" valor={resumo.entradasLimpo} cor="emerald" />
-        <ResumoCard label="Entradas Sujo"  valor={resumo.entradasSujo}  cor="yellow" />
-        <ResumoCard label="Gastos Limpo"   valor={resumo.gastosLimpo}   cor="red" negativo />
-        <ResumoCard label="Gastos Sujo"    valor={resumo.gastosSujo}    cor="orange" negativo />
+      {/* ── Cards de resumo ── */}
+      <div className="shrink-0 px-6 pt-5 pb-3 grid grid-cols-4 gap-3">
+        <ResumoCard label="Entradas" limpo={resumo.entLimpo} sujo={resumo.entSujo} cor="emerald" />
+        <ResumoCard label="Vendas"   limpo={resumo.venLimpo} sujo={resumo.venSujo} cor="blue" />
+        <ResumoCard label="Gastos"   limpo={resumo.gasLimpo} sujo={resumo.gasSujo} cor="red" negativo />
+        <SaldoCard  limpo={saldoLimpo} sujo={saldoSujo} />
       </div>
 
       {/* ── Filtros + botão ── */}
       <div className="shrink-0 px-6 pb-3 flex flex-wrap items-end gap-2">
-        {/* Tipo */}
         <Select value={filtroTipo} onValueChange={v => setFiltroTipo(v as FiltroTipo)}>
           <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -284,7 +318,6 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
           </SelectContent>
         </Select>
 
-        {/* Dinheiro */}
         <Select value={filtroDinheiro} onValueChange={v => setFiltroDinheiro(v as FiltroDinheiro)}>
           <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -345,9 +378,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
                       <td className="px-3 py-2.5 text-muted-foreground tabular-nums">
                         {fmtData(l.data ?? l.created_at)}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <Icon className={cn('h-3.5 w-3.5', iconCor)} />
-                      </td>
+                      <td className="px-3 py-2.5"><Icon className={cn('h-3.5 w-3.5', iconCor)} /></td>
                       <td className="px-3 py-2.5">
                         {l.tipo_dinheiro ? (
                           <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded',
@@ -361,19 +392,17 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
                       </td>
                       <td className="px-3 py-2.5 max-w-[200px]">
                         <p className="truncate font-medium">
-                          {l.item_descricao ?? l.descricao ?? (l.cotacoes ? `Compra: ${l.cotacoes.titulo ?? l.cotacoes.fornecedor_nome}` : '—')}
+                          {l.item_descricao ?? l.descricao
+                            ?? (l.cotacoes ? `Compra: ${l.cotacoes.titulo ?? l.cotacoes.fornecedor_nome}` : '—')}
                         </p>
-                        {isTrans && destNome && (
-                          <p className="text-[10px] text-muted-foreground">→ {destNome}</p>
+                        {l.origem && (
+                          <p className="text-[10px] text-muted-foreground truncate">{l.origem}</p>
                         )}
+                        {isTrans && destNome && <p className="text-[10px] text-muted-foreground">→ {destNome}</p>}
                         {isVenda && <p className="text-[10px] text-blue-400">venda</p>}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">
-                        {l.categoria ?? '—'}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
-                        {fmtNum(l.quantidade)}
-                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{l.categoria ?? '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtNum(l.quantidade)}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
                         {l.preco != null ? fmt(l.preco) : '—'}
                       </td>
@@ -382,9 +411,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
                       )}>
                         {isEntrada ? '+' : isTrans ? '' : '-'}{fmt(l.total ?? l.valor)}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">
-                        {conta?.nome ?? '—'}
-                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{conta?.nome ?? '—'}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {!isVenda && (
@@ -418,14 +445,14 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
           {/* Toggle entrada / gasto */}
           <div className="flex rounded-lg overflow-hidden border border-border">
             <button
-              className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-2',
+              className={cn('flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2',
                 form.tipo_mov === 'entrada' ? 'bg-emerald-500/20 text-emerald-400' : 'text-muted-foreground hover:text-foreground'
               )}
               onClick={() => setF({ tipo_mov: 'entrada', is_compra: false })}>
               <TrendingUp className="h-4 w-4" /> Entrada
             </button>
             <button
-              className={cn('flex-1 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-2 border-l border-border',
+              className={cn('flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2 border-l border-border',
                 form.tipo_mov === 'saida' ? 'bg-red-500/20 text-red-400' : 'text-muted-foreground hover:text-foreground'
               )}
               onClick={() => setF({ tipo_mov: 'saida' })}>
@@ -433,42 +460,12 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
             </button>
           </div>
 
-          {/* Compra de cotação (só para saída) */}
-          {form.tipo_mov === 'saida' && (
-            <button
-              onClick={() => setF({ is_compra: !form.is_compra })}
-              className={cn('flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition-colors',
-                form.is_compra
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border text-muted-foreground hover:text-foreground'
-              )}>
-              <ShoppingCart className="h-3.5 w-3.5" />
-              Vincular à cotação
-            </button>
-          )}
-
-          {form.is_compra && form.tipo_mov === 'saida' && (
-            <div className="space-y-1">
-              <Label className="text-xs">Cotação</Label>
-              <Select value={form.cotacao_id} onValueChange={v => setF({ cotacao_id: v })}>
-                <SelectTrigger className="text-xs h-9"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                <SelectContent>
-                  {cotacoesFinaliz.map(c => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.titulo ?? c.fornecedor_nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
+          {/* Linha 1: Data + Tipo dinheiro */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label className="text-xs">Data</Label>
               <Input type="date" className="h-9 text-xs" value={form.data} onChange={e => setF({ data: e.target.value })} />
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs">Tipo de dinheiro</Label>
               <div className="flex rounded-lg overflow-hidden border border-border h-9">
@@ -480,28 +477,35 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
                         : 'text-muted-foreground hover:text-foreground',
                       t === 'sujo' && 'border-l border-border'
                     )}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                    {t === 'limpo' ? 'Limpo' : 'Sujo'}
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
+          {/* Origem */}
           <div className="space-y-1">
-            <Label className="text-xs">Origem</Label>
-            <Select value={form.origem_tipo || 'nenhum'} onValueChange={v => setF({ origem_tipo: v === 'nenhum' ? '' : v as 'faccao' | 'loja' | 'pessoa' })}>
-              <SelectTrigger className="text-xs h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nenhum">Não informar</SelectItem>
-                <SelectItem value="faccao">Facção</SelectItem>
-                <SelectItem value="loja">Loja</SelectItem>
-                <SelectItem value="pessoa">Pessoa</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label className="text-xs">Origem (pessoa, facção, loja...)</Label>
+            <Input list="hist-origem" className="h-9 text-xs" placeholder="Ex: João, Los Santos Customs, GreenMoney..."
+              value={form.origem} onChange={e => setF({ origem: e.target.value })} />
+            <datalist id="hist-origem">
+              {histOrigem.map(o => <option key={o!} value={o!} />)}
+            </datalist>
           </div>
 
+          {/* Item / Descrição */}
           <div className="space-y-1">
-            <Label className="text-xs">Item / Descrição</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Item / Descrição</Label>
+              {form.tipo_mov === 'saida' && (
+                <button
+                  onClick={() => setBrowseOpen(true)}
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                  <PackageSearch className="h-3 w-3" /> Buscar no catálogo
+                </button>
+              )}
+            </div>
             <Input list="hist-descricao" className="h-9 text-xs" placeholder="Ex: Fuzil, Entrega, Aluguel..."
               value={form.item_descricao} onChange={e => setF({ item_descricao: e.target.value })} />
             <datalist id="hist-descricao">
@@ -509,6 +513,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
             </datalist>
           </div>
 
+          {/* Categoria */}
           <div className="space-y-1">
             <Label className="text-xs">Categoria</Label>
             <Input list="hist-categoria" className="h-9 text-xs" placeholder="Ex: Armamento, Logística..."
@@ -518,6 +523,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
             </datalist>
           </div>
 
+          {/* Preço / Qty / Total */}
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Preço unit.</Label>
@@ -536,29 +542,89 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
             </div>
           </div>
 
+          {/* Responsável */}
           <div className="space-y-1">
             <Label className="text-xs">Responsável (quem {form.tipo_mov === 'entrada' ? 'recebeu' : 'pagou'})</Label>
-            <Select value={form.conta_id || 'sem'} onValueChange={v => setF({ conta_id: v === 'sem' ? '' : v })}>
-              <SelectTrigger className="text-xs h-9"><SelectValue placeholder="Selecione a conta..." /></SelectTrigger>
+            <Select value={form.responsavel || 'sem'} onValueChange={v => setF({ responsavel: v === 'sem' ? '' : v })}>
+              <SelectTrigger className="text-xs h-9"><SelectValue placeholder="Selecione..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="sem">Selecione...</SelectItem>
-                {contas.filter(c => c.status === 'ativo').map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectLabel className="text-[10px] uppercase tracking-wider px-2">Contas</SelectLabel>
+                  {contas.filter(c => c.status === 'ativo').map(c => (
+                    <SelectItem key={c.id} value={`conta:${c.id}`}>{c.nome}</SelectItem>
+                  ))}
+                </SelectGroup>
+                {membrosSemConta.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-wider px-2">Membros</SelectLabel>
+                    {membrosSemConta.map(m => (
+                      <SelectItem key={m.id} value={`membro:${m.id}`}>
+                        {m.nome}{m.vulgo ? ` (${m.vulgo})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
           </div>
 
+          {/* Vincular cotação (só para gasto) */}
+          {form.tipo_mov === 'saida' && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setF({ is_compra: !form.is_compra, cotacao_id: '' })}
+                  className={cn('flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors',
+                    form.is_compra
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border text-muted-foreground hover:text-foreground'
+                  )}>
+                  <ShoppingCart className="h-3 w-3" /> Vincular a cotação
+                </button>
+              </div>
+
+              {form.is_compra && (
+                <div>
+                  {cotacoesFinaliz.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Nenhuma cotação finalizada disponível</p>
+                  ) : (
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+                      {cotacoesFinaliz.map(c => (
+                        <button key={c.id} onClick={() => setF({ cotacao_id: c.id })}
+                          className={cn('w-full text-left px-3 py-2 rounded-lg border text-xs transition-colors',
+                            form.cotacao_id === c.id
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border hover:border-primary/40 hover:bg-white/[0.02]'
+                          )}>
+                          <p className="font-medium">{c.titulo ?? c.fornecedor_nome}</p>
+                          <p className="text-muted-foreground capitalize">{c.fornecedor_tipo} · {c.fornecedor_nome}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} disabled={salvando}>
-              Cancelar
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setModalOpen(false)} disabled={salvando}>Cancelar</Button>
             <Button size="sm" onClick={handleSalvar} disabled={salvando}>
               {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : (form.id ? 'Salvar' : 'Registrar')}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Browse fornecedor ── */}
+      <BrowseFornecedorDialog
+        open={browseOpen}
+        onClose={() => setBrowseOpen(false)}
+        onConfirm={onBrowseConfirm}
+        tipoDinheiro={form.tipo_dinheiro}
+        sb={sb}
+      />
 
       {/* ── Confirmar delete ── */}
       <Dialog open={!!deleteId} onOpenChange={o => { if (!o) setDeleteId(null) }}>
@@ -567,9 +633,7 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
           <p className="text-sm text-muted-foreground">O saldo será revertido automaticamente.</p>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setDeleteId(null)}>Cancelar</Button>
-            <Button variant="destructive" size="sm" onClick={() => deleteId && handleDelete(deleteId)}>
-              Remover
-            </Button>
+            <Button variant="destructive" size="sm" onClick={() => deleteId && handleDelete(deleteId)}>Remover</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -579,19 +643,59 @@ export function ExtratoAba({ contas, lancamentos, setLancamentos, atualizarSaldo
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
 
-function ResumoCard({ label, valor, cor, negativo }: {
-  label: string; valor: number; cor: string; negativo?: boolean
+function ResumoCard({ label, limpo, sujo, cor, negativo }: {
+  label: string; limpo: number; sujo: number; cor: string; negativo?: boolean
 }) {
-  const colors: Record<string, string> = {
-    emerald: 'text-emerald-400', yellow: 'text-yellow-400',
-    red: 'text-red-400', orange: 'text-orange-400',
+  const colors: Record<string, { limpo: string; sujo: string }> = {
+    emerald: { limpo: 'text-emerald-400', sujo: 'text-yellow-400' },
+    blue:    { limpo: 'text-blue-400',    sujo: 'text-blue-300' },
+    red:     { limpo: 'text-red-400',     sujo: 'text-orange-400' },
   }
+  const c = colors[cor] ?? colors.emerald
+  const sign = negativo ? '-' : ''
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
-      <p className={cn('text-lg font-bold tabular-nums', colors[cor])}>
-        {negativo ? '-' : ''}{Math.abs(valor).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-2">{label}</p>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Limpo</span>
+          <span className={cn('text-sm font-bold tabular-nums', c.limpo)}>
+            {sign}{Math.abs(limpo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Sujo</span>
+          <span className={cn('text-sm font-bold tabular-nums', c.sujo)}>
+            {sign}{Math.abs(sujo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SaldoCard({ limpo, sujo }: { limpo: number; sujo: number }) {
+  const total = limpo + sujo
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-2">Saldo</p>
+      <p className={cn('text-xl font-bold tabular-nums', total >= 0 ? 'text-foreground' : 'text-red-400')}>
+        {total < 0 ? '-' : ''}R$ {Math.abs(total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
       </p>
+      <div className="mt-1.5 space-y-0.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Limpo</span>
+          <span className={cn('text-xs tabular-nums', limpo >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+            {limpo < 0 ? '-' : ''}R$ {Math.abs(limpo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">Sujo</span>
+          <span className={cn('text-xs tabular-nums', sujo >= 0 ? 'text-orange-400' : 'text-red-400')}>
+            {sujo < 0 ? '-' : ''}R$ {Math.abs(sujo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
