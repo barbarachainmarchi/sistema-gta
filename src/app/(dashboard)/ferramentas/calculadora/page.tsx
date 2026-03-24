@@ -11,6 +11,7 @@ export default async function CalculadoraPage() {
   const [
     { data: itemsData },
     { data: receitasData },
+    { data: precosVigentesData },
     { data: lojasData },
     { data: lojaPrecosData },
     { data: favoritosData },
@@ -19,6 +20,7 @@ export default async function CalculadoraPage() {
   ] = await Promise.all([
     supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, meu_produto_usuario_id, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
+    supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
@@ -60,6 +62,7 @@ export default async function CalculadoraPage() {
         userId={user.id}
         items={items}
         lojas={lojasData ?? []}
+        precosVigentes={precosVigentesData ?? []}
         lojaPrecos={lojaPrecosData ?? []}
         faccaoPrecos={faccaoPrecosData ?? []}
         meuLojaId={meuLojaId}

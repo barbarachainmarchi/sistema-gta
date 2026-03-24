@@ -26,10 +26,12 @@ type Item = {
 type Loja = { id: string; nome: string }
 type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
 type FaccaoPreco = { faccao_id: string; item_id: string; preco_limpo: number | null; preco_sujo: number | null }
+type PrecoVigente = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
 
 interface Props {
   userId: string
   items: Item[]
+  precosVigentes: PrecoVigente[]
   lojas: Loja[]
   lojaPrecos: LojaPreco[]
   faccaoPrecos: FaccaoPreco[]
@@ -117,7 +119,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, prec
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, favoritosIniciais, podeEditar = true }: Props) {
+export function CalculadoraClient({ userId, items, precosVigentes, lojas, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, favoritosIniciais, podeEditar = true }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -136,21 +138,28 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
 
   const itemMap   = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const lojaMap   = useMemo(() => Object.fromEntries(lojas.map(l => [l.id, l])), [lojas])
-  // Preços de venda do usuário (loja ou facção do local de trabalho)
+
+  // Preços de venda: prioridade loja/facção do usuário; fallback = item_preco_vigente (global)
   const meuPrecoMap = useMemo(() => {
     const map: Record<string, { preco_limpo: number | null; preco_sujo: number | null }> = {}
+    // Primeiro preenche com preços vigentes globais (fallback)
+    precosVigentes.forEach(p => { map[p.item_id] = { preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo } })
+    // Depois sobrescreve com preços específicos da loja do usuário
     if (meuLojaId) {
       lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => {
         map[lp.item_id] = { preco_limpo: lp.preco, preco_sujo: lp.preco_sujo }
       })
     }
+    // E da facção do usuário (só onde não há preço de loja)
     if (meuFaccaoId) {
       faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => {
-        if (!map[fp.item_id]) map[fp.item_id] = { preco_limpo: fp.preco_limpo, preco_sujo: fp.preco_sujo }
+        if (!meuLojaId || !lojaPrecos.some(lp => lp.loja_id === meuLojaId && lp.item_id === fp.item_id)) {
+          map[fp.item_id] = { preco_limpo: fp.preco_limpo, preco_sujo: fp.preco_sujo }
+        }
       })
     }
     return map
-  }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
+  }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
 
   const meusItemIds = useMemo(() => {
     const ids = new Set(Object.keys(meuPrecoMap))
