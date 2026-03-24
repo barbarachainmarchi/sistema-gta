@@ -17,6 +17,7 @@ type Item = {
   nome: string
   tem_craft: boolean
   eh_meu_produto: boolean
+  meu_produto_usuario_id: string | null
   peso: number | null
   categorias_item: { nome: string } | null
   item_receita: { ingrediente_id: string; quantidade: number }[]
@@ -53,11 +54,13 @@ function fmtKg(kg: number) {
 
 // ── Item com botão + ──────────────────────────────────────────────────────────
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, onAdd, onToggleFav, podeEditar }: {
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, precoLimpo, precoSujo, onAdd, onToggleFav, podeEditar }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
   isMeu: boolean
+  precoLimpo: number | null
+  precoSujo: number | null
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
   podeEditar: boolean
@@ -69,7 +72,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, onAd
     )}>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium leading-tight truncate">{item.nome}</div>
-        <div className="flex items-center gap-1.5 mt-0.5">
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           {item.categorias_item?.nome && (
             <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>
           )}
@@ -78,6 +81,16 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, onAd
             <span className="text-[10px] text-orange-500/60">sem receita</span>
           )}
         </div>
+        {(precoLimpo != null || precoSujo != null) && (
+          <div className="flex items-center gap-2 mt-0.5">
+            {precoLimpo != null && (
+              <span className="text-[10px] text-emerald-400/70 tabular-nums">{fmt(precoLimpo)} L</span>
+            )}
+            {precoSujo != null && (
+              <span className="text-[10px] text-orange-400/60 tabular-nums">{fmt(precoSujo)} S</span>
+            )}
+          </div>
+        )}
       </div>
       <button onMouseDown={e => e.preventDefault()} onClick={e => podeEditar && onToggleFav(item.id, e)}
         disabled={!podeEditar}
@@ -139,7 +152,12 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
     return map
   }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
 
-  const meusItemIds = useMemo(() => new Set(Object.keys(meuPrecoMap)), [meuPrecoMap])
+  const meusItemIds = useMemo(() => {
+    const ids = new Set(Object.keys(meuPrecoMap))
+    // Também inclui itens manualmente marcados pelo usuário (extras sem preço na loja/facção)
+    items.forEach(i => { if (i.meu_produto_usuario_id === userId) ids.add(i.id) })
+    return ids
+  }, [meuPrecoMap, items, userId])
 
   const lojaPrecoPorItem = useMemo(() => {
     const map: Record<string, LojaPreco[]> = {}
@@ -240,7 +258,7 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
     <div className="h-[calc(100vh-3rem)] flex overflow-hidden">
 
       {/* ── Col 1: Lista de itens ── */}
-      <aside className="w-60 shrink-0 flex flex-col border-r border-border">
+      <aside className="w-72 shrink-0 flex flex-col border-r border-border">
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -267,6 +285,8 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
               isInBatch={batchIds.has(item.id)}
               isFavorito={favoritos.has(item.id)}
               isMeu={meusItemIds.has(item.id)}
+              precoLimpo={meuPrecoMap[item.id]?.preco_limpo ?? null}
+              precoSujo={meuPrecoMap[item.id]?.preco_sujo ?? null}
               onAdd={addToBatch} onToggleFav={toggleFavorito}
               podeEditar={podeEditar}
             />

@@ -17,7 +17,7 @@ export default async function CalculadoraPage() {
     { data: permRow },
     { data: usuarioRow },
   ] = await Promise.all([
-    supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
+    supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, meu_produto_usuario_id, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),

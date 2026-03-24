@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Trash2, Edit2, Check, X, Users, ArrowLeft,
+  Plus, Minus, Trash2, Edit2, Check, X, Users, ArrowLeft,
   ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye
 } from 'lucide-react'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
@@ -175,6 +175,9 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   const [itemBusca, setItemBusca] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
+  // Cardápio (batch add via catálogo)
+  const [cardapioQtds, setCardapioQtds] = useState<Record<string, number>>({})
+
   // Edit item inline
   const [editandoItemId, setEditandoItemId] = useState<string | null>(null)
   const [editItemForm, setEditItemForm] = useState({ qty: '', preco: '' })
@@ -266,7 +269,22 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   }
 
   function abrirAddItem(pessoaId: string) {
-    setAddItemPessoa(pessoaId); setItemForm({ nome: '', item_id: '', qty: '1', preco: '' }); setItemBusca('')
+    setAddItemPessoa(pessoaId); setItemForm({ nome: '', item_id: '', qty: '1', preco: '' }); setItemBusca(''); setCardapioQtds({})
+  }
+
+  async function handleAddCardapio() {
+    const toAdd = Object.entries(cardapioQtds).filter(([, qty]) => qty > 0)
+    if (toAdd.length === 0) return
+    setSalvandoItem(true)
+    const rows = toAdd.map(([item_id, qty]) => {
+      const cat = catalogo.find(c => c.item_id === item_id)!
+      return { cotacao_id: cotacao.id, pessoa_id: addItemPessoa, item_nome: cat.nome, item_id, quantidade: qty, preco_unit: cat.preco, adicionado_por: userId, adicionado_por_nome: userNome }
+    })
+    const { data, error } = await sb().from('cotacao_itens').insert(rows).select()
+    setSalvandoItem(false)
+    if (error) { toast.error('Erro ao adicionar itens'); return }
+    setItens(prev => [...prev, ...(data as Item[])])
+    setCardapioQtds({}); setAddItemPessoa(null)
   }
 
   function selecionarCatalogo(cat: { item_id: string; nome: string; preco: number }) {
@@ -498,37 +516,74 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
                     {podeEditar && (
                       addItemPessoa === pessoa.id ? (
-                        <div className="border-t border-border/40 p-3 bg-white/[0.01] space-y-2">
-                          <div className="relative">
-                            <Input
-                              placeholder={catalogo.length > 0 ? 'Buscar no catálogo ou digitar...' : 'Nome do item...'}
-                              value={itemBusca}
-                              onChange={e => { setItemBusca(e.target.value); setItemForm(f => ({ ...f, nome: e.target.value, item_id: '' })); setDropdownOpen(true) }}
-                              onFocus={() => setDropdownOpen(true)}
-                              onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-                              className="h-7 text-sm"
-                            />
-                            {dropdownOpen && catalogoFiltrado.length > 0 && (
-                              <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover shadow-md max-h-40 overflow-y-auto">
-                                {catalogoFiltrado.map(cat => (
-                                  <button key={cat.item_id} onMouseDown={() => selecionarCatalogo(cat)}
-                                    className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-accent text-left">
-                                    <span>{cat.nome}</span>
-                                    <span className="text-muted-foreground">{fmt(cat.preco)}</span>
-                                  </button>
-                                ))}
+                        catalogo.length > 0 ? (
+                          /* ── Cardápio ── */
+                          <div className="border-t border-border/40">
+                            <div className="px-3 py-2 border-b border-border/40">
+                              <Input placeholder="Filtrar itens..." value={itemBusca} onChange={e => setItemBusca(e.target.value)} className="h-7 text-xs" autoFocus />
+                            </div>
+                            <div className="max-h-60 overflow-y-auto">
+                              <div className="grid grid-cols-[1fr_80px_100px] text-[10px] text-muted-foreground font-medium px-3 py-1.5 bg-white/[0.03] sticky top-0 border-b border-border/20">
+                                <span>Item</span><span className="text-right">Preço</span><span className="text-right">Quantidade</span>
                               </div>
-                            )}
+                              {catalogoFiltrado.map(cat => {
+                                const qty = cardapioQtds[cat.item_id] ?? 0
+                                return (
+                                  <div key={cat.item_id} className={cn('grid grid-cols-[1fr_80px_100px] items-center px-3 py-1.5 border-b border-border/20 last:border-0', qty > 0 && 'bg-primary/[0.04]')}>
+                                    <span className="text-xs truncate pr-2">{cat.nome}</span>
+                                    <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(cat.preco)}</span>
+                                    <div className="flex items-center gap-0.5 justify-end">
+                                      {qty > 0 && (
+                                        <button onClick={() => setCardapioQtds(prev => { const n = {...prev}; n[cat.item_id] <= 1 ? delete n[cat.item_id] : (n[cat.item_id] -= 1); return n })}
+                                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                                          <Minus className="h-2.5 w-2.5" />
+                                        </button>
+                                      )}
+                                      <input type="number" min="0" value={qty || ''} placeholder="0"
+                                        onChange={e => { const v = parseInt(e.target.value) || 0; setCardapioQtds(prev => { const n = {...prev}; v <= 0 ? delete n[cat.item_id] : (n[cat.item_id] = v); return n }) }}
+                                        className="h-5 w-9 text-center text-xs bg-transparent border border-border/40 rounded outline-none focus:border-ring" />
+                                      <button onClick={() => setCardapioQtds(prev => ({ ...prev, [cat.item_id]: (prev[cat.item_id] ?? 0) + 1 }))}
+                                        className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                                        <Plus className="h-2.5 w-2.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              {catalogoFiltrado.length === 0 && (
+                                <p className="text-xs text-muted-foreground text-center py-4">Nenhum item encontrado</p>
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between px-3 py-2 border-t border-border/40 bg-white/[0.01]">
+                              <span className="text-xs text-muted-foreground">
+                                {Object.keys(cardapioQtds).length > 0 ? `${Object.keys(cardapioQtds).length} item(s) selecionado(s)` : 'Nenhum item selecionado'}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => { setAddItemPessoa(null); setCardapioQtds({}) }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
+                                <Button size="sm" className="h-7 text-xs" onClick={handleAddCardapio} disabled={salvandoItem || Object.keys(cardapioQtds).length === 0}>
+                                  {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar pedido'}
+                                </Button>
+                              </div>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
-                            <Input placeholder="Qtd" type="number" value={itemForm.qty} onChange={e => setItemForm(f => ({ ...f, qty: e.target.value }))} className="h-7 text-sm" />
-                            <Input placeholder="Preço unit." type="number" value={itemForm.preco} onChange={e => setItemForm(f => ({ ...f, preco: e.target.value }))} className="h-7 text-sm" />
-                            <Button size="sm" className="h-7 text-xs" onClick={handleAddItem} disabled={salvandoItem}>
-                              {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                            </Button>
-                            <button onClick={() => setAddItemPessoa(null)} className="text-muted-foreground hover:text-foreground transition-colors"><X className="h-4 w-4" /></button>
+                        ) : (
+                          /* ── Form manual (sem catálogo) ── */
+                          <div className="border-t border-border/40 p-3 bg-white/[0.01] space-y-2">
+                            <div className="relative">
+                              <Input placeholder="Nome do item..." value={itemBusca}
+                                onChange={e => { setItemBusca(e.target.value); setItemForm(f => ({ ...f, nome: e.target.value, item_id: '' })) }}
+                                className="h-7 text-sm" autoFocus />
+                            </div>
+                            <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+                              <Input placeholder="Qtd" type="number" value={itemForm.qty} onChange={e => setItemForm(f => ({ ...f, qty: e.target.value }))} className="h-7 text-sm" />
+                              <Input placeholder="Preço unit." type="number" value={itemForm.preco} onChange={e => setItemForm(f => ({ ...f, preco: e.target.value }))} className="h-7 text-sm" />
+                              <Button size="sm" className="h-7 text-xs" onClick={handleAddItem} disabled={salvandoItem}>
+                                {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                              </Button>
+                              <button onClick={() => setAddItemPessoa(null)} className="text-muted-foreground hover:text-foreground transition-colors"><X className="h-4 w-4" /></button>
+                            </div>
                           </div>
-                        </div>
+                        )
                       ) : (
                         <button onClick={() => abrirAddItem(pessoa.id)}
                           className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.02] transition-colors border-t border-border/40">
@@ -693,27 +748,47 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
       </Dialog>
 
       {/* ── Dialog: Adicionar pessoa ── */}
-      <Dialog open={novaPessoaOpen} onOpenChange={v => !v && setNovaPessoaOpen(false)}>
+      <Dialog open={novaPessoaOpen} onOpenChange={v => { if (!v) { setNovaPessoaOpen(false); setNovaPessoaForm({ nome: '', membro_id: '' }) } }}>
         <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
           <DialogHeader><DialogTitle className="text-sm">Adicionar pessoa</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Nome</Label>
-              <Input value={novaPessoaForm.nome} onChange={e => setNovaPessoaForm(f => ({ ...f, nome: e.target.value }))} placeholder="Nome de quem vai comprar" className="h-8 text-sm" onKeyDown={e => e.key === 'Enter' && handleAddPessoa()} />
+          <div className="py-1 space-y-1.5">
+            <Label className="text-xs">Nome</Label>
+            <div className="relative">
+              <Input
+                value={novaPessoaForm.nome}
+                onChange={e => setNovaPessoaForm({ nome: e.target.value, membro_id: '' })}
+                placeholder="Digite o nome..."
+                className="h-8 text-sm"
+                onKeyDown={e => e.key === 'Enter' && handleAddPessoa()}
+                autoFocus
+              />
+              {novaPessoaForm.nome.trim().length > 0 && (() => {
+                const sugs = membros.filter(m =>
+                  m.nome.toLowerCase().includes(novaPessoaForm.nome.toLowerCase()) ||
+                  (m.vulgo?.toLowerCase().includes(novaPessoaForm.nome.toLowerCase()))
+                ).slice(0, 6)
+                return sugs.length > 0 ? (
+                  <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                    {sugs.map(m => (
+                      <button key={m.id} type="button"
+                        onMouseDown={e => { e.preventDefault(); setNovaPessoaForm({ nome: m.nome, membro_id: m.id }) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                        <span className="font-medium">{m.nome}</span>
+                        {m.vulgo && <span className="text-muted-foreground">"{m.vulgo}"</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              })()}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Membro (opcional)</Label>
-              <Select value={novaPessoaForm.membro_id || 'sem'} onValueChange={v => setNovaPessoaForm(f => ({ ...f, membro_id: v === 'sem' ? '' : v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Vincular a membro..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sem">— sem vínculo —</SelectItem>
-                  {membros.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {novaPessoaForm.membro_id && (
+              <p className="text-[10px] text-muted-foreground pl-0.5">
+                Vinculado: {membros.find(m => m.id === novaPessoaForm.membro_id)?.nome}
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setNovaPessoaOpen(false)}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={() => { setNovaPessoaOpen(false); setNovaPessoaForm({ nome: '', membro_id: '' }) }}>Cancelar</Button>
             <Button size="sm" onClick={handleAddPessoa} disabled={salvandoPessoa}>
               {salvandoPessoa ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Adicionar'}
             </Button>
