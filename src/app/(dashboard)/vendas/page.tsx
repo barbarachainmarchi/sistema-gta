@@ -15,8 +15,8 @@ export default async function VendasPage() {
     { data: itemsData },
     { data: receitasData },
     { data: estoqueData },
-    { data: precosVigentesData },
-    { data: lojaPrecosData },
+    { data: membrosData },
+    { data: lojasData },
     { data: permRow },
     { data: usuarioRow },
   ] = await Promise.all([
@@ -26,8 +26,8 @@ export default async function VendasPage() {
     supabase.from('items').select('id, nome, tem_craft, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('estoque').select('item_id, tipo, quantidade'),
-    supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
-    supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
+    supabase.from('membros').select('id, nome, vulgo, telefone, faccao_id').eq('status', 'ativo').order('nome'),
+    supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
   ])
@@ -35,16 +35,14 @@ export default async function VendasPage() {
   const meuLojaId   = usuarioRow?.local_trabalho_loja_id ?? null
   const meuFaccaoId = usuarioRow?.local_trabalho_faccao_id ?? null
 
-  const { data: faccaoPrecosData } = meuFaccaoId
-    ? await supabase.from('faccao_item_precos').select('faccao_id, item_id, preco_limpo, preco_sujo').eq('faccao_id', meuFaccaoId)
-    : { data: [] }
+  const meuLoja   = meuLojaId   ? (lojasData   ?? []).find(l => l.id === meuLojaId)   ?? null : null
+  const meuFaccao = meuFaccaoId ? (faccoesData  ?? []).find(f => f.id === meuFaccaoId) ?? null : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas')?.pode_editar ?? false)
 
-  // Mesclar itens nas vendas
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
   for (const it of vendaItensData ?? []) {
     if (!itensPorVenda[it.venda_id]) itensPorVenda[it.venda_id] = []
@@ -70,11 +68,9 @@ export default async function VendasPage() {
         allItems={items}
         receitas={receitasData ?? []}
         estoque={estoqueData ?? []}
-        precosVigentes={precosVigentesData ?? []}
-        lojaPrecos={lojaPrecosData ?? []}
-        faccaoPrecos={faccaoPrecosData ?? []}
-        meuLojaId={meuLojaId}
-        meuFaccaoId={meuFaccaoId}
+        membros={membrosData ?? []}
+        meuLoja={meuLoja ? { id: meuLoja.id, nome: meuLoja.nome } : null}
+        meuFaccao={meuFaccao ? { id: meuFaccao.id, nome: meuFaccao.nome } : null}
         filtroInicial="todos"
         podeEditar={podeEditar}
       />
