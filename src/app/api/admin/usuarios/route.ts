@@ -51,14 +51,23 @@ export async function PATCH(req: NextRequest) {
   const { user } = await getAuthUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { id, nome, cargo, perfil_id, status } = await req.json()
+  const { id, nome, cargo, perfil_id, status, local_trabalho_loja_id, local_trabalho_faccao_id, membro_id } = await req.json()
   if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
   const admin = createAdminClient()
-  const { error } = await admin
-    .from('usuarios')
-    .update({ nome, cargo: cargo || null, perfil_id: perfil_id || null, status })
-    .eq('id', id)
+
+  // Monta o objeto de update apenas com os campos enviados
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updates: Record<string, any> = {}
+  if (nome !== undefined) updates.nome = nome
+  if (cargo !== undefined) updates.cargo = cargo || null
+  if (perfil_id !== undefined) updates.perfil_id = perfil_id || null
+  if (status !== undefined) updates.status = status
+  if (local_trabalho_loja_id !== undefined) updates.local_trabalho_loja_id = local_trabalho_loja_id || null
+  if (local_trabalho_faccao_id !== undefined) updates.local_trabalho_faccao_id = local_trabalho_faccao_id || null
+  if (membro_id !== undefined) updates.membro_id = membro_id || null
+
+  const { error } = await admin.from('usuarios').update(updates).eq('id', id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })

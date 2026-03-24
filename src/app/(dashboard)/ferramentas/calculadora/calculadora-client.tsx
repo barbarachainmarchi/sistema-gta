@@ -167,9 +167,9 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
 
   const itensCraft    = useMemo(() => items.filter(i => i.tem_craft), [items])
   const itensFiltrados = useMemo(() => {
-    let lista = itensCraft
+    // "Meus" mostra todos os itens do usuário (com ou sem craft) — para testar preços
+    let lista = aba === 'meus' ? items.filter(i => meusItemIds.has(i.id)) : itensCraft
     if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
-    if (aba === 'meus') lista = lista.filter(i => meusItemIds.has(i.id))
     if (busca.trim()) {
       const q = busca.toLowerCase()
       lista = lista.filter(i =>
@@ -320,11 +320,23 @@ export function CalculadoraClient({ userId, items, lojas, lojaPrecos, faccaoPrec
                     <div key={item_id} className="flex items-center gap-2 py-2.5">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{item?.nome ?? '—'}</div>
-                        {item?.peso != null && (
-                          <div className="text-[10px] text-muted-foreground">
-                            {fmtKg(item.peso * quantidade)} produzidos
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {item?.peso != null && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {fmtKg(item.peso * quantidade)} produzidos
+                            </span>
+                          )}
+                          {meuPrecoMap[item_id]?.preco_limpo != null && (
+                            <span className="text-[10px] text-emerald-400/80 tabular-nums">
+                              {quantidade > 1 ? `${quantidade} × ` : ''}{fmt(meuPrecoMap[item_id].preco_limpo! * quantidade)} L
+                            </span>
+                          )}
+                          {meuPrecoMap[item_id]?.preco_sujo != null && (
+                            <span className="text-[10px] text-orange-400/70 tabular-nums">
+                              {quantidade > 1 ? `${quantidade} × ` : ''}{fmt(meuPrecoMap[item_id].preco_sujo! * quantidade)} S
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-0.5 shrink-0">
                         <button onClick={() => setQtd(item_id, quantidade - 1)}

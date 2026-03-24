@@ -153,9 +153,13 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
   async function handleVincularMembro(usuarioId: string, membroId: string | null) {
     setVinculandoId(usuarioId)
-    const { error } = await sb().from('usuarios').update({ membro_id: membroId }).eq('id', usuarioId)
+    const res = await fetch('/api/admin/usuarios', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: usuarioId, membro_id: membroId }),
+    })
     setVinculandoId(null)
-    if (error) { toast.error('Erro ao vincular'); return }
+    if (!res.ok) { const j = await res.json(); toast.error(j.error ?? 'Erro ao vincular'); return }
     setUsuarios(prev => prev.map(u => u.id === usuarioId ? { ...u, membro_id: membroId } : u))
     toast.success(membroId ? 'Membro vinculado!' : 'Vínculo removido')
   }
@@ -287,21 +291,22 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   async function handleSalvarUsuario() {
     if (!editUsuario) return
     setEditSaving(true)
+    const novoLojaId = editForm.local_trabalho_loja_id || null
+    const novoFaccaoId = editForm.local_trabalho_faccao_id || null
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: editUsuario.id, nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status }),
+      body: JSON.stringify({
+        id: editUsuario.id,
+        nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status,
+        local_trabalho_loja_id: novoLojaId,
+        local_trabalho_faccao_id: novoFaccaoId,
+      }),
     })
     const json = await res.json()
     if (!res.ok) { setEditSaving(false); toast.error(json.error ?? 'Erro ao salvar'); return }
 
-    const novoLojaId = editForm.local_trabalho_loja_id || null
-    const novoFaccaoId = editForm.local_trabalho_faccao_id || null
     const localMudou = novoLojaId !== editUsuario.local_trabalho_loja_id || novoFaccaoId !== editUsuario.local_trabalho_faccao_id
-    await sb().from('usuarios').update({
-      local_trabalho_loja_id: novoLojaId,
-      local_trabalho_faccao_id: novoFaccaoId,
-    }).eq('id', editUsuario.id)
     if (localMudou) {
       await sb().from('items').update({ eh_meu_produto: false, meu_produto_usuario_id: null }).eq('meu_produto_usuario_id', editUsuario.id)
     }

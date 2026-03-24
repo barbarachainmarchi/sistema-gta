@@ -276,14 +276,21 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     const toAdd = Object.entries(cardapioQtds).filter(([, qty]) => qty > 0)
     if (toAdd.length === 0) return
     setSalvandoItem(true)
-    const rows = toAdd.map(([item_id, qty]) => {
-      const cat = catalogo.find(c => c.item_id === item_id)!
-      return { cotacao_id: cotacao.id, pessoa_id: addItemPessoa, item_nome: cat.nome, item_id, quantidade: qty, preco_unit: cat.preco, adicionado_por: userId, adicionado_por_nome: userNome }
-    })
-    const { data, error } = await sb().from('cotacao_itens').insert(rows).select()
+    const adicionados: Item[] = []
+    for (const [item_id, qty] of toAdd) {
+      const cat = catalogo.find(c => c.item_id === item_id)
+      if (!cat) continue
+      const { data, error } = await sb().from('cotacao_itens').insert({
+        cotacao_id: cotacao.id, pessoa_id: addItemPessoa,
+        item_nome: cat.nome, item_id,
+        quantidade: qty, preco_unit: cat.preco,
+        adicionado_por: userId, adicionado_por_nome: userNome,
+      }).select().single()
+      if (error) { toast.error('Erro ao adicionar: ' + error.message); setSalvandoItem(false); return }
+      adicionados.push(data as Item)
+    }
     setSalvandoItem(false)
-    if (error) { toast.error('Erro ao adicionar itens'); return }
-    setItens(prev => [...prev, ...(data as Item[])])
+    setItens(prev => [...prev, ...adicionados])
     setCardapioQtds({}); setAddItemPessoa(null)
   }
 
