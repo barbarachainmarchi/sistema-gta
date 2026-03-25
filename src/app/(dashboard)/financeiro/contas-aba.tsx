@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Plus, Pencil, PowerOff, Power, Loader2, Wallet } from 'lucide-react'
+import { Plus, Pencil, PowerOff, Power, Loader2, Wallet, Trash2, RotateCcw } from 'lucide-react'
 import type { Conta, Membro, SbClient } from './financeiro-client'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ export function ContasAba({ contas, setContas, membros, sb, podeEditar }: Props)
   const [form, setForm]           = useState({ ...EMPTY_FORM })
   const [salvando, setSalvando]   = useState(false)
   const [filtroStatus, setFiltroStatus] = useState<'ativo' | 'inativo' | 'todos'>('ativo')
+  const [confirmZerar, setConfirmZerar] = useState<string | null>(null)
+  const [confirmExcluir, setConfirmExcluir] = useState<string | null>(null)
 
   const contasFiltradas = useMemo(() => {
     if (filtroStatus === 'todos') return contas
@@ -91,6 +93,22 @@ export function ContasAba({ contas, setContas, membros, sb, podeEditar }: Props)
     toast.success(novoStatus === 'ativo' ? 'Conta reativada' : 'Conta desativada')
   }
 
+  async function handleZerarSaldo(conta: Conta) {
+    const { error } = await sb().from('financeiro_contas').update({ saldo_sujo: 0, saldo_limpo: 0 }).eq('id', conta.id)
+    if (error) { toast.error(error.message); return }
+    setContas(prev => prev.map(c => c.id === conta.id ? { ...c, saldo_sujo: 0, saldo_limpo: 0 } : c))
+    setConfirmZerar(null)
+    toast.success('Saldo zerado')
+  }
+
+  async function handleExcluir(id: string) {
+    const { error } = await sb().from('financeiro_contas').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setContas(prev => prev.filter(c => c.id !== id))
+    setConfirmExcluir(null)
+    toast.success('Conta excluída')
+  }
+
   const membroMap = useMemo(() => Object.fromEntries(membros.map(m => [m.id, m])), [membros])
 
   return (
@@ -143,10 +161,32 @@ export function ContasAba({ contas, setContas, membros, sb, podeEditar }: Props)
                   <p><span className="text-orange-400">S</span> {c.saldo_sujo.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => abrirEditar(c)}
+                  <button onClick={() => abrirEditar(c)} title="Editar"
                     className="p-1.5 rounded hover:bg-white/[0.07] text-muted-foreground hover:text-foreground transition-colors">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
+                  {confirmZerar === c.id ? (
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => setConfirmZerar(null)} className="px-1.5 py-1 text-[10px] rounded hover:bg-white/[0.07] text-muted-foreground">Não</button>
+                      <button onClick={() => handleZerarSaldo(c)} className="px-1.5 py-1 text-[10px] rounded bg-orange-500/20 text-orange-400 hover:bg-orange-500/30">Zerar</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmZerar(c.id)} title="Zerar saldo"
+                      className="p-1.5 rounded hover:bg-orange-500/10 text-muted-foreground hover:text-orange-400 transition-colors">
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {confirmExcluir === c.id ? (
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => setConfirmExcluir(null)} className="px-1.5 py-1 text-[10px] rounded hover:bg-white/[0.07] text-muted-foreground">Não</button>
+                      <button onClick={() => handleExcluir(c.id)} className="px-1.5 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Excluir</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmExcluir(c.id)} title="Excluir conta"
+                      className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button onClick={() => toggleStatus(c)}
                     className={cn('p-1.5 rounded transition-colors',
                       c.status === 'ativo'

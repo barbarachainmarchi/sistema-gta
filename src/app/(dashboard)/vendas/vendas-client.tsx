@@ -799,18 +799,21 @@ function OrderDialog({
                     )}>
                     {/* Nome + badges */}
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="flex gap-0.5 shrink-0">
-                        <button onClick={() => inCart ? setCartOrigem(p.item_id, 'fabricar') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'fabricar' }))}
-                          className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
-                            (inCart ? c?.origem : draftOrigem[p.item_id]) === 'fabricar'
-                              ? 'bg-blue-500/20 text-blue-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
-                          )}>Fab</button>
-                        <button onClick={() => inCart ? setCartOrigem(p.item_id, 'estoque') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'estoque' }))}
-                          className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
-                            (inCart ? c?.origem : draftOrigem[p.item_id]) === 'estoque'
-                              ? 'bg-purple-500/20 text-purple-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
-                          )}>Est</button>
-                      </div>
+                      {(() => {
+                        const currentOrigem = inCart ? c?.origem : (draftOrigem[p.item_id] ?? (p.tem_craft ? 'fabricar' : 'estoque'))
+                        return (
+                          <div className="flex gap-0.5 shrink-0">
+                            <button onClick={() => inCart ? setCartOrigem(p.item_id, 'fabricar') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'fabricar' }))}
+                              className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                                currentOrigem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
+                              )}>Fab</button>
+                            <button onClick={() => inCart ? setCartOrigem(p.item_id, 'estoque') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'estoque' }))}
+                              className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                                currentOrigem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
+                              )}>Est</button>
+                          </div>
+                        )
+                      })()}
                       <span className={cn('text-xs font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')}>{p.nome}</span>
                       {faccaoDescontosItem[p.item_id] != null && (
                         <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
@@ -896,13 +899,12 @@ function OrderDialog({
                 <div className="space-y-1 border-b border-border/30 pb-2">
                   {cart.map(c => {
                     const preco = getPrecoEfetivo(c)
-                    const d = c.desconto_item_pct ?? descontoPct
-                    const totalItem = c.quantidade * preco * (1 - d / 100)
+                    const subtotalItem = c.quantidade * preco  // sem desconto
                     return (
                       <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
                         <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
                         <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
-                          {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(totalItem)}</span>
+                          {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
                         </span>
                       </div>
                     )
@@ -1192,7 +1194,7 @@ export function VendasClient({
     for (const [item_id, { tipo, qtd }] of Object.entries(deducoes)) {
       const atual = estoqueMap[item_id]?.[tipo] ?? 0
       const nova = Math.max(0, atual - qtd)
-      await sb().from('estoque').upsert({ item_id, tipo, quantidade: nova, updated_at: new Date().toISOString() })
+      await sb().from('estoque').upsert({ item_id, tipo, quantidade: nova }, { onConflict: 'item_id,tipo' })
       setEstoqueState(prev => {
         const exists = prev.find(e => e.item_id === item_id && e.tipo === tipo)
         if (exists) return prev.map(e => e.item_id === item_id && e.tipo === tipo ? { ...e, quantidade: nova } : e)
