@@ -19,6 +19,7 @@ export default async function VendasPage() {
     { data: lojasData },
     { data: permRow },
     { data: usuarioRow },
+    { data: configOcultar },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*'),
@@ -30,6 +31,7 @@ export default async function VendasPage() {
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
+    supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
   ])
 
   const meuLojaId   = usuarioRow?.local_trabalho_loja_id ?? null
@@ -42,6 +44,9 @@ export default async function VendasPage() {
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas')?.pode_editar ?? false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
+  const ocultarConcluidosDias = configOcultar?.valor ? parseInt(configOcultar.valor) || 0 : 7
 
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
   for (const it of vendaItensData ?? []) {
@@ -74,6 +79,8 @@ export default async function VendasPage() {
         meuFaccao={meuFaccao ? { id: meuFaccao.id, nome: meuFaccao.nome } : null}
         filtroInicial="todos"
         podeEditar={podeEditar}
+        podeExcluirConcluida={podeExcluirConcluida}
+        ocultarConcluidosDias={ocultarConcluidosDias}
       />
     </>
   )

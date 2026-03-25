@@ -414,7 +414,11 @@ export function ExtratoAba({
                       )}>
                         {isEntrada ? '+' : isTrans ? '' : '-'}{fmt(l.total ?? l.valor)}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{conta?.nome ?? '—'}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">
+                        {isVenda && l.responsavel_nome ? (
+                          <span className="text-foreground/80">{l.responsavel_nome}</span>
+                        ) : conta?.nome ?? '—'}
+                      </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {!isVenda && (

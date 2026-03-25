@@ -33,6 +33,7 @@ export type Lancamento = {
   vai_para_faccao: boolean; acao_referencia: string | null
   origem: string | null
   created_by: string | null; created_at: string
+  responsavel_nome: string | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cotacoes?: any
 }

@@ -12,8 +12,10 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy,
 } from 'lucide-react'
+import { gerarImagemVenda } from '@/lib/gerarImagem'
+import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { RelatorioAba } from './relatorio-aba'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ interface Props {
   meuFaccao: { id: string; nome: string } | null
   meuLoja: { id: string; nome: string } | null
   filtroInicial: 'todos' | 'encomenda' | 'entregue'; podeEditar: boolean
+  podeExcluirConcluida: boolean; ocultarConcluidosDias: number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -140,19 +143,40 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
-function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar,
+function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, podeExcluirConcluida,
   onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onDelete }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
   receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, Record<string, number>>; itemMap: Record<string, ItemSimples>
-  podeEditar: boolean
+  podeEditar: boolean; podeExcluirConcluida: boolean
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
   onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void; onDelete: (id: string) => void
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [compartilhando, setCompartilhando] = useState(false)
+  const [linkCopiado, setLinkCopiado] = useState(false)
+  const [linkImagem, setLinkImagem] = useState<string | null>(null)
+
+  async function handleCompartilhar() {
+    setCompartilhando(true)
+    try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada — Admin > Layout'); return }
+      const empresaNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? lojas.find(l => l.id === venda.loja_id)?.nome ?? null
+      const empresaTipo: 'faccao' | 'loja' | null = venda.faccao_id ? 'faccao' : venda.loja_id ? 'loja' : null
+      const base64 = gerarImagemVenda({ clienteNome: venda.cliente_nome, empresaNome, empresaTipo, tipoDinheiro: venda.tipo_dinheiro, descontoPct: venda.desconto_pct, status: venda.status, dataEncomenda: venda.data_encomenda, notas: venda.notas, itens: venda.itens, entregue_por_nome: venda.entregue_por_nome })
+      const url = await uploadImgbb(base64, key, `venda-${venda.cliente_nome}`)
+      setLinkImagem(url)
+      await navigator.clipboard.writeText(url)
+      setLinkCopiado(true)
+      setTimeout(() => setLinkCopiado(false), 3000)
+      toast.success('Link copiado!')
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Erro ao gerar imagem') }
+    finally { setCompartilhando(false) }
+  }
 
   const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? null
   const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? null
@@ -288,12 +312,18 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onStatusChange(venda.id, 'fabricando')}>Reabrir</Button>
           )}
           <div className="ml-auto flex items-center gap-1">
+            {!confirmDelete && (
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                onClick={handleCompartilhar} disabled={compartilhando} title="Exportar para imgbb">
+                {compartilhando ? <Loader2 className="h-3 w-3 animate-spin" /> : linkCopiado ? <Copy className="h-3 w-3 text-green-400" /> : <ImageUp className="h-3 w-3" />}
+              </Button>
+            )}
             {ativo && !confirmDelete && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onEdit(venda)}>
                 <Edit2 className="h-3 w-3" />
               </Button>
             )}
-            {ativo && !confirmDelete && (
+            {(ativo || (entregue && podeExcluirConcluida)) && !confirmDelete && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
                 onClick={() => setConfirmDelete(true)}>
                 <Trash2 className="h-3 w-3" />
@@ -933,7 +963,7 @@ function OrderDialog({
 export function VendasClient({
   userId, userNome, vendas: vendasIniciais, faccoes, lojas, allItems,
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
-  meuFaccao, meuLoja, filtroInicial, podeEditar,
+  meuFaccao, meuLoja, filtroInicial, podeEditar, podeExcluirConcluida, ocultarConcluidosDias,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -945,6 +975,7 @@ export function VendasClient({
   const [editando, setEditando] = useState<Venda | null>(null)
   const [saving, setSaving] = useState(false)
   const [filtro, setFiltro] = useState<string>(filtroInicial)
+  const [mostrarTodosConcluidos, setMostrarTodosConcluidos] = useState(false)
 
   const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
   const receitaMap = useMemo(() => {
@@ -959,10 +990,15 @@ export function VendasClient({
   }, [estoqueState])
 
   const vendasFiltradas = useMemo(() => {
-    if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue')
-    if (filtro === 'entregue') return vendas.filter(v => v.status === 'entregue')
+    if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue' && v.status !== 'cancelado')
+    if (filtro === 'entregue') {
+      const entregues = vendas.filter(v => v.status === 'entregue')
+      if (mostrarTodosConcluidos || ocultarConcluidosDias <= 0) return entregues
+      const limite = new Date(Date.now() - ocultarConcluidosDias * 86400000).toISOString()
+      return entregues.filter(v => (v.entregue_em ?? v.created_at) >= limite)
+    }
     return vendas.filter(v => v.status === filtro)
-  }, [vendas, filtro])
+  }, [vendas, filtro, mostrarTodosConcluidos, ocultarConcluidosDias])
 
   async function handleSave(form: FormState) {
     if (!form.cliente_nome.trim() || form.itens.length === 0) return
@@ -1083,6 +1119,7 @@ export function VendasClient({
       vai_para_faccao: !!venda.faccao_id,
       origem: 'venda',
       created_by: userId,
+      responsavel_nome: userNome,
     })
   }
 
@@ -1181,21 +1218,35 @@ export function VendasClient({
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-              {vendasFiltradas.map(venda => (
-                <VendaCard key={venda.id} venda={venda}
-                  faccoes={faccoes}
-                  lojas={lojas}
-                  receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
-                  podeEditar={podeEditar}
-                  onStatusChange={handleStatusChange}
-                  onEntregar={handleEntregar}
-                  onDesfazerEntrega={handleDesfazerEntrega}
-                  onEdit={v => { setEditando(v); setFormOpen(true) }}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
+            <>
+              {filtro === 'entregue' && ocultarConcluidosDias > 0 && (
+                <div className="flex items-center justify-between mb-4 text-xs text-muted-foreground">
+                  <span>
+                    {mostrarTodosConcluidos ? 'Mostrando todos' : `Mostrando últimos ${ocultarConcluidosDias} dias`}
+                    {' '}({vendasFiltradas.length})
+                  </span>
+                  <button onClick={() => setMostrarTodosConcluidos(v => !v)}
+                    className="text-primary hover:underline">
+                    {mostrarTodosConcluidos ? 'Esconder antigos' : 'Mostrar todos'}
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
+                {vendasFiltradas.map(venda => (
+                  <VendaCard key={venda.id} venda={venda}
+                    faccoes={faccoes}
+                    lojas={lojas}
+                    receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
+                    podeEditar={podeEditar} podeExcluirConcluida={podeExcluirConcluida}
+                    onStatusChange={handleStatusChange}
+                    onEntregar={handleEntregar}
+                    onDesfazerEntrega={handleDesfazerEntrega}
+                    onEdit={v => { setEditando(v); setFormOpen(true) }}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 type VendaItem = { id: string; venda_id: string; item_id: string | null; item_nome: string; quantidade: number; preco_unit: number; origem: 'fabricar' | 'estoque' }
-type Venda = { id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: string; data_encomenda: string | null; created_at: string; entregue_em: string | null; criado_por_nome: string | null; itens: VendaItem[] }
+type Venda = { id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: string; data_encomenda: string | null; created_at: string; entregue_em: string | null; criado_por_nome: string | null; entregue_por_nome: string | null; itens: VendaItem[] }
 type Faccao = { id: string; nome: string }
 type Loja = { id: string; nome: string }
 type ItemSimples = { id: string; nome: string }
@@ -166,12 +166,14 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-background border-b border-border">
                   <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                    <th className="px-6 py-2 text-left">Data</th>
-                    <th className="px-6 py-2 text-left">Empresa</th>
-                    <th className="px-6 py-2 text-left">Cliente</th>
-                    <th className="px-6 py-2 text-left">Itens</th>
-                    <th className="px-6 py-2 text-right">Total</th>
-                    <th className="px-6 py-2 text-center">Tipo</th>
+                    <th className="px-4 py-2 text-left">Data</th>
+                    <th className="px-4 py-2 text-left">Empresa</th>
+                    <th className="px-4 py-2 text-left">Cliente</th>
+                    <th className="px-4 py-2 text-left">Entregue por</th>
+                    <th className="px-4 py-2 text-left">Itens</th>
+                    <th className="px-4 py-2 text-right">Subtotal</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                    <th className="px-4 py-2 text-center">Tipo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
@@ -186,24 +188,28 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
                     const total = sub * (1 - v.desconto_pct / 100)
                     return (
                       <tr key={v.id} className="hover:bg-white/[0.02]">
-                        <td className="px-6 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">{fmtData(v.entregue_em ?? v.created_at)}</td>
-                        <td className="px-6 py-2.5">
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">{fmtData(v.entregue_em ?? v.created_at)}</td>
+                        <td className="px-4 py-2.5">
                           {empresa ? (
                             <span className={cn('text-xs font-medium', empresaTipo === 'loja' ? 'text-blue-400' : 'text-primary/80')}>
                               {empresa}
                             </span>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
                         </td>
-                        <td className="px-6 py-2.5 font-medium">{v.cliente_nome}</td>
-                        <td className="px-6 py-2.5 text-muted-foreground text-xs">
-                          {v.itens.map(it => `${it.quantidade}× ${it.item_nome}`).join(', ')}
+                        <td className="px-4 py-2.5 font-medium text-sm">{v.cliente_nome}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs">{v.entregue_por_nome ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[200px]">
+                          <span className="truncate block">{v.itens.map(it => `${it.quantidade}× ${it.item_nome}`).join(', ')}</span>
                         </td>
-                        <td className="px-6 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(total)}</td>
-                        <td className="px-6 py-2.5 text-center">
+                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">
+                          {v.desconto_pct > 0 ? <span className="line-through">{fmt(sub)}</span> : fmt(sub)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(total)}</td>
+                        <td className="px-4 py-2.5 text-center">
                           <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
                             v.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
                           )}>
-                            {v.tipo_dinheiro === 'sujo' ? 'Sujo' : 'Limpo'}
+                            {v.tipo_dinheiro === 'sujo' ? 'S' : 'L'}
                           </span>
                         </td>
                       </tr>

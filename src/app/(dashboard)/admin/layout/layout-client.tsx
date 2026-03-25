@@ -100,6 +100,56 @@ export function ImgbbConfig({ initialKey }: { initialKey: string }) {
   )
 }
 
+export function VendasConfig({ initialDias }: { initialDias: number }) {
+  const [dias, setDias] = useState(String(initialDias))
+  const [saving, setSaving] = useState(false)
+
+  async function handleSalvar() {
+    setSaving(true)
+    try {
+      const sb = createClient()
+      const { error } = await sb.from('config_sistema').upsert({ chave: 'ocultar_concluidos_dias', valor: dias, updated_at: new Date().toISOString() })
+      if (error) throw error
+      toast.success('Configuração salva!')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="flex-1 p-6 max-w-2xl">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold">Vendas</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Configurações do módulo de vendas</p>
+        </div>
+        <div className="p-4 rounded-lg border border-border space-y-3">
+          <div>
+            <p className="text-sm font-medium">Esconder Concluídos</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Na aba Concluídos, esconder vendas entregues há mais de X dias. Use 0 para não esconder.
+            </p>
+          </div>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number" min="0" max="365"
+              value={dias} onChange={e => setDias(e.target.value)}
+              className="w-24 h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring"
+            />
+            <span className="text-sm text-muted-foreground">dias</span>
+            <button
+              onClick={handleSalvar} disabled={saving}
+              className="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity ml-2"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function applyTheme(tema: Tema) {
   const hsl = `hsl(${tema.accentH}, ${tema.accentS}%, ${tema.accentL}%)`
   document.documentElement.style.setProperty('--color-primary', hsl)

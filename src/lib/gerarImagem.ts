@@ -263,3 +263,81 @@ export function gerarImagemLoja(params: {
 
   return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
 }
+
+// ── Gerar imagem de uma Venda ──────────────────────────────────────────────────
+
+type VendaItemImg = { item_nome: string; quantidade: number; preco_unit: number }
+
+export function gerarImagemVenda(params: {
+  clienteNome: string; empresaNome: string | null; empresaTipo: 'faccao' | 'loja' | null
+  tipoDinheiro: 'sujo' | 'limpo'; descontoPct: number; status: string
+  dataEncomenda: string | null; notas: string | null; itens: VendaItemImg[]
+  entregue_por_nome: string | null
+}): string {
+  const { clienteNome, empresaNome, empresaTipo, tipoDinheiro, descontoPct, status, dataEncomenda, notas, itens, entregue_por_nome } = params
+  const WV = 560; const PV = 20; const ROW = 22
+  const H = Math.max(200, 120 + itens.length * ROW + 100)
+  const canvas = document.createElement('canvas')
+  canvas.width = WV; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, WV, H)
+  const headerCor = tipoDinheiro === 'sujo' ? '#c2410c' : '#059669'
+  ctx.fillStyle = headerCor; ctx.fillRect(0, 0, WV, 48)
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px monospace'
+  ctx.fillText(clienteNome, PV, 30)
+  if (empresaNome) {
+    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.75)'
+    ctx.fillText((empresaTipo === 'loja' ? '[Loja] ' : '') + empresaNome, PV, 44)
+  }
+  ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.7)'
+  ctx.fillText((tipoDinheiro === 'sujo' ? 'SUJO' : 'LIMPO') + ' · ' + status.toUpperCase(), WV - PV - 110, 22)
+
+  let y = 68
+  ctx.font = FONT_SM; ctx.fillStyle = MUTED
+  if (dataEncomenda) { ctx.fillText('Data: ' + dataEncomenda, PV, y); y += 16 }
+  if (descontoPct > 0) { ctx.fillStyle = '#4ade80'; ctx.fillText('Desconto: ' + descontoPct + '%', PV, y); ctx.fillStyle = MUTED; y += 16 }
+  y += 4
+
+  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke(); y += 14
+  ctx.font = 'bold 10px monospace'; ctx.fillStyle = MUTED
+  ctx.fillText('ITEM', PV, y); ctx.fillText('QTD', WV - PV - 120, y)
+  ctx.fillText('UNIT.', WV - PV - 80, y); ctx.fillText('TOTAL', WV - PV - 30, y)
+  y += 6
+  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
+  y += ROW - 6
+
+  let subtotal = 0
+  for (const it of itens) {
+    const t = it.quantidade * it.preco_unit; subtotal += t
+    ctx.font = FONT; ctx.fillStyle = TEXT
+    ctx.fillText(it.item_nome.length > 26 ? it.item_nome.slice(0, 25) + '\u2026' : it.item_nome, PV, y)
+    ctx.font = FONT_SM; ctx.fillStyle = MUTED
+    ctx.fillText(it.quantidade + 'x', WV - PV - 120, y)
+    ctx.fillText('R$' + it.preco_unit.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 82, y)
+    ctx.fillStyle = TEXT
+    ctx.fillText('R$' + t.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 36, y)
+    y += ROW
+  }
+  y += 4
+  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
+  y += 18
+
+  const total = subtotal * (1 - descontoPct / 100)
+  if (descontoPct > 0) {
+    ctx.font = FONT_SM; ctx.fillStyle = MUTED
+    ctx.fillText('Subtotal: R$' + subtotal.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), PV, y); y += 14
+    ctx.fillStyle = '#4ade80'; ctx.fillText('-' + descontoPct + '%', PV, y)
+  }
+  ctx.font = 'bold 14px monospace'; ctx.fillStyle = TEXT
+  ctx.fillText('TOTAL: R$' + total.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 190, y - (descontoPct > 0 ? 6 : 0))
+  y += 22
+  if (notas) { ctx.font = FONT_SM; ctx.fillStyle = MUTED; ctx.fillText('Obs: ' + notas, PV, y); y += 14 }
+  if (entregue_por_nome) { ctx.font = FONT_SM; ctx.fillStyle = MUTED; ctx.fillText('Entregue por: ' + entregue_por_nome, PV, y) }
+
+  ctx.fillStyle = BG2; ctx.fillRect(0, H - 20, WV, 20)
+  ctx.font = '9px monospace'; ctx.fillStyle = MUTED
+  ctx.fillText('Gerado em ' + new Date().toLocaleString('pt-BR'), PV, H - 6)
+
+  return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+}

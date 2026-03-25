@@ -74,6 +74,8 @@ export default async function EncomendasPage() {
         meuFaccao={meuFaccao ? { id: meuFaccao.id, nome: meuFaccao.nome } : null}
         filtroInicial="encomenda"
         podeEditar={podeEditar}
+        podeExcluirConcluida={false}
+        ocultarConcluidosDias={0}
       />
     </>
   )

@@ -74,6 +74,8 @@ export default async function VendasConcluidasPage() {
         meuFaccao={meuFaccao ? { id: meuFaccao.id, nome: meuFaccao.nome } : null}
         filtroInicial="entregue"
         podeEditar={podeEditar}
+        podeExcluirConcluida={perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)}
+        ocultarConcluidosDias={0}
       />
     </>
   )
