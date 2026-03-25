@@ -11,8 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, Minus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, Store, Users, ShoppingCart,
+  Plus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search,
 } from 'lucide-react'
 import { RelatorioAba } from './relatorio-aba'
 
@@ -42,6 +42,7 @@ type EstoqueEntry = { item_id: string; tipo: 'materia_prima' | 'produto_final'; 
 type CartItem = {
   item_id: string; nome: string; quantidade: number
   preco_limpo: number | null; preco_sujo: number | null
+  preco_override: number | null
   tem_craft: boolean; origem: 'fabricar' | 'estoque'
 }
 type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque' }
@@ -86,256 +87,6 @@ const STATUS_TRANSICOES: Record<StatusVenda, StatusVenda[]> = {
 // ── Seletor de Produtos (modal separado) ──────────────────────────────────────
 
 type WpItem = { item_id: string; nome: string; tem_craft: boolean; preco_limpo: number | null; preco_sujo: number | null }
-
-function ProductBrowserDialog({
-  open, onClose, onConfirm,
-  meuFaccaoId, meuFaccaoNome, meuLojaId, meuLojaName,
-  tipoDinheiro, descontoPct, initialCart,
-}: {
-  open: boolean; onClose: () => void; onConfirm: (items: CartItem[]) => void
-  meuFaccaoId: string | null; meuFaccaoNome: string | null
-  meuLojaId: string | null; meuLojaName: string | null
-  tipoDinheiro: 'sujo' | 'limpo'; descontoPct: number; initialCart: CartItem[]
-}) {
-  const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
-  const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
-
-  const temAmbos = !!(meuFaccaoId && meuLojaId)
-  const [tab, setTab] = useState<'faccao' | 'loja'>(meuFaccaoId ? 'faccao' : 'loja')
-  const [produtos, setProdutos] = useState<WpItem[]>([])
-  const [loadingProd, setLoadingProd] = useState(false)
-  const [buscaProd, setBuscaProd] = useState('')
-  const [cart, setCart] = useState<CartItem[]>([])
-
-  const selectedId = tab === 'faccao' ? meuFaccaoId : meuLojaId
-
-  // Inicializar ao abrir
-  useEffect(() => {
-    if (!open) return
-    setCart(initialCart)
-    setBuscaProd('')
-    setTab(meuFaccaoId ? 'faccao' : 'loja')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  // Buscar produtos ao abrir / mudar tab
-  useEffect(() => {
-    if (!selectedId || !open) { setProdutos([]); return }
-    setLoadingProd(true)
-    setBuscaProd('')
-    if (tab === 'faccao') {
-      sb().from('faccao_item_precos')
-        .select('item_id, preco_limpo, preco_sujo, items(id, nome, tem_craft)')
-        .eq('faccao_id', selectedId)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .then(({ data, error }) => {
-          if (error) { toast.error('Erro ao carregar: ' + error.message); setLoadingProd(false); return }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          setProdutos((data ?? []).map((r: any) => ({
-            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
-            tem_craft: r.items?.tem_craft ?? false,
-            preco_limpo: r.preco_limpo, preco_sujo: r.preco_sujo,
-          })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
-          setLoadingProd(false)
-        })
-    } else {
-      sb().from('loja_item_precos')
-        .select('item_id, preco, preco_sujo, items(id, nome, tem_craft)')
-        .eq('loja_id', selectedId)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .then(({ data, error }) => {
-          if (error) { toast.error('Erro ao carregar: ' + error.message); setLoadingProd(false); return }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          setProdutos((data ?? []).map((r: any) => ({
-            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
-            tem_craft: r.items?.tem_craft ?? false,
-            preco_limpo: r.preco ?? null, preco_sujo: r.preco_sujo ?? null,
-          })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
-          setLoadingProd(false)
-        })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, tab, open])
-
-  const produtosFiltrados = useMemo(() => {
-    if (!buscaProd.trim()) return produtos
-    const q = buscaProd.toLowerCase()
-    return produtos.filter(p => p.nome.toLowerCase().includes(q))
-  }, [produtos, buscaProd])
-
-  function addToCart(p: WpItem) {
-    setCart(prev => {
-      const exists = prev.find(c => c.item_id === p.item_id)
-      if (exists) return prev.map(c => c.item_id === p.item_id ? { ...c, quantidade: c.quantidade + 1 } : c)
-      return [...prev, {
-        item_id: p.item_id, nome: p.nome, quantidade: 1,
-        preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo,
-        tem_craft: p.tem_craft, origem: p.tem_craft ? 'fabricar' : 'estoque',
-      }]
-    })
-  }
-
-  function setQtd(item_id: string, qtd: number) {
-    if (qtd <= 0) { setCart(prev => prev.filter(c => c.item_id !== item_id)); return }
-    setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, quantidade: qtd } : c))
-  }
-
-  const totalCarrinho = useMemo(() => cart.reduce((s, c) => {
-    const p = tipoDinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
-    return s + c.quantidade * p
-  }, 0), [cart, tipoDinheiro])
-
-  const totalComDesconto = descontoPct > 0 ? totalCarrinho * (1 - descontoPct / 100) : totalCarrinho
-
-  return (
-    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[88vh] flex flex-col overflow-hidden p-0 gap-0">
-        <DialogHeader className="px-5 pt-4 pb-3 shrink-0 border-b border-border">
-          <DialogTitle className="text-sm">Selecionar Produtos</DialogTitle>
-        </DialogHeader>
-
-        {/* Tabs só aparecem se o usuário trabalha nos dois tipos */}
-        {temAmbos && (
-          <div className="flex shrink-0 border-b border-border">
-            <button onClick={() => setTab('faccao')}
-              className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
-                tab === 'faccao' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
-              )}>
-              <Users className="h-3 w-3" />{meuFaccaoNome ?? 'Facção'}
-            </button>
-            <button onClick={() => setTab('loja')}
-              className={cn('flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors border-l border-border',
-                tab === 'loja' ? 'text-foreground border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'
-              )}>
-              <Store className="h-3 w-3" />{meuLojaName ?? 'Loja'}
-            </button>
-          </div>
-        )}
-
-        <div className="flex flex-1 overflow-hidden min-h-0">
-
-          {/* Painel de produtos */}
-          <div className="flex-1 flex flex-col min-w-0 border-r border-border">
-            <div className="px-3 py-2 shrink-0 border-b border-border">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                <Input placeholder="Filtrar produtos..." value={buscaProd} onChange={e => setBuscaProd(e.target.value)} className="h-7 text-xs pl-6" />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {!selectedId ? (
-                <p className="text-xs text-muted-foreground text-center py-10 px-4">
-                  Nenhum local de trabalho configurado
-                </p>
-              ) : loadingProd ? (
-                <div className="flex items-center justify-center py-10"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-              ) : produtosFiltrados.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-8 px-3">Nenhum produto cadastrado</p>
-              ) : produtosFiltrados.map(p => {
-                const precoBase = tipoDinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
-                const precoFinal = descontoPct > 0 && precoBase != null ? precoBase * (1 - descontoPct / 100) : precoBase
-                const noCarrinho = cart.find(c => c.item_id === p.item_id)
-                return (
-                  <div key={p.item_id} className={cn(
-                    'flex items-center gap-2 px-3 py-2.5 border-b border-border/30 transition-colors',
-                    noCarrinho ? 'bg-primary/[0.05]' : 'hover:bg-white/[0.02]'
-                  )}>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{p.nome}</p>
-                      <p className="text-[10px] text-muted-foreground tabular-nums">
-                        {precoBase != null ? (
-                          descontoPct > 0 && precoFinal != null ? (
-                            <><span className="line-through opacity-50">{fmt(precoBase)}</span>{' → '}<span className="text-green-400">{fmt(precoFinal)}</span></>
-                          ) : fmt(precoBase)
-                        ) : '—'}
-                      </p>
-                    </div>
-                    {noCarrinho && <span className="text-[10px] text-primary font-medium shrink-0">×{noCarrinho.quantidade}</span>}
-                    <button onClick={() => addToCart(p)}
-                      className="shrink-0 h-6 w-6 rounded flex items-center justify-center hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors">
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Painel direito: carrinho */}
-          <div className="w-52 shrink-0 flex flex-col">
-            <div className="px-3 py-2.5 border-b border-border shrink-0">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                Selecionados ({cart.length})
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {cart.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-8 px-3">Clique em + para adicionar</p>
-              ) : cart.map(c => {
-                const preco = tipoDinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
-                return (
-                  <div key={c.item_id} className="px-3 py-2.5 border-b border-border/30">
-                    <div className="flex items-start gap-1 mb-1.5">
-                      <p className="text-xs font-medium flex-1 truncate leading-tight">{c.nome}</p>
-                      <button onClick={() => setQtd(c.item_id, 0)}
-                        className="h-4 w-4 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-colors shrink-0">
-                        <X className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                    {preco > 0 && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums mb-1.5">
-                        {c.quantidade} × {fmt(preco)} = {fmt(c.quantidade * preco)}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-0.5">
-                        <button onClick={() => setQtd(c.item_id, c.quantidade - 1)}
-                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
-                          <Minus className="h-2.5 w-2.5" />
-                        </button>
-                        <span className="text-xs w-5 text-center tabular-nums font-medium">{c.quantidade}</span>
-                        <button onClick={() => setQtd(c.item_id, c.quantidade + 1)}
-                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
-                          <Plus className="h-2.5 w-2.5" />
-                        </button>
-                      </div>
-                      {/* Fab/Est */}
-                      <div className="flex rounded overflow-hidden border border-border h-5 flex-1">
-                        <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, origem: 'fabricar' } : x))}
-                          className={cn('flex-1 text-[9px] font-medium transition-colors',
-                            c.origem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'text-muted-foreground hover:text-foreground'
-                          )}>Fab</button>
-                        <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, origem: 'estoque' } : x))}
-                          className={cn('flex-1 text-[9px] font-medium transition-colors border-l border-border',
-                            c.origem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'text-muted-foreground hover:text-foreground'
-                          )}>Est</button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {cart.length > 0 && (
-              <div className="p-3 border-t border-border shrink-0 space-y-1.5">
-                {descontoPct > 0 ? (
-                  <>
-                    <p className="text-[10px] text-muted-foreground tabular-nums line-through">{fmt(totalCarrinho)}</p>
-                    <p className="text-sm font-bold text-green-400 tabular-nums">{fmt(totalComDesconto)} <span className="text-[10px] font-normal opacity-70">(-{descontoPct}%)</span></p>
-                  </>
-                ) : (
-                  <p className="text-sm font-bold text-primary tabular-nums">{fmt(totalCarrinho)}</p>
-                )}
-                <Button size="sm" className="w-full h-7 text-xs" onClick={() => { onConfirm(cart); onClose() }}>
-                  Confirmar
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // ── Painel de Materiais ───────────────────────────────────────────────────────
 
@@ -562,17 +313,18 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   )
 }
 
-// ── Formulário de pedido ──────────────────────────────────────────────────────
+// ── Formulário de pedido (novo design 3 colunas) ──────────────────────────────
 
 function OrderDialog({
   open, onOpenChange, editando, faccoes, lojas, membros, onMembroCreated,
-  meuFaccao, meuLoja, estoqueMap, onSave, saving,
+  meuFaccao, meuLoja, estoqueMap, receitas, allItems, onSave, saving,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
   onMembroCreated: (m: Membro) => void
   meuFaccao: { id: string; nome: string } | null; meuLoja: { id: string; nome: string } | null
   estoqueMap: Record<string, Record<string, number>>
+  receitas: Receita[]; allItems: ItemSimples[]
   onSave: (form: FormState) => void; saving: boolean
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
@@ -591,12 +343,57 @@ function OrderDialog({
   const [novoMembroTel, setNovoMembroTel] = useState('')
   const [criandoMembro, setCriandoMembro] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
-  const [browserOpen, setBrowserOpen] = useState(false)
+  const [meusProdutos, setMeusProdutos] = useState<WpItem[]>([])
+  const [loadingProd, setLoadingProd] = useState(false)
+  const [buscaProd, setBuscaProd] = useState('')
+
+  const cartMap = useMemo(() => Object.fromEntries(cart.map(c => [c.item_id, c])), [cart])
+  const descontoPct = parseFloat(form.desconto_pct) || 0
+
+  // Load products when dialog opens
+  useEffect(() => {
+    if (!open) return
+    const faccaoId = meuFaccao?.id
+    const lojaId = meuLoja?.id
+    if (!faccaoId && !lojaId) { setMeusProdutos([]); return }
+    setLoadingProd(true)
+    if (faccaoId) {
+      sb().from('faccao_item_precos')
+        .select('item_id, preco_limpo, preco_sujo, items(id, nome, tem_craft)')
+        .eq('faccao_id', faccaoId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then(({ data }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setMeusProdutos((data ?? []).map((r: any) => ({
+            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
+            tem_craft: r.items?.tem_craft ?? false,
+            preco_limpo: r.preco_limpo, preco_sujo: r.preco_sujo,
+          })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
+          setLoadingProd(false)
+        })
+    } else {
+      sb().from('loja_item_precos')
+        .select('item_id, preco, preco_sujo, items(id, nome, tem_craft)')
+        .eq('loja_id', lojaId!)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then(({ data }) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setMeusProdutos((data ?? []).map((r: any) => ({
+            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
+            tem_craft: r.items?.tem_craft ?? false,
+            preco_limpo: r.preco ?? null, preco_sujo: r.preco_sujo ?? null,
+          })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
+          setLoadingProd(false)
+        })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, meuFaccao?.id, meuLoja?.id])
 
   const prevOpen = useRef(false)
   if (open !== prevOpen.current) {
     prevOpen.current = open
     if (open) {
+      setBuscaProd('')
       if (editando) {
         setForm({
           faccao_id: editando.faccao_id ?? '',
@@ -611,18 +408,14 @@ function OrderDialog({
         })
         const editEmpresaNome = editando.faccao_id
           ? (faccoes.find(f => f.id === editando.faccao_id)?.nome ?? '')
-          : editando.loja_id
-            ? (lojas.find(l => l.id === editando.loja_id)?.nome ?? '')
-            : ''
+          : editando.loja_id ? (lojas.find(l => l.id === editando.loja_id)?.nome ?? '') : ''
         setEmpresaNome(editEmpresaNome)
         setMembroNome(editando.cliente_nome)
-        setCart(editando.itens
-          .filter(it => it.item_id)
-          .map(it => ({
-            item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
-            preco_limpo: it.preco_unit, preco_sujo: null,
-            tem_craft: it.origem === 'fabricar', origem: it.origem,
-          })))
+        setCart(editando.itens.filter(it => it.item_id).map(it => ({
+          item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
+          preco_limpo: it.preco_unit, preco_sujo: null, preco_override: null,
+          tem_craft: it.origem === 'fabricar', origem: it.origem,
+        })))
       } else {
         setForm(emptyForm())
         setEmpresaNome('')
@@ -635,19 +428,14 @@ function OrderDialog({
     }
   }
 
-  // Empresa (facção + loja) autocomplete
+  // Empresa autocomplete
   type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number } | { tipo: 'loja'; id: string; nome: string }
-
   const empresaSugestoes = useMemo((): EmpresaOpc[] => {
     if (!empresaAberta || !empresaNome.trim()) return []
     const q = empresaNome.toLowerCase()
-    const ff = faccoes
-      .filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q))
-      .slice(0, 5)
-      .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
-    const ll = lojas
-      .filter(l => l.nome.toLowerCase().includes(q))
-      .slice(0, 4)
+    const ff = faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q))
+      .slice(0, 5).map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
+    const ll = lojas.filter(l => l.nome.toLowerCase().includes(q)).slice(0, 4)
       .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
     return [...ff, ...ll].slice(0, 8)
   }, [faccoes, lojas, empresaNome, empresaAberta])
@@ -655,10 +443,7 @@ function OrderDialog({
   function selecionarEmpresa(e: EmpresaOpc) {
     if (e.tipo === 'faccao') {
       const f = faccoes.find(f => f.id === e.id)!
-      setForm(prev => ({
-        ...prev, faccao_id: e.id, loja_id: '',
-        desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct,
-      }))
+      setForm(prev => ({ ...prev, faccao_id: e.id, loja_id: '', desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct }))
     } else {
       setForm(prev => ({ ...prev, faccao_id: '', loja_id: e.id }))
     }
@@ -666,7 +451,7 @@ function OrderDialog({
     setEmpresaAberta(false)
   }
 
-  // Membro autocomplete (filtrado pela facção selecionada)
+  // Membro autocomplete
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta || !membroNome.trim()) return []
     const q = membroNome.toLowerCase()
@@ -700,280 +485,423 @@ function OrderDialog({
 
   const membroNaoEncontrado = membroAberta && membroNome.trim().length > 1 && membrosSugestoes.length === 0
 
+  // Cart helpers
+  function getPrecoEfetivo(c: CartItem): number {
+    if (c.preco_override != null) return c.preco_override
+    return form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
+  }
+
+  function setCartQtd(item_id: string, qtd: number) {
+    if (qtd <= 0) { setCart(prev => prev.filter(c => c.item_id !== item_id)); return }
+    setCart(prev => {
+      const exists = prev.find(c => c.item_id === item_id)
+      if (exists) return prev.map(c => c.item_id === item_id ? { ...c, quantidade: qtd } : c)
+      // Add from meusProdutos
+      const p = meusProdutos.find(p => p.item_id === item_id)
+      if (!p) return prev
+      return [...prev, { item_id: p.item_id, nome: p.nome, quantidade: qtd, preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo, preco_override: null, tem_craft: p.tem_craft, origem: p.tem_craft ? 'fabricar' : 'estoque' }]
+    })
+  }
+
+  function setCartPreco(item_id: string, preco: number | null) {
+    setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, preco_override: preco } : c))
+  }
+
+  function setCartOrigem(item_id: string, origem: 'fabricar' | 'estoque') {
+    setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, origem } : c))
+  }
+
+  // Produtos filtrados (search)
+  const produtosFiltrados = useMemo(() => {
+    if (!buscaProd.trim()) return meusProdutos
+    const q = buscaProd.toLowerCase()
+    return meusProdutos.filter(p => p.nome.toLowerCase().includes(q))
+  }, [meusProdutos, buscaProd])
+
+  // Ingredients panel
+  const ingredientes = useMemo(() => {
+    const ingredMap: Record<string, { nome: string; necessario: number }> = {}
+    for (const c of cart) {
+      if (!c.item_id || c.origem !== 'fabricar') continue
+      for (const r of receitas.filter(r => r.item_id === c.item_id)) {
+        const nome = allItems.find(i => i.id === r.ingrediente_id)?.nome ?? r.ingrediente_id
+        if (!ingredMap[r.ingrediente_id]) ingredMap[r.ingrediente_id] = { nome, necessario: 0 }
+        ingredMap[r.ingrediente_id].necessario += r.quantidade * c.quantidade
+      }
+    }
+    return Object.entries(ingredMap)
+      .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id]?.materia_prima ?? 0 }))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [cart, receitas, allItems, estoqueMap])
+
+  // Totals
+  const subtotal = cart.reduce((s, c) => s + c.quantidade * getPrecoEfetivo(c), 0)
+  const descValor = subtotal * descontoPct / 100
+  const total = subtotal - descValor
+
   function buildItens(): FormItem[] {
     return cart.map(c => ({
       tempId: c.item_id, item_id: c.item_id, item_nome: c.nome,
       quantidade: String(c.quantidade),
-      preco_unit: String(form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)),
+      preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
       origem: c.origem,
     }))
   }
 
-  const subtotal = cart.reduce((s, c) => {
-    const p = form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
-    return s + c.quantidade * p
-  }, 0)
-  const total = subtotal * (1 - (parseFloat(form.desconto_pct) || 0) / 100)
-
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-xl max-h-[92vh] flex flex-col p-0 gap-0">
-          <DialogHeader className="px-5 pt-4 pb-3 shrink-0 border-b border-border">
-            <div className="flex items-center gap-3">
-              <DialogTitle className="text-sm">{editando ? 'Editar Pedido' : 'Novo Pedido'}</DialogTitle>
-              <div className="ml-auto flex items-center gap-2">
-                <span className={cn('text-xs', form.tipo_dinheiro !== 'sujo' && 'text-emerald-400 font-medium')}>Limpo</span>
-                <Switch checked={form.tipo_dinheiro === 'sujo'}
-                  onCheckedChange={v => setForm(prev => ({ ...prev, tipo_dinheiro: v ? 'sujo' : 'limpo' }))} />
-                <span className={cn('text-xs', form.tipo_dinheiro === 'sujo' && 'text-orange-400 font-medium')}>Sujo</span>
-              </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent aria-describedby={undefined}
+        className="max-w-[1400px] w-[95vw] h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
+
+        {/* Header */}
+        <DialogHeader className="px-5 pt-3.5 pb-3 shrink-0 border-b border-border">
+          <div className="flex items-center gap-3">
+            <DialogTitle className="text-sm font-semibold">{editando ? 'Editar Pedido' : 'Novo Pedido'}</DialogTitle>
+            <div className="ml-auto flex items-center gap-2">
+              <span className={cn('text-xs', form.tipo_dinheiro !== 'sujo' && 'text-emerald-400 font-medium')}>Limpo</span>
+              <Switch checked={form.tipo_dinheiro === 'sujo'}
+                onCheckedChange={v => setForm(prev => ({ ...prev, tipo_dinheiro: v ? 'sujo' : 'limpo' }))} />
+              <span className={cn('text-xs', form.tipo_dinheiro === 'sujo' && 'text-orange-400 font-medium')}>Sujo</span>
             </div>
-          </DialogHeader>
+          </div>
+        </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto">
+        {/* Body: 3 columns */}
+        <div className="flex-1 flex overflow-hidden min-h-0">
 
-            {/* ── Cliente ── */}
-            <section className="px-5 py-4 space-y-3 border-b border-border/50">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cliente</p>
-              <div className="grid grid-cols-2 gap-3">
+          {/* ── Coluna 1: Info do pedido ── */}
+          <div className="w-64 shrink-0 border-r border-border flex flex-col overflow-y-auto">
+            <div className="p-4 space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Pedido</p>
 
-                {/* Empresa */}
-                <div className="space-y-1.5 relative">
-                  <Label className="text-xs">Facção / Loja</Label>
-                  <Input value={empresaNome}
-                    onChange={e => { setEmpresaNome(e.target.value); setForm(prev => ({ ...prev, faccao_id: '', loja_id: '' })); setEmpresaAberta(true) }}
-                    onFocus={() => setEmpresaAberta(true)}
-                    onBlur={() => setTimeout(() => setEmpresaAberta(false), 150)}
-                    placeholder="Buscar facção ou loja..." className="h-8 text-sm" autoFocus />
-                  {empresaNome && (
-                    <button type="button" onClick={() => { setEmpresaNome(''); setForm(prev => ({ ...prev, faccao_id: '', loja_id: '' })); setMembroNome(''); setForm(prev => ({ ...prev, cliente_nome: '', faccao_id: '', loja_id: '' })) }}
-                      className="absolute right-2 top-[34px] text-muted-foreground hover:text-foreground">
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                  {empresaAberta && empresaSugestoes.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                      {empresaSugestoes.map(e => (
-                        <button key={e.tipo + e.id} type="button" onMouseDown={ev => { ev.preventDefault(); selecionarEmpresa(e) }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                          <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0', e.tipo === 'faccao' ? 'bg-primary/15 text-primary' : 'bg-blue-500/15 text-blue-400')}>
-                            {e.tipo === 'faccao' ? 'F' : 'L'}
-                          </span>
-                          <span className="font-medium">{e.nome}</span>
-                          {e.tipo === 'faccao' && e.sigla && <span className="text-muted-foreground">[{e.sigla}]</span>}
-                          {e.tipo === 'faccao' && e.desconto > 0 && <span className="ml-auto text-green-400">{e.desconto}% desc</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Desconto */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Desconto (%)</Label>
-                  <Input type="number" min="0" max="100" value={form.desconto_pct}
-                    onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
-                    className="h-8 text-sm" />
-                </div>
-
-                {/* Nome/Membro */}
-                <div className="space-y-1.5 relative">
-                  <Label className="text-xs">Nome / Membro <span className="text-destructive">*</span></Label>
-                  <Input value={membroNome}
-                    onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
-                    onFocus={() => setMembroAberta(true)}
-                    onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
-                    placeholder={form.faccao_id ? 'Buscar na facção...' : 'Nome da pessoa...'}
-                    className="h-8 text-sm" />
-                  {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                      {membrosSugestoes.map(m => (
-                        <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                          <span className="font-medium">{m.nome}</span>
-                          {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
-                          {m.telefone && <span className="ml-auto text-muted-foreground tabular-nums text-[10px]">{m.telefone}</span>}
-                        </button>
-                      ))}
-                      {membroNaoEncontrado && (
-                        <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
-                          <p className="text-[11px] text-muted-foreground">
-                            {form.faccao_id
-                              ? <>&quot;{membroNome.trim()}&quot; não está nessa facção. Adicionar à investigação?</>
-                              : <>&quot;{membroNome.trim()}&quot; não encontrado. Cadastrar agora?</>
-                            }
-                          </p>
-                          <div className="flex gap-1.5">
-                            <Input
-                              placeholder="Telefone (opcional)"
-                              value={novoMembroTel}
-                              onChange={e => setNovoMembroTel(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
-                              className="h-7 text-xs flex-1"
-                              onMouseDown={e => e.stopPropagation()}
-                            />
-                            <button type="button" disabled={criandoMembro}
-                              onMouseDown={e => { e.preventDefault(); handleCadastrarMembro() }}
-                              className="h-7 px-2.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 shrink-0 flex items-center gap-1">
-                              {criandoMembro ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                              Adicionar
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Telefone */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Telefone</Label>
-                  <Input value={form.cliente_telefone}
-                    onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))}
-                    placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
-                </div>
-
-                {/* Data */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Data</Label>
-                  <Input type="date" value={form.data_encomenda}
-                    onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))}
-                    className="h-8 text-sm" />
-                </div>
-
-                {/* Status */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Status</Label>
-                  <Select value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as StatusVenda }))}>
-                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(['fabricando', 'encomenda', 'separado', 'pronto'] as StatusVenda[]).map(s => (
-                        <SelectItem key={s} value={s}>{STATUS_INFO[s].label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </section>
-
-            {/* ── Produtos ── */}
-            <section className="px-5 py-4 space-y-3 border-b border-border/50">
-              <div className="flex items-center gap-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Produtos</p>
-                {cart.length > 0 && (
-                  <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full font-medium">
-                    {cart.length} item{cart.length > 1 ? 's' : ''}
-                  </span>
+              {/* Empresa */}
+              <div className="space-y-1 relative">
+                <Label className="text-xs">Facção / Loja</Label>
+                <Input value={empresaNome}
+                  onChange={e => { setEmpresaNome(e.target.value); setForm(prev => ({ ...prev, faccao_id: '', loja_id: '' })); setEmpresaAberta(true) }}
+                  onFocus={() => setEmpresaAberta(true)}
+                  onBlur={() => setTimeout(() => setEmpresaAberta(false), 150)}
+                  placeholder="Buscar..." className="h-8 text-sm" />
+                {empresaAberta && empresaSugestoes.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                    {empresaSugestoes.map(e => (
+                      <button key={e.tipo + e.id} type="button" onMouseDown={ev => { ev.preventDefault(); selecionarEmpresa(e) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                        <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0', e.tipo === 'faccao' ? 'bg-primary/15 text-primary' : 'bg-blue-500/15 text-blue-400')}>
+                          {e.tipo === 'faccao' ? 'F' : 'L'}
+                        </span>
+                        <span className="font-medium truncate">{e.nome}</span>
+                        {e.tipo === 'faccao' && e.desconto > 0 && <span className="ml-auto text-green-400 shrink-0">{e.desconto}%</span>}
+                      </button>
+                    ))}
+                  </div>
                 )}
-                <Button size="sm" variant="outline" className="ml-auto h-7 text-xs gap-1.5"
-                  onClick={() => setBrowserOpen(true)}>
-                  <ShoppingCart className="h-3 w-3" />
-                  {cart.length > 0 ? 'Editar produtos' : 'Adicionar produtos'}
-                </Button>
               </div>
 
-              {cart.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4 italic">Nenhum produto adicionado</p>
-              ) : (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="divide-y divide-border/30">
-                    {cart.map(c => {
-                      const preco = form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
-                      const estoqueDisp = estoqueMap[c.item_id]?.produto_final ?? 0
-                      return (
-                        <div key={c.item_id} className="flex items-center gap-2 px-3 py-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{c.nome}</p>
-                            {preco > 0 && (
-                              <p className="text-[10px] text-muted-foreground tabular-nums">
-                                {c.quantidade} × {fmt(preco)} = {fmt(c.quantidade * preco)}
-                              </p>
-                            )}
-                            {c.origem === 'estoque' && (
-                              <p className={cn('text-[10px]', estoqueDisp >= c.quantidade ? 'text-green-400/70' : 'text-red-400/80')}>
-                                estoque: {estoqueDisp}{estoqueDisp < c.quantidade ? ' ⚠' : ''}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, quantidade: Math.max(1, x.quantidade - 1) } : x))}
-                              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
-                              <Minus className="h-2.5 w-2.5" />
-                            </button>
-                            <span className="text-xs w-5 text-center tabular-nums font-medium">{c.quantidade}</span>
-                            <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, quantidade: x.quantidade + 1 } : x))}
-                              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
-                              <Plus className="h-2.5 w-2.5" />
-                            </button>
-                          </div>
-                          <div className="flex rounded overflow-hidden border border-border h-5 w-16 shrink-0">
-                            <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, origem: 'fabricar' } : x))}
-                              className={cn('flex-1 text-[9px] font-medium transition-colors',
-                                c.origem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'text-muted-foreground')}>
-                              Fab
-                            </button>
-                            <button onClick={() => setCart(prev => prev.map(x => x.item_id === c.item_id ? { ...x, origem: 'estoque' } : x))}
-                              className={cn('flex-1 text-[9px] font-medium transition-colors border-l border-border',
-                                c.origem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'text-muted-foreground')}>
-                              Est
-                            </button>
-                          </div>
-                          <button onClick={() => setCart(prev => prev.filter(x => x.item_id !== c.item_id))}
-                            className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-red-400 shrink-0">
-                            <X className="h-2.5 w-2.5" />
+              {/* Nome / Membro */}
+              <div className="space-y-1 relative">
+                <Label className="text-xs">Nome / Membro <span className="text-destructive">*</span></Label>
+                <Input value={membroNome}
+                  onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
+                  onFocus={() => setMembroAberta(true)}
+                  onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
+                  placeholder={form.faccao_id ? 'Buscar na facção...' : 'Nome da pessoa...'}
+                  className="h-8 text-sm" />
+                {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
+                  <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                    {membrosSugestoes.map(m => (
+                      <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                        <span className="font-medium">{m.nome}</span>
+                        {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
+                        {m.telefone && <span className="ml-auto text-muted-foreground text-[10px]">{m.telefone}</span>}
+                      </button>
+                    ))}
+                    {membroNaoEncontrado && (
+                      <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
+                        <p className="text-[11px] text-muted-foreground">
+                          &quot;{membroNome.trim()}&quot; não encontrado. Cadastrar?
+                        </p>
+                        <div className="flex gap-1.5">
+                          <Input placeholder="Telefone (opcional)" value={novoMembroTel}
+                            onChange={e => setNovoMembroTel(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
+                            className="h-7 text-xs flex-1" onMouseDown={e => e.stopPropagation()} />
+                          <button type="button" disabled={criandoMembro}
+                            onMouseDown={e => { e.preventDefault(); handleCadastrarMembro() }}
+                            className="h-7 px-2.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 shrink-0 flex items-center gap-1">
+                            {criandoMembro ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                            Adicionar
                           </button>
                         </div>
-                      )
-                    })}
+                      </div>
+                    )}
                   </div>
-                  {cart.length > 0 && (
-                    <div className="flex items-center justify-between px-3 py-2 border-t border-border/50 bg-white/[0.02]">
-                      <span className="text-[11px] text-muted-foreground">
-                        {parseFloat(form.desconto_pct) > 0 ? `Subtotal ${fmt(subtotal)} · ${form.desconto_pct}% desc` : `${cart.reduce((s, c) => s + c.quantidade, 0)} unidades`}
-                      </span>
-                      <span className="text-sm font-bold text-primary tabular-nums">{fmt(total)}</span>
+                )}
+              </div>
+
+              {/* Telefone */}
+              <div className="space-y-1">
+                <Label className="text-xs">Telefone</Label>
+                <Input value={form.cliente_telefone}
+                  onChange={e => setForm(prev => ({ ...prev, cliente_telefone: e.target.value }))}
+                  placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
+              </div>
+
+              {/* Desconto */}
+              <div className="space-y-1">
+                <Label className="text-xs">Desconto (%)</Label>
+                <Input type="number" min="0" max="100" value={form.desconto_pct}
+                  onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
+                  className="h-8 text-sm" />
+              </div>
+
+              {/* Data */}
+              <div className="space-y-1">
+                <Label className="text-xs">Data</Label>
+                <Input type="date" value={form.data_encomenda}
+                  onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))}
+                  className="h-8 text-sm" />
+              </div>
+
+              {/* Status */}
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as StatusVenda }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(['fabricando', 'encomenda', 'separado', 'pronto'] as StatusVenda[]).map(s => (
+                      <SelectItem key={s} value={s}>{STATUS_INFO[s].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Notas */}
+              <div className="space-y-1">
+                <Label className="text-xs">Notas</Label>
+                <textarea value={form.notas}
+                  onChange={e => setForm(prev => ({ ...prev, notas: e.target.value }))}
+                  rows={3} placeholder="Observações..."
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring resize-none" />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Coluna 2: Produtos ── */}
+          <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+
+            {/* Search */}
+            <div className="px-3 py-2 shrink-0 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input placeholder="Filtrar produtos..." value={buscaProd}
+                  onChange={e => setBuscaProd(e.target.value)}
+                  className="h-8 text-xs pl-7" />
+              </div>
+            </div>
+
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_56px_68px_80px_72px_32px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+              <span>Produto</span>
+              <span className="text-right">Estoque</span>
+              <span className="text-right">Qtd</span>
+              <span className="text-right">Preço unit.</span>
+              <span className="text-right">Subtotal</span>
+              <span />
+            </div>
+
+            {/* Product list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-border/20">
+              {!meuFaccao && !meuLoja ? (
+                <p className="text-xs text-muted-foreground text-center py-12 px-4">
+                  Nenhum local de trabalho configurado no seu perfil.
+                </p>
+              ) : loadingProd ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : produtosFiltrados.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-10">Nenhum produto encontrado</p>
+              ) : produtosFiltrados.map(p => {
+                const c = cartMap[p.item_id]
+                const inCart = !!c
+                const precoBase = form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
+                const precoEfetivo = c ? (c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))) : (precoBase ?? 0)
+                const estoqueDisp = estoqueMap[p.item_id]?.produto_final ?? 0
+                const qtd = c?.quantidade ?? 0
+                const subtotalItem = qtd * precoEfetivo * (1 - descontoPct / 100)
+
+                return (
+                  <div key={p.item_id}
+                    className={cn('grid grid-cols-[1fr_56px_68px_80px_72px_32px] gap-x-2 items-center px-3 py-2 transition-colors',
+                      inCart ? 'bg-primary/[0.04]' : 'hover:bg-white/[0.02]'
+                    )}>
+                    {/* Nome + badges */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {inCart && (
+                        <div className="flex gap-0.5 shrink-0">
+                          <button onClick={() => setCartOrigem(p.item_id, 'fabricar')}
+                            className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                              c?.origem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                            )}>Fab</button>
+                          <button onClick={() => setCartOrigem(p.item_id, 'estoque')}
+                            className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                              c?.origem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                            )}>Est</button>
+                        </div>
+                      )}
+                      <span className={cn('text-xs font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')}>{p.nome}</span>
                     </div>
-                  )}
+
+                    {/* Estoque */}
+                    <div className="text-right">
+                      {c?.origem === 'estoque' ? (
+                        <span className={cn('text-[10px] tabular-nums font-medium', estoqueDisp >= qtd ? 'text-green-400' : 'text-red-400')}>
+                          {estoqueDisp}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/40 tabular-nums">{estoqueDisp > 0 ? estoqueDisp : '—'}</span>
+                      )}
+                    </div>
+
+                    {/* Qtd */}
+                    <div className="flex justify-end">
+                      <Input
+                        type="number" min="0"
+                        value={qtd === 0 ? '' : qtd}
+                        placeholder="0"
+                        onChange={e => setCartQtd(p.item_id, parseInt(e.target.value) || 0)}
+                        className={cn('h-7 text-xs text-right w-full tabular-nums',
+                          inCart && 'border-primary/40 bg-primary/[0.04]'
+                        )} />
+                    </div>
+
+                    {/* Preço unit (editável quando no carrinho) */}
+                    <div className="flex justify-end">
+                      {inCart ? (
+                        <Input
+                          type="number" min="0"
+                          value={c.preco_override != null ? c.preco_override : (precoBase ?? 0)}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value)
+                            setCartPreco(p.item_id, isNaN(v) ? null : v)
+                          }}
+                          className="h-7 text-xs text-right w-full tabular-nums" />
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                          {precoBase != null ? fmt(precoBase) : '—'}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Subtotal */}
+                    <div className="text-right">
+                      {inCart && qtd > 0 ? (
+                        <span className="text-xs font-medium tabular-nums text-primary">
+                          {fmt(subtotalItem)}
+                        </span>
+                      ) : <span className="text-[10px] text-muted-foreground/30">—</span>}
+                    </div>
+
+                    {/* Remove */}
+                    <div className="flex justify-center">
+                      {inCart && (
+                        <button onClick={() => setCartQtd(p.item_id, 0)}
+                          className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-colors rounded">
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* ── Coluna 3: Ingredientes + Resumo ── */}
+          <div className="w-72 shrink-0 flex flex-col overflow-y-auto">
+
+            {/* Resumo */}
+            <div className="p-4 border-b border-border shrink-0 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Itens</span>
+                  <span className="tabular-nums">{cart.length}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums">{fmt(subtotal)}</span>
+                </div>
+                {descontoPct > 0 && (
+                  <div className="flex justify-between text-xs text-green-400">
+                    <span>Desconto ({descontoPct}%)</span>
+                    <span className="tabular-nums">-{fmt(descValor)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold border-t border-border/50 pt-1.5 mt-1">
+                  <span>Total</span>
+                  <span className={cn('tabular-nums', form.tipo_dinheiro === 'sujo' ? 'text-orange-400' : 'text-primary')}>
+                    {fmt(total)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                  form.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
+                )}>
+                  {form.tipo_dinheiro === 'sujo' ? 'Dinheiro Sujo' : 'Dinheiro Limpo'}
+                </span>
+              </div>
+            </div>
+
+            {/* Ingredientes */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-4 py-2.5 border-b border-border/50">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Matérias-primas necessárias</p>
+              </div>
+              {ingredientes.length === 0 ? (
+                <p className="text-xs text-muted-foreground px-4 py-6 text-center italic">
+                  {cart.filter(c => c.origem === 'fabricar').length === 0
+                    ? 'Adicione itens para fabricar para ver os ingredientes'
+                    : 'Nenhuma receita cadastrada para os itens'}
+                </p>
+              ) : (
+                <div className="divide-y divide-border/20">
+                  <div className="grid grid-cols-[1fr_44px_44px_20px] gap-1 px-4 py-1.5 text-[10px] text-muted-foreground/60 font-medium">
+                    <span>Ingrediente</span><span className="text-right">Precisa</span><span className="text-right">Tem</span><span />
+                  </div>
+                  {ingredientes.map(ing => {
+                    const ok = ing.disponivel >= ing.necessario
+                    return (
+                      <div key={ing.id} className={cn('grid grid-cols-[1fr_44px_44px_20px] gap-1 items-center px-4 py-2', !ok && 'bg-red-500/[0.04]')}>
+                        <span className="text-xs font-medium truncate">{ing.nome}</span>
+                        <span className="text-xs text-right tabular-nums text-muted-foreground">{ing.necessario}</span>
+                        <span className={cn('text-xs text-right tabular-nums font-medium', ok ? 'text-green-400' : 'text-red-400')}>{ing.disponivel}</span>
+                        <span className="flex justify-center">
+                          {ok ? <Check className="h-3 w-3 text-green-400" /> : <AlertTriangle className="h-3 w-3 text-red-400" />}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
-            </section>
-
-            {/* ── Observações ── */}
-            <section className="px-5 py-4 space-y-1.5">
-              <Label className="text-xs">Observações</Label>
-              <textarea value={form.notas}
-                onChange={e => setForm(prev => ({ ...prev, notas: e.target.value }))}
-                rows={2} placeholder="Notas adicionais..."
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring resize-none" />
-            </section>
+            </div>
           </div>
+        </div>
 
-          <div className="flex justify-end gap-2 px-5 py-3 border-t border-border shrink-0">
-            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button size="sm"
-              onClick={() => onSave({ ...form, itens: buildItens() })}
-              disabled={saving || !form.cliente_nome.trim() || cart.length === 0}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editando ? 'Salvar' : 'Criar Pedido'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal de seleção de produtos (abre em cima do OrderDialog) */}
-      <ProductBrowserDialog
-        open={browserOpen}
-        onClose={() => setBrowserOpen(false)}
-        onConfirm={items => setCart(items)}
-        meuFaccaoId={meuFaccao?.id ?? null}
-        meuFaccaoNome={meuFaccao?.nome ?? null}
-        meuLojaId={meuLoja?.id ?? null}
-        meuLojaName={meuLoja?.nome ?? null}
-        tipoDinheiro={form.tipo_dinheiro}
-        descontoPct={parseFloat(form.desconto_pct) || 0}
-        initialCart={cart}
-      />
-    </>
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border shrink-0">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button size="sm"
+            onClick={() => onSave({ ...form, itens: buildItens() })}
+            disabled={saving || !form.cliente_nome.trim() || cart.length === 0}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editando ? 'Salvar' : 'Criar Pedido'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -994,7 +922,6 @@ export function VendasClient({
   const [editando, setEditando] = useState<Venda | null>(null)
   const [saving, setSaving] = useState(false)
   const [filtro, setFiltro] = useState<string>(filtroInicial)
-  const [empresaTab, setEmpresaTab] = useState<'todos' | 'faccao' | 'loja' | 'relatorio'>('todos')
 
   const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
   const receitaMap = useMemo(() => {
@@ -1008,17 +935,11 @@ export function VendasClient({
     return map
   }, [estoqueState])
 
-  const vendasPorEmpresa = useMemo(() => {
-    if (empresaTab === 'faccao') return vendas.filter(v => v.faccao_id)
-    if (empresaTab === 'loja') return vendas.filter(v => v.loja_id)
-    return vendas
-  }, [vendas, empresaTab])
-
   const vendasFiltradas = useMemo(() => {
-    if (filtro === 'todos') return vendasPorEmpresa.filter(v => v.status !== 'entregue')
-    if (filtro === 'entregue') return vendasPorEmpresa.filter(v => v.status === 'entregue')
-    return vendasPorEmpresa.filter(v => v.status === filtro)
-  }, [vendasPorEmpresa, filtro])
+    if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue')
+    if (filtro === 'entregue') return vendas.filter(v => v.status === 'entregue')
+    return vendas.filter(v => v.status === filtro)
+  }, [vendas, filtro])
 
   async function handleSave(form: FormState) {
     if (!form.cliente_nome.trim() || form.itens.length === 0) return
@@ -1189,52 +1110,40 @@ export function VendasClient({
     toast.success('Estoque descontado!')
   }
 
-  const filtros = [
-    { key: 'todos', label: 'Ativos' },
-    { key: 'encomenda', label: 'Encomendas' },
-    { key: 'entregue', label: 'Concluídos' },
-  ]
-
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Empresa tabs */}
+      {/* Tabs: Ativos | Encomendas | Concluídos | Relatório */}
       <div className="px-6 pt-3 border-b border-border shrink-0">
-        <div className="flex gap-0 -mb-px">
-          {([['todos', 'Todos'], ['faccao', 'Facção'], ['loja', 'Loja'], ['relatorio', 'Relatório']] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setEmpresaTab(key)}
+        <div className="flex gap-0 -mb-px items-end">
+          {([
+            ['todos',     'Ativos'],
+            ['encomenda', 'Encomendas'],
+            ['entregue',  'Concluídos'],
+            ['relatorio', 'Relatório'],
+          ] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setFiltro(key)}
               className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-                empresaTab === key
+                filtro === key
                   ? 'border-primary text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}>
               {label}
+              {key === 'encomenda' && vendas.filter(v => v.status === 'encomenda').length > 0 && (
+                <span className="ml-1 text-[10px] opacity-60">
+                  ({vendas.filter(v => v.status === 'encomenda').length})
+                </span>
+              )}
             </button>
           ))}
-          {podeEditar && empresaTab !== 'relatorio' && (
-            <Button size="sm" className="h-8 text-xs gap-1 ml-auto self-center mb-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
+          {podeEditar && filtro !== 'relatorio' && (
+            <Button size="sm" className="h-8 text-xs gap-1 ml-auto mb-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
               <Plus className="h-3.5 w-3.5" />Novo Pedido
             </Button>
           )}
         </div>
       </div>
 
-      {empresaTab !== 'relatorio' && (
-        <div className="px-6 py-2 border-b border-border/50 flex items-center gap-1 shrink-0">
-          {filtros.map(f => (
-            <button key={f.key} onClick={() => setFiltro(f.key)}
-              className={cn('px-3 py-1.5 rounded text-xs font-medium transition-colors',
-                filtro === f.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
-              )}>
-              {f.label}
-              {f.key === 'encomenda' && vendas.filter(v => v.status === 'encomenda').length > 0 && (
-                <span className="ml-1 opacity-60">({vendas.filter(v => v.status === 'encomenda').length})</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {empresaTab === 'relatorio' ? (
+      {filtro === 'relatorio' ? (
         <RelatorioAba vendas={vendas} faccoes={faccoes} lojas={lojas} allItems={allItems} />
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
@@ -1277,6 +1186,8 @@ export function VendasClient({
         onMembroCreated={m => setMembrosState(prev => [...prev, m].sort((a, b) => a.nome.localeCompare(b.nome)))}
         meuFaccao={meuFaccao} meuLoja={meuLoja}
         estoqueMap={estoqueMap}
+        receitas={receitas}
+        allItems={allItems}
         onSave={handleSave} saving={saving}
       />
     </div>
