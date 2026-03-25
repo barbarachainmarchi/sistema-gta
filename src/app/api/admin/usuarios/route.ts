@@ -56,10 +56,9 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Monta o objeto de update apenas com os campos enviados
+  // Monta o objeto de upsert — inclui id para garantir que a linha seja criada se não existir
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updates: Record<string, any> = {}
-  if (nome !== undefined) updates.nome = nome
+  const updates: Record<string, any> = { id }
   if (cargo !== undefined) updates.cargo = cargo || null
   if (perfil_id !== undefined) updates.perfil_id = perfil_id || null
   if (status !== undefined) updates.status = status
@@ -67,7 +66,20 @@ export async function PATCH(req: NextRequest) {
   if (local_trabalho_faccao_id !== undefined) updates.local_trabalho_faccao_id = local_trabalho_faccao_id || null
   if (membro_id !== undefined) updates.membro_id = membro_id || null
 
-  const { error } = await admin.from('usuarios').update(updates).eq('id', id)
+  // nome é NOT NULL na tabela — se não foi enviado, busca o existente (ou usa email do auth)
+  if (nome !== undefined) {
+    updates.nome = nome
+  } else {
+    const { data: existente } = await admin.from('usuarios').select('nome').eq('id', id).single()
+    if (existente?.nome) {
+      updates.nome = existente.nome
+    } else {
+      const { data: authUser } = await admin.auth.admin.getUserById(id)
+      updates.nome = authUser?.user?.email?.split('@')[0] ?? id
+    }
+  }
+
+  const { error } = await admin.from('usuarios').upsert(updates, { onConflict: 'id' })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
