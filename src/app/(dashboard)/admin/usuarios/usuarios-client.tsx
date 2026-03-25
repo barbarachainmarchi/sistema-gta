@@ -151,8 +151,8 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [membrosState, setMembrosState] = useState<MembroInvestigacao[]>(membros)
   const [vinculandoId, setVinculandoId] = useState<string | null>(null)
 
-  async function handleVincularMembro(usuarioId: string, membroId: string | null) {
-    setVinculandoId(usuarioId)
+  async function handleVincularMembro(usuarioId: string, membroId: string | null, membroIdLoading?: string) {
+    setVinculandoId(membroIdLoading ?? membroId ?? usuarioId)
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -162,6 +162,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     if (!res.ok) { const j = await res.json(); toast.error(j.error ?? 'Erro ao vincular'); return }
     setUsuarios(prev => prev.map(u => u.id === usuarioId ? { ...u, membro_id: membroId } : u))
     toast.success(membroId ? 'Membro vinculado!' : 'Vínculo removido')
+    router.refresh()
   }
 
   async function handleDesativarMembro(membro: MembroInvestigacao) {
@@ -169,7 +170,6 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const hoje = new Date().toISOString().slice(0, 10)
     const { error } = await sb().from('membros').update({ status: 'inativo', faccao_id: null, data_saida: hoje }).eq('id', membro.id)
     if (error) { toast.error('Erro ao desativar membro'); setVinculandoId(null); return }
-    // Desativar o usuário vinculado também
     const usuarioVinculado = usuarios.find(u => u.membro_id === membro.id)
     if (usuarioVinculado) {
       await fetch('/api/admin/usuarios', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: usuarioVinculado.id, status: 'inativo' }) })
@@ -178,6 +178,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setMembrosState(prev => prev.map(m => m.id === membro.id ? { ...m, status: 'inativo', faccao_id: null, faccoes: null, data_saida: hoje } : m))
     setVinculandoId(null)
     toast.success(`${membro.nome} desativado`)
+    router.refresh()
   }
 
   async function handleReativarMembro(membro: MembroInvestigacao) {
@@ -187,6 +188,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     if (error) { toast.error('Erro ao reativar'); return }
     setMembrosState(prev => prev.map(m => m.id === membro.id ? { ...m, status: 'ativo', data_saida: null } : m))
     toast.success(`${membro.nome} reativado — vincule um usuário para restaurar o acesso`)
+    router.refresh()
   }
 
   // ── Gerar link de convite ──────────────────────────────────────────────────
@@ -266,6 +268,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
         : u
     ))
     setAtivarUsuario(null)
+    router.refresh()
   }
 
   // ── Editar usuário ─────────────────────────────────────────────────────────
@@ -320,6 +323,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
         : u
     ))
     setEditUsuario(null)
+    router.refresh()
   }
 
   // ── Remover usuário ────────────────────────────────────────────────────────
@@ -340,6 +344,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     toast.success('Usuário removido')
     setConfirmRemover(null)
     setUsuarios(prev => prev.filter(u => u.id !== confirmRemover.id))
+    router.refresh()
   }
 
   // ── Perfis ─────────────────────────────────────────────────────────────────
@@ -389,35 +394,56 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     if (!perfilForm.nome) { toast.error('Nome é obrigatório'); return }
     setPerfilSaving(true)
 
+    const permissoes = MODULOS.map(m => ({
+      modulo: m.key,
+      pode_ver: perfilPerms[m.key]?.ver ?? false,
+      pode_editar: perfilPerms[m.key]?.editar ?? false,
+    }))
+
+    const res = await fetch('/api/admin/perfis', {
+      method: editPerfil ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(editPerfil ? { id: editPerfil.id } : {}),
+        nome: perfilForm.nome,
+        descricao: perfilForm.descricao || null,
+        permissoes,
+      }),
+    })
+    const json = await res.json()
+    setPerfilSaving(false)
+    if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar perfil'); return }
+
+    const permsEstado = permissoes.map(p => ({ modulo: p.modulo, pode_ver: p.pode_ver, pode_editar: p.pode_editar }))
     if (editPerfil) {
-      const { error } = await sb().from('perfis_acesso').update({ nome: perfilForm.nome, descricao: perfilForm.descricao || null }).eq('id', editPerfil.id)
-      if (error) { toast.error('Erro ao salvar perfil'); setPerfilSaving(false); return }
-      await sb().from('perfil_permissoes').delete().eq('perfil_id', editPerfil.id)
-      const rows = MODULOS.map(m => ({ perfil_id: editPerfil.id, modulo: m.key, pode_ver: perfilPerms[m.key]?.ver ?? false, pode_editar: perfilPerms[m.key]?.editar ?? false }))
-      await sb().from('perfil_permissoes').insert(rows)
-      setPerfis(prev => prev.map(p => p.id === editPerfil.id ? { ...p, nome: perfilForm.nome, descricao: perfilForm.descricao || null, permissoes: rows.map(r => ({ modulo: r.modulo, pode_ver: r.pode_ver, pode_editar: r.pode_editar })) } : p))
+      setPerfis(prev => prev.map(p => p.id === editPerfil.id
+        ? { ...p, nome: perfilForm.nome, descricao: perfilForm.descricao || null, permissoes: permsEstado }
+        : p
+      ))
       toast.success('Perfil atualizado')
     } else {
-      const { data: novo, error } = await sb().from('perfis_acesso').insert({ nome: perfilForm.nome, descricao: perfilForm.descricao || null }).select().single()
-      if (error || !novo) { toast.error('Erro ao criar perfil'); setPerfilSaving(false); return }
-      const rows = MODULOS.map(m => ({ perfil_id: novo.id, modulo: m.key, pode_ver: perfilPerms[m.key]?.ver ?? false, pode_editar: perfilPerms[m.key]?.editar ?? false }))
-      await sb().from('perfil_permissoes').insert(rows)
-      setPerfis(prev => [...prev, { id: novo.id, nome: novo.nome, descricao: novo.descricao, permissoes: rows.map(r => ({ modulo: r.modulo, pode_ver: r.pode_ver, pode_editar: r.pode_editar })) }])
+      setPerfis(prev => [...prev, { id: json.id, nome: json.nome, descricao: json.descricao, permissoes: permsEstado }])
       toast.success('Perfil criado')
     }
-    setPerfilSaving(false)
     setPerfilOpen(false)
+    router.refresh()
   }
 
   async function handleRemoverPerfil() {
     if (!confirmRemoverPerfil) return
     setRemovendoPerfil(true)
-    const { error } = await sb().from('perfis_acesso').delete().eq('id', confirmRemoverPerfil.id)
+    const res = await fetch('/api/admin/perfis', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: confirmRemoverPerfil.id }),
+    })
+    const json = await res.json()
     setRemovendoPerfil(false)
-    if (error) { toast.error('Erro ao remover — verifique se há usuários com este perfil'); return }
+    if (!res.ok) { toast.error(json.error ?? 'Erro ao remover — verifique se há usuários com este perfil'); return }
     toast.success('Perfil removido')
     setPerfis(prev => prev.filter(p => p.id !== confirmRemoverPerfil.id))
     setConfirmRemoverPerfil(null)
+    router.refresh()
   }
 
   // ── Filtro ─────────────────────────────────────────────────────────────────
@@ -716,7 +742,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                                 {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
                                   <>
                                     {usuarioVinculado && (
-                                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleVincularMembro(usuarioVinculado.id, null)} title="Desvincular usuário">
+                                      <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => handleVincularMembro(usuarioVinculado.id, null, m.id)} title="Desvincular usuário">
                                         <X className="h-3 w-3" />
                                       </Button>
                                     )}
