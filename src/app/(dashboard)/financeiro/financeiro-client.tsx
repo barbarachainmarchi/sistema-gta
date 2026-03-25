@@ -77,7 +77,7 @@ interface Props {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function FinanceiroClient({
-  userId, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, tabPadrao,
+  userId, userNome, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, tabPadrao,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb: SbClient = useCallback(() => {
@@ -137,7 +137,7 @@ export function FinanceiroClient({
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'minha-carteira' && 'hidden')}>
         <MinhaCarteiraAba
-          userId={userId} contas={contas} setContas={setContas}
+          userId={userId} userNome={userNome ?? null} contas={contas} setContas={setContas}
           lancamentos={lancamentos} setLancamentos={setLancamentos} sb={sb}
         />
       </div>
