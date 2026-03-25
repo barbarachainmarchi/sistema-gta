@@ -14,6 +14,7 @@ import {
   Plus, Minus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, Store, Users, ShoppingCart,
 } from 'lucide-react'
+import { RelatorioAba } from './relatorio-aba'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ type VendaItem = {
   item_nome: string; quantidade: number; preco_unit: number; origem: 'fabricar' | 'estoque'
 }
 type Venda = {
-  id: string; faccao_id: string | null; cliente_nome: string; cliente_telefone: string | null
+  id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; cliente_telefone: string | null
   tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: StatusVenda
   data_encomenda: string | null; notas: string | null
   criado_por: string | null; criado_por_nome: string | null
@@ -45,7 +46,7 @@ type CartItem = {
 }
 type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque' }
 type FormState = {
-  faccao_id: string; cliente_nome: string; cliente_telefone: string
+  faccao_id: string; loja_id: string; cliente_nome: string; cliente_telefone: string
   tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; notas: string; data_encomenda: string
   status: StatusVenda; itens: FormItem[]
 }
@@ -387,10 +388,11 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
-function VendaCard({ venda, faccoes, receitaMap, estoqueMap, itemMap, podeEditar,
+function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar,
   onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onDelete }: {
   venda: Venda
   faccoes: Faccao[]
+  lojas: Loja[]
   receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, Record<string, number>>; itemMap: Record<string, ItemSimples>
   podeEditar: boolean
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
@@ -401,6 +403,9 @@ function VendaCard({ venda, faccoes, receitaMap, estoqueMap, itemMap, podeEditar
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? null
+  const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? null
+  const empresaNome = faccaoNome ?? lojaNome
+  const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
   const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
   const total = subtotal * (1 - venda.desconto_pct / 100)
   const entregue = venda.status === 'entregue'
@@ -432,7 +437,11 @@ function VendaCard({ venda, faccoes, receitaMap, estoqueMap, itemMap, podeEditar
           </div>
           <p className="text-sm font-semibold truncate">{venda.cliente_nome}</p>
           <div className="flex items-center gap-2.5 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
-            {faccaoNome && <span className="text-primary/70 font-medium">{faccaoNome}</span>}
+            {empresaNome && (
+              <span className={cn('font-medium text-[11px]', empresaTipo === 'loja' ? 'text-blue-400/80' : 'text-primary/70')}>
+                {empresaTipo === 'loja' ? '[Loja] ' : ''}{empresaNome}
+              </span>
+            )}
             {venda.cliente_telefone && <span>{venda.cliente_telefone}</span>}
             {venda.desconto_pct > 0 && <span className="text-green-400">-{venda.desconto_pct}%</span>}
           </div>
@@ -570,13 +579,13 @@ function OrderDialog({
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const emptyForm = (): FormState => ({
-    faccao_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
+    faccao_id: '', loja_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
     desconto_pct: '0', notas: '', data_encomenda: today(), status: 'fabricando', itens: []
   })
 
   const [form, setForm] = useState<FormState>(emptyForm)
-  const [faccaoNome, setFaccaoNome] = useState('')
-  const [faccaoAberta, setFaccaoAberta] = useState(false)
+  const [empresaNome, setEmpresaNome] = useState('')
+  const [empresaAberta, setEmpresaAberta] = useState(false)
   const [membroNome, setMembroNome] = useState('')
   const [membroAberta, setMembroAberta] = useState(false)
   const [novoMembroTel, setNovoMembroTel] = useState('')
@@ -591,6 +600,7 @@ function OrderDialog({
       if (editando) {
         setForm({
           faccao_id: editando.faccao_id ?? '',
+          loja_id: editando.loja_id ?? '',
           cliente_nome: editando.cliente_nome,
           cliente_telefone: editando.cliente_telefone ?? '',
           tipo_dinheiro: editando.tipo_dinheiro,
@@ -599,7 +609,12 @@ function OrderDialog({
           data_encomenda: editando.data_encomenda ?? today(),
           status: editando.status, itens: [],
         })
-        setFaccaoNome(faccoes.find(f => f.id === editando.faccao_id)?.nome ?? '')
+        const editEmpresaNome = editando.faccao_id
+          ? (faccoes.find(f => f.id === editando.faccao_id)?.nome ?? '')
+          : editando.loja_id
+            ? (lojas.find(l => l.id === editando.loja_id)?.nome ?? '')
+            : ''
+        setEmpresaNome(editEmpresaNome)
         setMembroNome(editando.cliente_nome)
         setCart(editando.itens
           .filter(it => it.item_id)
@@ -610,30 +625,45 @@ function OrderDialog({
           })))
       } else {
         setForm(emptyForm())
-        setFaccaoNome('')
+        setEmpresaNome('')
         setMembroNome('')
         setCart([])
         setNovoMembroTel('')
       }
-      setFaccaoAberta(false)
+      setEmpresaAberta(false)
       setMembroAberta(false)
     }
   }
 
-  // Facção autocomplete
-  const faccoesSugestoes = useMemo(() => {
-    if (!faccaoAberta || !faccaoNome.trim()) return []
-    const q = faccaoNome.toLowerCase()
-    return faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q)).slice(0, 6)
-  }, [faccoes, faccaoNome, faccaoAberta])
+  // Empresa (facção + loja) autocomplete
+  type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number } | { tipo: 'loja'; id: string; nome: string }
 
-  function selecionarFaccao(f: Faccao) {
-    setForm(prev => ({
-      ...prev, faccao_id: f.id,
-      desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct,
-    }))
-    setFaccaoNome(f.nome)
-    setFaccaoAberta(false)
+  const empresaSugestoes = useMemo((): EmpresaOpc[] => {
+    if (!empresaAberta || !empresaNome.trim()) return []
+    const q = empresaNome.toLowerCase()
+    const ff = faccoes
+      .filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
+    const ll = lojas
+      .filter(l => l.nome.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
+    return [...ff, ...ll].slice(0, 8)
+  }, [faccoes, lojas, empresaNome, empresaAberta])
+
+  function selecionarEmpresa(e: EmpresaOpc) {
+    if (e.tipo === 'faccao') {
+      const f = faccoes.find(f => f.id === e.id)!
+      setForm(prev => ({
+        ...prev, faccao_id: e.id, loja_id: '',
+        desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct,
+      }))
+    } else {
+      setForm(prev => ({ ...prev, faccao_id: '', loja_id: e.id }))
+    }
+    setEmpresaNome(e.nome)
+    setEmpresaAberta(false)
   }
 
   // Membro autocomplete (filtrado pela facção selecionada)
@@ -708,28 +738,31 @@ function OrderDialog({
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cliente</p>
               <div className="grid grid-cols-2 gap-3">
 
-                {/* Facção */}
+                {/* Empresa */}
                 <div className="space-y-1.5 relative">
-                  <Label className="text-xs">Facção / Estabelecimento</Label>
-                  <Input value={faccaoNome}
-                    onChange={e => { setFaccaoNome(e.target.value); setForm(prev => ({ ...prev, faccao_id: '' })); setFaccaoAberta(true) }}
-                    onFocus={() => setFaccaoAberta(true)}
-                    onBlur={() => setTimeout(() => setFaccaoAberta(false), 150)}
-                    placeholder="Opcional..." className="h-8 text-sm" autoFocus />
-                  {faccaoNome && (
-                    <button type="button" onClick={() => { setFaccaoNome(''); setForm(prev => ({ ...prev, faccao_id: '' })); setMembroNome(''); setForm(prev => ({ ...prev, cliente_nome: '', faccao_id: '' })) }}
+                  <Label className="text-xs">Facção / Loja</Label>
+                  <Input value={empresaNome}
+                    onChange={e => { setEmpresaNome(e.target.value); setForm(prev => ({ ...prev, faccao_id: '', loja_id: '' })); setEmpresaAberta(true) }}
+                    onFocus={() => setEmpresaAberta(true)}
+                    onBlur={() => setTimeout(() => setEmpresaAberta(false), 150)}
+                    placeholder="Buscar facção ou loja..." className="h-8 text-sm" autoFocus />
+                  {empresaNome && (
+                    <button type="button" onClick={() => { setEmpresaNome(''); setForm(prev => ({ ...prev, faccao_id: '', loja_id: '' })); setMembroNome(''); setForm(prev => ({ ...prev, cliente_nome: '', faccao_id: '', loja_id: '' })) }}
                       className="absolute right-2 top-[34px] text-muted-foreground hover:text-foreground">
                       <X className="h-3 w-3" />
                     </button>
                   )}
-                  {faccaoAberta && faccoesSugestoes.length > 0 && (
+                  {empresaAberta && empresaSugestoes.length > 0 && (
                     <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                      {faccoesSugestoes.map(f => (
-                        <button key={f.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarFaccao(f) }}
+                      {empresaSugestoes.map(e => (
+                        <button key={e.tipo + e.id} type="button" onMouseDown={ev => { ev.preventDefault(); selecionarEmpresa(e) }}
                           className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                          <span className="font-medium">{f.nome}</span>
-                          {f.sigla && <span className="text-muted-foreground">[{f.sigla}]</span>}
-                          {f.desconto_padrao_pct > 0 && <span className="ml-auto text-green-400">{f.desconto_padrao_pct}% desc</span>}
+                          <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0', e.tipo === 'faccao' ? 'bg-primary/15 text-primary' : 'bg-blue-500/15 text-blue-400')}>
+                            {e.tipo === 'faccao' ? 'F' : 'L'}
+                          </span>
+                          <span className="font-medium">{e.nome}</span>
+                          {e.tipo === 'faccao' && e.sigla && <span className="text-muted-foreground">[{e.sigla}]</span>}
+                          {e.tipo === 'faccao' && e.desconto > 0 && <span className="ml-auto text-green-400">{e.desconto}% desc</span>}
                         </button>
                       ))}
                     </div>
@@ -961,6 +994,7 @@ export function VendasClient({
   const [editando, setEditando] = useState<Venda | null>(null)
   const [saving, setSaving] = useState(false)
   const [filtro, setFiltro] = useState<string>(filtroInicial)
+  const [empresaTab, setEmpresaTab] = useState<'todos' | 'faccao' | 'loja' | 'relatorio'>('todos')
 
   const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
   const receitaMap = useMemo(() => {
@@ -974,11 +1008,17 @@ export function VendasClient({
     return map
   }, [estoqueState])
 
+  const vendasPorEmpresa = useMemo(() => {
+    if (empresaTab === 'faccao') return vendas.filter(v => v.faccao_id)
+    if (empresaTab === 'loja') return vendas.filter(v => v.loja_id)
+    return vendas
+  }, [vendas, empresaTab])
+
   const vendasFiltradas = useMemo(() => {
-    if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue')
-    if (filtro === 'entregue') return vendas.filter(v => v.status === 'entregue')
-    return vendas.filter(v => v.status === filtro)
-  }, [vendas, filtro])
+    if (filtro === 'todos') return vendasPorEmpresa.filter(v => v.status !== 'entregue')
+    if (filtro === 'entregue') return vendasPorEmpresa.filter(v => v.status === 'entregue')
+    return vendasPorEmpresa.filter(v => v.status === filtro)
+  }, [vendasPorEmpresa, filtro])
 
   async function handleSave(form: FormState) {
     if (!form.cliente_nome.trim() || form.itens.length === 0) return
@@ -986,7 +1026,8 @@ export function VendasClient({
     try {
       if (editando) {
         const { error } = await sb().from('vendas').update({
-          faccao_id: form.faccao_id || null, cliente_nome: form.cliente_nome.trim(),
+          faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
+          cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0, notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
@@ -1001,7 +1042,8 @@ export function VendasClient({
         const { data: itensData, error: itensErr } = await sb().from('venda_itens').insert(novosItens).select()
         if (itensErr) { toast.error('Erro nos itens'); return }
         setVendas(prev => prev.map(v => v.id === editando.id ? {
-          ...v, faccao_id: form.faccao_id || null, cliente_nome: form.cliente_nome.trim(),
+          ...v, faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
+          cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0, notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
@@ -1010,7 +1052,8 @@ export function VendasClient({
         toast.success('Pedido atualizado!')
       } else {
         const { data: venda, error: vendaErr } = await sb().from('vendas').insert({
-          faccao_id: form.faccao_id || null, cliente_nome: form.cliente_nome.trim(),
+          faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
+          cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0, status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
@@ -1057,16 +1100,27 @@ export function VendasClient({
     let contaId: string | null = null
 
     if (venda.faccao_id) {
-      // Buscar conta já existente para essa facção
       const { data: contaExistente } = await sb().from('financeiro_contas')
         .select('id').eq('faccao_id', venda.faccao_id).eq('status', 'ativo').maybeSingle()
       if (contaExistente) {
         contaId = contaExistente.id
       } else {
-        // Auto-criar conta para a facção
         const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? 'Facção'
         const { data: novaConta } = await sb().from('financeiro_contas').insert({
           nome: faccaoNome, tipo: 'faccao', faccao_id: venda.faccao_id,
+          saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
+        }).select('id').single()
+        if (novaConta) contaId = novaConta.id
+      }
+    } else if (venda.loja_id) {
+      const { data: contaExistente } = await sb().from('financeiro_contas')
+        .select('id').eq('loja_id', venda.loja_id).eq('status', 'ativo').maybeSingle()
+      if (contaExistente) {
+        contaId = contaExistente.id
+      } else {
+        const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? 'Loja'
+        const { data: novaConta } = await sb().from('financeiro_contas').insert({
+          nome: lojaNome, tipo: 'loja', loja_id: venda.loja_id,
           saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
         }).select('id').single()
         if (novaConta) contaId = novaConta.id
@@ -1143,8 +1197,29 @@ export function VendasClient({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-6 py-3 border-b border-border flex items-center gap-2 shrink-0">
-        <div className="flex gap-1">
+      {/* Empresa tabs */}
+      <div className="px-6 pt-3 border-b border-border shrink-0">
+        <div className="flex gap-0 -mb-px">
+          {([['todos', 'Todos'], ['faccao', 'Facção'], ['loja', 'Loja'], ['relatorio', 'Relatório']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setEmpresaTab(key)}
+              className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+                empresaTab === key
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}>
+              {label}
+            </button>
+          ))}
+          {podeEditar && empresaTab !== 'relatorio' && (
+            <Button size="sm" className="h-8 text-xs gap-1 ml-auto self-center mb-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
+              <Plus className="h-3.5 w-3.5" />Novo Pedido
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {empresaTab !== 'relatorio' && (
+        <div className="px-6 py-2 border-b border-border/50 flex items-center gap-1 shrink-0">
           {filtros.map(f => (
             <button key={f.key} onClick={() => setFiltro(f.key)}
               className={cn('px-3 py-1.5 rounded text-xs font-medium transition-colors',
@@ -1157,41 +1232,41 @@ export function VendasClient({
             </button>
           ))}
         </div>
-        {podeEditar && (
-          <Button size="sm" className="h-8 text-xs gap-1 ml-auto" onClick={() => { setEditando(null); setFormOpen(true) }}>
-            <Plus className="h-3.5 w-3.5" />Novo Pedido
-          </Button>
-        )}
-      </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {vendasFiltradas.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <Package className="h-10 w-10 text-muted-foreground/20" />
-            <p className="text-sm text-muted-foreground">Nenhum pedido aqui</p>
-            {podeEditar && filtro === 'todos' && (
-              <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
-                <Plus className="h-3.5 w-3.5" />Criar primeiro pedido
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-            {vendasFiltradas.map(venda => (
-              <VendaCard key={venda.id} venda={venda}
-                faccoes={faccoes}
-                receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
-                podeEditar={podeEditar}
-                onStatusChange={handleStatusChange}
-                onEntregar={handleEntregar}
-                onDesfazerEntrega={handleDesfazerEntrega}
-                onEdit={v => { setEditando(v); setFormOpen(true) }}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {empresaTab === 'relatorio' ? (
+        <RelatorioAba vendas={vendas} faccoes={faccoes} lojas={lojas} allItems={allItems} />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-6">
+          {vendasFiltradas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <Package className="h-10 w-10 text-muted-foreground/20" />
+              <p className="text-sm text-muted-foreground">Nenhum pedido aqui</p>
+              {podeEditar && filtro === 'todos' && (
+                <Button size="sm" className="h-8 text-xs gap-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
+                  <Plus className="h-3.5 w-3.5" />Criar primeiro pedido
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+              {vendasFiltradas.map(venda => (
+                <VendaCard key={venda.id} venda={venda}
+                  faccoes={faccoes}
+                  lojas={lojas}
+                  receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
+                  podeEditar={podeEditar}
+                  onStatusChange={handleStatusChange}
+                  onEntregar={handleEntregar}
+                  onDesfazerEntrega={handleDesfazerEntrega}
+                  onEdit={v => { setEditando(v); setFormOpen(true) }}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <OrderDialog
         open={formOpen}

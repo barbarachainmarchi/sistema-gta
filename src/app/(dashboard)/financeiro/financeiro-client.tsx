@@ -13,8 +13,9 @@ import { ContasAba } from './contas-aba'
 
 export type Conta = {
   id: string; nome: string
-  tipo: 'faccao' | 'membro' | 'caixa' | 'setor' | 'outro'
+  tipo: 'faccao' | 'loja' | 'membro' | 'caixa' | 'setor' | 'outro'
   membro_id: string | null
+  loja_id: string | null
   saldo_sujo: number; saldo_limpo: number
   status: 'ativo' | 'inativo'; created_at: string
 }

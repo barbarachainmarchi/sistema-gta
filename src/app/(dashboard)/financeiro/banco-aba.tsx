@@ -18,9 +18,9 @@ function fmtData(s: string | null) {
 }
 
 const TIPO_LABEL: Record<string, string> = {
-  faccao: 'Facção', membro: 'Membro', caixa: 'Caixa', setor: 'Setor', outro: 'Outro',
+  faccao: 'Facção', loja: 'Loja', membro: 'Membro', caixa: 'Caixa', setor: 'Setor', outro: 'Outro',
 }
-const TIPO_ORDER: Conta['tipo'][] = ['faccao', 'caixa', 'setor', 'membro', 'outro']
+const TIPO_ORDER: Conta['tipo'][] = ['faccao', 'loja', 'caixa', 'setor', 'membro', 'outro']
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 

@@ -14,9 +14,9 @@ import type { Conta, Membro, SbClient } from './financeiro-client'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TIPO_LABEL: Record<Conta['tipo'], string> = {
-  faccao: 'Facção', membro: 'Membro', caixa: 'Caixa', setor: 'Setor', outro: 'Outro',
+  faccao: 'Facção', loja: 'Loja', membro: 'Membro', caixa: 'Caixa', setor: 'Setor', outro: 'Outro',
 }
-const TIPOS: Conta['tipo'][] = ['faccao', 'membro', 'caixa', 'setor', 'outro']
+const TIPOS: Conta['tipo'][] = ['faccao', 'loja', 'membro', 'caixa', 'setor', 'outro']
 
 const EMPTY_FORM = { id: null as string | null, nome: '', tipo: 'faccao' as Conta['tipo'], membro_id: '' }
 
