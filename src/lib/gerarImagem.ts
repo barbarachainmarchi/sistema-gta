@@ -275,69 +275,89 @@ export function gerarImagemVenda(params: {
   entregue_por_nome: string | null
 }): string {
   const { clienteNome, empresaNome, empresaTipo, tipoDinheiro, descontoPct, status, dataEncomenda, notas, itens, entregue_por_nome } = params
-  const WV = 560; const PV = 20; const ROW = 22
-  const H = Math.max(200, 120 + itens.length * ROW + 100)
+  const WV = 520; const PV = 18; const ROW = 20
+  const extraLinhas = (dataEncomenda ? 1 : 0) + (descontoPct > 0 ? 1 : 0) + (notas ? 1 : 0) + (entregue_por_nome ? 1 : 0)
+  const H = Math.max(180, 90 + extraLinhas * 16 + itens.length * ROW + 80)
   const canvas = document.createElement('canvas')
   canvas.width = WV; canvas.height = H
   const ctx = canvas.getContext('2d')!
 
-  ctx.fillStyle = BG; ctx.fillRect(0, 0, WV, H)
-  const headerCor = tipoDinheiro === 'sujo' ? '#c2410c' : '#059669'
-  ctx.fillStyle = headerCor; ctx.fillRect(0, 0, WV, 48)
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px monospace'
-  ctx.fillText(clienteNome, PV, 30)
-  if (empresaNome) {
-    ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.75)'
-    ctx.fillText((empresaTipo === 'loja' ? '[Loja] ' : '') + empresaNome, PV, 44)
-  }
-  ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.7)'
-  ctx.fillText((tipoDinheiro === 'sujo' ? 'SUJO' : 'LIMPO') + ' · ' + status.toUpperCase(), WV - PV - 110, 22)
+  // Fundo
+  ctx.fillStyle = '#1a1a1c'; ctx.fillRect(0, 0, WV, H)
 
-  let y = 68
-  ctx.font = FONT_SM; ctx.fillStyle = MUTED
-  if (dataEncomenda) { ctx.fillText('Data: ' + dataEncomenda, PV, y); y += 16 }
-  if (descontoPct > 0) { ctx.fillStyle = '#4ade80'; ctx.fillText('Desconto: ' + descontoPct + '%', PV, y); ctx.fillStyle = MUTED; y += 16 }
+  // Header cinza escuro
+  ctx.fillStyle = '#252528'; ctx.fillRect(0, 0, WV, 44)
+
+  // Faixa colorida fina no topo (3px) — laranja=sujo, verde=limpo
+  const accentCor = tipoDinheiro === 'sujo' ? '#f97316' : '#22c55e'
+  ctx.fillStyle = accentCor; ctx.fillRect(0, 0, WV, 3)
+
+  // Badge tipo dinheiro no canto
+  const badgeTxt = tipoDinheiro === 'sujo' ? 'SUJO' : 'LIMPO'
+  ctx.font = 'bold 9px monospace'; ctx.fillStyle = accentCor
+  const badgeW = ctx.measureText(badgeTxt).width + 10
+  ctx.fillStyle = tipoDinheiro === 'sujo' ? 'rgba(249,115,22,0.15)' : 'rgba(34,197,94,0.15)'
+  ctx.fillRect(WV - PV - badgeW, 10, badgeW, 16)
+  ctx.font = 'bold 9px monospace'; ctx.fillStyle = accentCor
+  ctx.fillText(badgeTxt, WV - PV - badgeW + 5, 22)
+
+  // Nome do cliente
+  ctx.fillStyle = '#f4f4f5'; ctx.font = 'bold 14px monospace'
+  ctx.fillText(clienteNome.length > 28 ? clienteNome.slice(0, 27) + '…' : clienteNome, PV, 28)
+
+  // Empresa
+  if (empresaNome) {
+    ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'
+    ctx.fillText((empresaTipo === 'loja' ? '[Loja] ' : '') + empresaNome, PV, 41)
+  }
+
+  let y = 60
+  ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'
+  if (dataEncomenda) { ctx.fillText('Data: ' + dataEncomenda, PV, y); y += 15 }
+  if (descontoPct > 0) { ctx.fillStyle = '#4ade80'; ctx.fillText('Desconto: ' + descontoPct + '%', PV, y); ctx.fillStyle = '#71717a'; y += 15 }
   y += 4
 
-  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke(); y += 14
-  ctx.font = 'bold 10px monospace'; ctx.fillStyle = MUTED
-  ctx.fillText('ITEM', PV, y); ctx.fillText('QTD', WV - PV - 120, y)
-  ctx.fillText('UNIT.', WV - PV - 80, y); ctx.fillText('TOTAL', WV - PV - 30, y)
-  y += 6
-  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
-  y += ROW - 6
+  // Separador
+  ctx.beginPath(); ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke(); y += 13
+  ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#52525b'
+  ctx.fillText('ITEM', PV, y); ctx.fillText('QTD', WV - PV - 108, y)
+  ctx.fillText('UNIT.', WV - PV - 72, y); ctx.fillText('TOTAL', WV - PV - 28, y)
+  y += 5
+  ctx.beginPath(); ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
+  y += ROW - 4
 
   let subtotal = 0
   for (const it of itens) {
     const t = it.quantidade * it.preco_unit; subtotal += t
-    ctx.font = FONT; ctx.fillStyle = TEXT
-    ctx.fillText(it.item_nome.length > 26 ? it.item_nome.slice(0, 25) + '\u2026' : it.item_nome, PV, y)
-    ctx.font = FONT_SM; ctx.fillStyle = MUTED
-    ctx.fillText(it.quantidade + 'x', WV - PV - 120, y)
-    ctx.fillText('R$' + it.preco_unit.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 82, y)
-    ctx.fillStyle = TEXT
-    ctx.fillText('R$' + t.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 36, y)
+    ctx.font = '11px monospace'; ctx.fillStyle = '#e4e4e7'
+    ctx.fillText(it.item_nome.length > 24 ? it.item_nome.slice(0, 23) + '…' : it.item_nome, PV, y)
+    ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'
+    ctx.fillText(it.quantidade + 'x', WV - PV - 108, y)
+    ctx.fillText('R$' + it.preco_unit.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 74, y)
+    ctx.fillStyle = '#d4d4d8'
+    ctx.fillText('R$' + t.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 38, y)
     y += ROW
   }
-  y += 4
-  ctx.beginPath(); ctx.strokeStyle = BORDER; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
-  y += 18
+  y += 6
+  ctx.beginPath(); ctx.strokeStyle = '#3f3f46'; ctx.lineWidth = 1; ctx.moveTo(PV, y); ctx.lineTo(WV - PV, y); ctx.stroke()
+  y += 16
 
   const total = subtotal * (1 - descontoPct / 100)
   if (descontoPct > 0) {
-    ctx.font = FONT_SM; ctx.fillStyle = MUTED
+    ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'
     ctx.fillText('Subtotal: R$' + subtotal.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), PV, y); y += 14
     ctx.fillStyle = '#4ade80'; ctx.fillText('-' + descontoPct + '%', PV, y)
   }
-  ctx.font = 'bold 14px monospace'; ctx.fillStyle = TEXT
-  ctx.fillText('TOTAL: R$' + total.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 190, y - (descontoPct > 0 ? 6 : 0))
-  y += 22
-  if (notas) { ctx.font = FONT_SM; ctx.fillStyle = MUTED; ctx.fillText('Obs: ' + notas, PV, y); y += 14 }
-  if (entregue_por_nome) { ctx.font = FONT_SM; ctx.fillStyle = MUTED; ctx.fillText('Entregue por: ' + entregue_por_nome, PV, y) }
+  ctx.font = 'bold 13px monospace'; ctx.fillStyle = '#f4f4f5'
+  ctx.fillText('TOTAL: R$' + total.toLocaleString('pt-BR', { maximumFractionDigits: 0 }), WV - PV - 175, y - (descontoPct > 0 ? 6 : 0))
+  y += 20
+  if (notas) { ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'; ctx.fillText('Obs: ' + notas, PV, y); y += 14 }
+  if (entregue_por_nome) { ctx.font = '10px monospace'; ctx.fillStyle = '#71717a'; ctx.fillText('Entregue por: ' + entregue_por_nome, PV, y) }
 
-  ctx.fillStyle = BG2; ctx.fillRect(0, H - 20, WV, 20)
-  ctx.font = '9px monospace'; ctx.fillStyle = MUTED
-  ctx.fillText('Gerado em ' + new Date().toLocaleString('pt-BR'), PV, H - 6)
+  // Rodapé
+  ctx.fillStyle = '#252528'; ctx.fillRect(0, H - 18, WV, 18)
+  ctx.font = '8px monospace'; ctx.fillStyle = '#52525b'
+  ctx.fillText('Gerado em ' + new Date().toLocaleString('pt-BR'), PV, H - 5)
 
   return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
 }

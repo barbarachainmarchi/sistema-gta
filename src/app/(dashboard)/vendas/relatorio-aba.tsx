@@ -28,6 +28,8 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
   const [empresaFiltro, setEmpresaFiltro] = useState<string>('todos')
   const [tipoDinFiltro, setTipoDinFiltro] = useState<'todos' | 'sujo' | 'limpo'>('todos')
   const [busca, setBusca] = useState('')
+  const [dataDE, setDataDE] = useState('')
+  const [dataATE, setDataATE] = useState('')
   const [aba, setAba] = useState<'itens' | 'vendas'>('itens')
 
   // Only entregues for the report
@@ -49,8 +51,16 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
       const q = busca.toLowerCase()
       list = list.filter(v => v.cliente_nome.toLowerCase().includes(q))
     }
+    if (dataDE || dataATE) {
+      list = list.filter(v => {
+        const d = (v.entregue_em ?? v.created_at).split('T')[0]
+        if (dataDE && d < dataDE) return false
+        if (dataATE && d > dataATE) return false
+        return true
+      })
+    }
     return list
-  }, [vendasEntregues, empresaFiltro, tipoDinFiltro, busca])
+  }, [vendasEntregues, empresaFiltro, tipoDinFiltro, busca, dataDE, dataATE])
 
   const totalReceita = useMemo(() => vendasFiltradas.reduce((s, v) => {
     const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
@@ -97,6 +107,11 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
           ))}
         </div>
         <Input placeholder="Buscar cliente..." value={busca} onChange={e => setBusca(e.target.value)} className="h-8 text-xs w-44" />
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Input type="date" value={dataDE} onChange={e => setDataDE(e.target.value)} className="h-8 text-xs w-32" title="Data de" />
+          <span>—</span>
+          <Input type="date" value={dataATE} onChange={e => setDataATE(e.target.value)} className="h-8 text-xs w-32" title="Data até" />
+        </div>
       </div>
 
       {/* Stats */}

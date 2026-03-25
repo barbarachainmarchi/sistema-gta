@@ -378,6 +378,8 @@ function OrderDialog({
   const [loadingProd, setLoadingProd] = useState(false)
   const [buscaProd, setBuscaProd] = useState('')
   const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
+  const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
+  const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
 
   const cartMap = useMemo(() => Object.fromEntries(cart.map(c => [c.item_id, c])), [cart])
   const descontoPct = parseFloat(form.desconto_pct) || 0
@@ -458,6 +460,8 @@ function OrderDialog({
       }
       setEmpresaAberta(false)
       setMembroAberta(false)
+      setDraftOrigem({})
+      setDraftPreco({})
     }
   }
 
@@ -540,10 +544,18 @@ function OrderDialog({
     setCart(prev => {
       const exists = prev.find(c => c.item_id === item_id)
       if (exists) return prev.map(c => c.item_id === item_id ? { ...c, quantidade: qtd } : c)
-      // Add from meusProdutos
       const p = meusProdutos.find(p => p.item_id === item_id)
       if (!p) return prev
-      return [...prev, { item_id: p.item_id, nome: p.nome, quantidade: qtd, preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo, preco_override: null, desconto_item_pct: faccaoDescontosItem[p.item_id] ?? null, tem_craft: p.tem_craft, origem: p.tem_craft ? 'fabricar' : 'estoque' }]
+      const origemDraft = draftOrigem[item_id]
+      const precoDraft = draftPreco[item_id]
+      return [...prev, {
+        item_id: p.item_id, nome: p.nome, quantidade: qtd,
+        preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo,
+        preco_override: precoDraft != null ? precoDraft : null,
+        desconto_item_pct: faccaoDescontosItem[p.item_id] ?? null,
+        tem_craft: p.tem_craft,
+        origem: origemDraft ?? (p.tem_craft ? 'fabricar' : 'estoque'),
+      }]
     })
   }
 
@@ -787,18 +799,18 @@ function OrderDialog({
                     )}>
                     {/* Nome + badges */}
                     <div className="flex items-center gap-1.5 min-w-0">
-                      {inCart && (
-                        <div className="flex gap-0.5 shrink-0">
-                          <button onClick={() => setCartOrigem(p.item_id, 'fabricar')}
-                            className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
-                              c?.origem === 'fabricar' ? 'bg-blue-500/20 text-blue-400' : 'bg-transparent text-muted-foreground hover:text-foreground'
-                            )}>Fab</button>
-                          <button onClick={() => setCartOrigem(p.item_id, 'estoque')}
-                            className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
-                              c?.origem === 'estoque' ? 'bg-purple-500/20 text-purple-400' : 'bg-transparent text-muted-foreground hover:text-foreground'
-                            )}>Est</button>
-                        </div>
-                      )}
+                      <div className="flex gap-0.5 shrink-0">
+                        <button onClick={() => inCart ? setCartOrigem(p.item_id, 'fabricar') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'fabricar' }))}
+                          className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                            (inCart ? c?.origem : draftOrigem[p.item_id]) === 'fabricar'
+                              ? 'bg-blue-500/20 text-blue-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
+                          )}>Fab</button>
+                        <button onClick={() => inCart ? setCartOrigem(p.item_id, 'estoque') : setDraftOrigem(prev => ({ ...prev, [p.item_id]: 'estoque' }))}
+                          className={cn('text-[9px] font-bold px-1 py-0.5 rounded transition-colors',
+                            (inCart ? c?.origem : draftOrigem[p.item_id]) === 'estoque'
+                              ? 'bg-purple-500/20 text-purple-400' : 'bg-transparent text-muted-foreground/40 hover:text-foreground'
+                          )}>Est</button>
+                      </div>
                       <span className={cn('text-xs font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')}>{p.nome}</span>
                       {faccaoDescontosItem[p.item_id] != null && (
                         <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
@@ -830,22 +842,24 @@ function OrderDialog({
                         )} />
                     </div>
 
-                    {/* Preço unit (editável quando no carrinho) */}
+                    {/* Preço unit (sempre editável) */}
                     <div className="flex justify-end">
-                      {inCart ? (
-                        <Input
-                          type="number" min="0"
-                          value={c.preco_override != null ? c.preco_override : (precoBase ?? 0)}
-                          onChange={e => {
-                            const v = parseFloat(e.target.value)
+                      <Input
+                        type="number" min="0"
+                        value={inCart
+                          ? (c.preco_override != null ? c.preco_override : (precoBase ?? 0))
+                          : (draftPreco[p.item_id] != null ? draftPreco[p.item_id]! : (precoBase ?? 0))}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value)
+                          if (inCart) {
                             setCartPreco(p.item_id, isNaN(v) ? null : v)
-                          }}
-                          className="h-7 text-xs text-right w-full tabular-nums" />
-                      ) : (
-                        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-                          {precoBase != null ? fmt(precoBase) : '—'}
-                        </span>
-                      )}
+                          } else {
+                            setDraftPreco(prev => ({ ...prev, [p.item_id]: isNaN(v) ? null : v }))
+                          }
+                        }}
+                        className={cn('h-7 text-xs text-right w-full tabular-nums',
+                          inCart && 'border-primary/40 bg-primary/[0.04]'
+                        )} />
                     </div>
 
                     {/* Subtotal */}
@@ -878,6 +892,23 @@ function OrderDialog({
             {/* Resumo */}
             <div className="p-4 border-b border-border shrink-0 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
+              {cart.length > 0 && (
+                <div className="space-y-1 border-b border-border/30 pb-2">
+                  {cart.map(c => {
+                    const preco = getPrecoEfetivo(c)
+                    const d = c.desconto_item_pct ?? descontoPct
+                    const totalItem = c.quantidade * preco * (1 - d / 100)
+                    return (
+                      <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
+                        <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
+                        <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
+                          {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(totalItem)}</span>
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               <div className="space-y-1">
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Itens</span>
@@ -1077,37 +1108,26 @@ export function VendasClient({
     const totalVenda = subtotal * (1 - venda.desconto_pct / 100)
     if (totalVenda <= 0) return
 
+    // Banco = conta do entregador (pessoa que recebeu o dinheiro)
     let contaId: string | null = null
-
-    if (venda.faccao_id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: usuRow } = await sb().from('usuarios').select('membro_id').eq('id', userId).maybeSingle() as any
+    const membroId: string | null = usuRow?.membro_id ?? null
+    if (membroId) {
       const { data: contaExistente } = await sb().from('financeiro_contas')
-        .select('id').eq('faccao_id', venda.faccao_id).eq('status', 'ativo').maybeSingle()
+        .select('id').eq('membro_id', membroId).eq('status', 'ativo').maybeSingle()
       if (contaExistente) {
-        contaId = contaExistente.id
-      } else {
-        const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? 'Facção'
+        contaId = (contaExistente as { id: string }).id
+      } else if (userNome) {
         const { data: novaConta } = await sb().from('financeiro_contas').insert({
-          nome: faccaoNome, tipo: 'faccao', faccao_id: venda.faccao_id,
+          nome: userNome, tipo: 'membro', membro_id: membroId,
           saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
         }).select('id').single()
-        if (novaConta) contaId = novaConta.id
-      }
-    } else if (venda.loja_id) {
-      const { data: contaExistente } = await sb().from('financeiro_contas')
-        .select('id').eq('loja_id', venda.loja_id).eq('status', 'ativo').maybeSingle()
-      if (contaExistente) {
-        contaId = contaExistente.id
-      } else {
-        const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? 'Loja'
-        const { data: novaConta } = await sb().from('financeiro_contas').insert({
-          nome: lojaNome, tipo: 'loja', loja_id: venda.loja_id,
-          saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
-        }).select('id').single()
-        if (novaConta) contaId = novaConta.id
+        if (novaConta) contaId = (novaConta as { id: string }).id
       }
     }
 
-    await sb().from('financeiro_lancamentos').insert({
+    const { error } = await sb().from('financeiro_lancamentos').insert({
       conta_id: contaId,
       venda_id: venda.id,
       tipo: 'venda',
@@ -1121,6 +1141,20 @@ export function VendasClient({
       created_by: userId,
       responsavel_nome: userNome,
     })
+    if (error) { toast.error('Erro ao registrar no financeiro: ' + error.message); return }
+
+    // Atualizar saldo da conta
+    if (contaId) {
+      const { data: conta } = await sb().from('financeiro_contas').select('saldo_sujo, saldo_limpo').eq('id', contaId).single()
+      if (conta) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c = conta as any
+        const upd = venda.tipo_dinheiro === 'sujo'
+          ? { saldo_sujo: c.saldo_sujo + totalVenda }
+          : { saldo_limpo: c.saldo_limpo + totalVenda }
+        await sb().from('financeiro_contas').update(upd).eq('id', contaId)
+      }
+    }
   }
 
   async function handleDelete(id: string) {
