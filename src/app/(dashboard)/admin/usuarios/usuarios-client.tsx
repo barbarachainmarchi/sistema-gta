@@ -49,6 +49,7 @@ type Usuario = {
   membro_id: string | null
   local_trabalho_loja_id: string | null
   local_trabalho_faccao_id: string | null
+  trabalho_principal: 'loja' | 'faccao' | null
   perfil_nome: string | null
   status: 'ativo' | 'inativo' | 'pendente'
   created_at: string
@@ -277,6 +278,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     nome: '', cargo: '', perfil_id: '', status: 'ativo' as 'ativo' | 'inativo',
     local_trabalho_loja_id: '',
     local_trabalho_faccao_id: '',
+    trabalho_principal: '' as '' | 'loja' | 'faccao',
   })
   const [editSaving, setEditSaving] = useState(false)
 
@@ -288,6 +290,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       // Se o usuário ainda não tem local definido, usa o padrão do admin
       local_trabalho_loja_id: u.local_trabalho_loja_id ?? defaultLojaId ?? '',
       local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? defaultFaccaoId ?? '',
+      trabalho_principal: u.trabalho_principal ?? '',
     })
   }
 
@@ -304,6 +307,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
         nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status,
         local_trabalho_loja_id: novoLojaId,
         local_trabalho_faccao_id: novoFaccaoId,
+        trabalho_principal: editForm.trabalho_principal || null,
       }),
     })
     const json = await res.json()
@@ -946,6 +950,19 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   </SelectContent>
                 </Select>
               </div>
+              {editForm.local_trabalho_loja_id && editForm.local_trabalho_faccao_id && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Trabalho Principal</Label>
+                  <Select value={editForm.trabalho_principal || '_none'} onValueChange={v => setEditForm(f => ({ ...f, trabalho_principal: v === '_none' ? '' : v as 'loja' | 'faccao' }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Não definido</SelectItem>
+                      <SelectItem value="faccao">Facção</SelectItem>
+                      <SelectItem value="loja">Loja</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

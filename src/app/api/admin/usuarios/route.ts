@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
   const { user } = await getAuthUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { id, nome, cargo, perfil_id, status, local_trabalho_loja_id, local_trabalho_faccao_id, membro_id } = await req.json()
+  const { id, nome, cargo, perfil_id, status, local_trabalho_loja_id, local_trabalho_faccao_id, membro_id, trabalho_principal } = await req.json()
   if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
   const admin = createAdminClient()
@@ -65,6 +65,7 @@ export async function PATCH(req: NextRequest) {
   if (local_trabalho_loja_id !== undefined) updates.local_trabalho_loja_id = local_trabalho_loja_id || null
   if (local_trabalho_faccao_id !== undefined) updates.local_trabalho_faccao_id = local_trabalho_faccao_id || null
   if (membro_id !== undefined) updates.membro_id = membro_id || null
+  if (trabalho_principal !== undefined) updates.trabalho_principal = trabalho_principal || null
 
   // nome é NOT NULL na tabela — se não foi enviado, busca o existente (ou usa email do auth)
   if (nome !== undefined) {

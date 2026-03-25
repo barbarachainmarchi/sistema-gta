@@ -43,6 +43,7 @@ type CartItem = {
   item_id: string; nome: string; quantidade: number
   preco_limpo: number | null; preco_sujo: number | null
   preco_override: number | null
+  desconto_item_pct: number | null
   tem_craft: boolean; origem: 'fabricar' | 'estoque'
 }
 type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque' }
@@ -346,6 +347,7 @@ function OrderDialog({
   const [meusProdutos, setMeusProdutos] = useState<WpItem[]>([])
   const [loadingProd, setLoadingProd] = useState(false)
   const [buscaProd, setBuscaProd] = useState('')
+  const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
 
   const cartMap = useMemo(() => Object.fromEntries(cart.map(c => [c.item_id, c])), [cart])
   const descontoPct = parseFloat(form.desconto_pct) || 0
@@ -414,6 +416,7 @@ function OrderDialog({
         setCart(editando.itens.filter(it => it.item_id).map(it => ({
           item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
           preco_limpo: it.preco_unit, preco_sujo: null, preco_override: null,
+          desconto_item_pct: null,
           tem_craft: it.origem === 'fabricar', origem: it.origem,
         })))
       } else {
@@ -444,8 +447,19 @@ function OrderDialog({
     if (e.tipo === 'faccao') {
       const f = faccoes.find(f => f.id === e.id)!
       setForm(prev => ({ ...prev, faccao_id: e.id, loja_id: '', desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct }))
+      // Fetch per-item discounts for this facção
+      sb().from('faccao_desconto_por_item').select('item_id, desconto_pct').eq('faccao_id', e.id)
+        .then(({ data }) => {
+          const map: Record<string, number> = {}
+          for (const row of (data ?? [])) map[row.item_id] = row.desconto_pct
+          setFaccaoDescontosItem(map)
+          // Update existing cart items with per-item discounts
+          setCart(prev => prev.map(c => ({ ...c, desconto_item_pct: map[c.item_id] ?? null })))
+        })
     } else {
       setForm(prev => ({ ...prev, faccao_id: '', loja_id: e.id }))
+      setFaccaoDescontosItem({})
+      setCart(prev => prev.map(c => ({ ...c, desconto_item_pct: null })))
     }
     setEmpresaNome(e.nome)
     setEmpresaAberta(false)
@@ -499,7 +513,7 @@ function OrderDialog({
       // Add from meusProdutos
       const p = meusProdutos.find(p => p.item_id === item_id)
       if (!p) return prev
-      return [...prev, { item_id: p.item_id, nome: p.nome, quantidade: qtd, preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo, preco_override: null, tem_craft: p.tem_craft, origem: p.tem_craft ? 'fabricar' : 'estoque' }]
+      return [...prev, { item_id: p.item_id, nome: p.nome, quantidade: qtd, preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo, preco_override: null, desconto_item_pct: faccaoDescontosItem[p.item_id] ?? null, tem_craft: p.tem_craft, origem: p.tem_craft ? 'fabricar' : 'estoque' }]
     })
   }
 
@@ -536,8 +550,11 @@ function OrderDialog({
 
   // Totals
   const subtotal = cart.reduce((s, c) => s + c.quantidade * getPrecoEfetivo(c), 0)
-  const descValor = subtotal * descontoPct / 100
-  const total = subtotal - descValor
+  const total = cart.reduce((s, c) => {
+    const d = c.desconto_item_pct ?? descontoPct
+    return s + c.quantidade * getPrecoEfetivo(c) * (1 - d / 100)
+  }, 0)
+  const descValor = subtotal - total
 
   function buildItens(): FormItem[] {
     return cart.map(c => ({
@@ -730,7 +747,8 @@ function OrderDialog({
                 const precoEfetivo = c ? (c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))) : (precoBase ?? 0)
                 const estoqueDisp = estoqueMap[p.item_id]?.produto_final ?? 0
                 const qtd = c?.quantidade ?? 0
-                const subtotalItem = qtd * precoEfetivo * (1 - descontoPct / 100)
+                const efetivoPct = c?.desconto_item_pct ?? descontoPct
+                const subtotalItem = qtd * precoEfetivo * (1 - efetivoPct / 100)
 
                 return (
                   <div key={p.item_id}
@@ -752,6 +770,11 @@ function OrderDialog({
                         </div>
                       )}
                       <span className={cn('text-xs font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')}>{p.nome}</span>
+                      {faccaoDescontosItem[p.item_id] != null && (
+                        <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                          -{faccaoDescontosItem[p.item_id]}%
+                        </span>
+                      )}
                     </div>
 
                     {/* Estoque */}
@@ -834,9 +857,9 @@ function OrderDialog({
                   <span>Subtotal</span>
                   <span className="tabular-nums">{fmt(subtotal)}</span>
                 </div>
-                {descontoPct > 0 && (
+                {descValor > 0 && (
                   <div className="flex justify-between text-xs text-green-400">
-                    <span>Desconto ({descontoPct}%)</span>
+                    <span>Desconto{Object.keys(faccaoDescontosItem).length === 0 && descontoPct > 0 ? ` (${descontoPct}%)` : ''}</span>
                     <span className="tabular-nums">-{fmt(descValor)}</span>
                   </div>
                 )}

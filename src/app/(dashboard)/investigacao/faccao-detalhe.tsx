@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2 } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
@@ -20,11 +20,12 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; created_at: string; updated_at: string }
+export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; created_at: string; updated_at: string }
 export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo     = { id: string; placa: string | null; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
 export type FaccaoPreco = { id: string; faccao_id: string; item_id: string; tipo: 'percentual' | 'fixo'; percentual: number | null; preco_sujo: number | null; preco_limpo: number | null; observacoes: string | null }
 export type Produto     = { id: string; nome: string }
+export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
 
 function fmt(v: number | null) {
   if (v == null) return '—'
@@ -56,11 +57,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
-  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status })
+  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '' })
   const [geralSaving, setGeralSaving] = useState(false)
 
   function abrirEdicao() {
-    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status })
+    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '' })
     setEditando(true)
   }
 
@@ -72,6 +73,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       descricao: geralForm.descricao || null, territorio: geralForm.territorio || null,
       deep: geralForm.deep || null,
       cor_tag: geralForm.cor_tag, status: geralForm.status,
+      desconto_padrao_pct: geralForm.desconto_padrao_pct ?? 0,
+      telefone: geralForm.telefone.trim() || null,
     }).eq('id', faccao.id).select().single()
     setGeralSaving(false)
     if (error) { toast.error('Erro ao salvar'); return }
@@ -255,6 +258,61 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   const produtosDisponiveis = todosProdutos.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id))
 
+  // ── Descontos por Item ─────────────────────────────────────────────────────
+  const [descontosItem, setDescontosItem] = useState<DescontoItem[]>([])
+  const [loadingDescontos, setLoadingDescontos] = useState(false)
+  const [descontoItemDialog, setDescontoItemDialog] = useState<{ item: DescontoItem | null } | null>(null)
+  const [descontoForm, setDescontoForm] = useState({ item_id: '', desconto_pct: '' })
+  const [descontoSaving, setDescontoSaving] = useState(false)
+  const [buscaDesconto, setBuscaDesconto] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setLoadingDescontos(true)
+    sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id)
+      .then(({ data }) => { setDescontosItem((data ?? []) as DescontoItem[]); setLoadingDescontos(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, faccao.id])
+
+  const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
+
+  const descontosFiltrados = useMemo(() => descontosItem.filter(d => {
+    if (!buscaDesconto) return true
+    const nome = todosProdutos.find(p => p.id === d.item_id)?.nome ?? ''
+    return nome.toLowerCase().includes(buscaDesconto.toLowerCase())
+  }), [descontosItem, buscaDesconto, todosProdutos])
+
+  function abrirNovoDesconto() {
+    setDescontoForm({ item_id: '', desconto_pct: '' })
+    setDescontoItemDialog({ item: null })
+  }
+
+  function abrirEditarDesconto(d: DescontoItem) {
+    setDescontoForm({ item_id: d.item_id, desconto_pct: String(d.desconto_pct) })
+    setDescontoItemDialog({ item: d })
+  }
+
+  async function handleSalvarDesconto() {
+    if (!descontoForm.item_id) { toast.error('Selecione um produto'); return }
+    const pct = parseFloat(descontoForm.desconto_pct)
+    if (isNaN(pct) || pct < 0 || pct > 100) { toast.error('Desconto deve ser entre 0 e 100'); return }
+    setDescontoSaving(true)
+    const row = { faccao_id: faccao.id, item_id: descontoForm.item_id, desconto_pct: pct }
+    const { data, error } = await sb().from('faccao_desconto_por_item').upsert(row, { onConflict: 'faccao_id,item_id' }).select().single()
+    setDescontoSaving(false)
+    if (error) { toast.error('Erro ao salvar desconto'); return }
+    setDescontosItem(prev => [...prev.filter(d => d.item_id !== descontoForm.item_id), data as DescontoItem])
+    setDescontoItemDialog(null)
+    toast.success('Desconto salvo')
+  }
+
+  async function handleRemoverDesconto(d: DescontoItem) {
+    const { error } = await sb().from('faccao_desconto_por_item').delete().eq('id', d.id)
+    if (error) { toast.error('Erro ao remover'); return }
+    setDescontosItem(prev => prev.filter(x => x.id !== d.id))
+    toast.success('Desconto removido')
+  }
+
   function openEditPreco(produto: Produto) {
     const existing = faccaoPrecos.find(p => p.item_id === produto.id)
     setPrecoForm({ tipo: existing?.tipo ?? 'fixo', percentual: existing?.percentual?.toString() ?? '', preco_sujo: existing?.preco_sujo?.toString() ?? '', preco_limpo: existing?.preco_limpo?.toString() ?? '' })
@@ -319,11 +377,13 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </Button>
             </div>
           </div>
-          {(faccao.territorio || faccao.descricao || faccao.deep) && (
+          {(faccao.territorio || faccao.descricao || faccao.deep || faccao.telefone || faccao.desconto_padrao_pct > 0) && (
             <div className="text-xs text-muted-foreground flex flex-wrap gap-3 pt-1 pl-8">
               {faccao.territorio && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{faccao.territorio}</span>}
               {faccao.descricao && <span>{faccao.descricao}</span>}
               {faccao.deep && <span className="font-mono text-[11px] bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/10">{faccao.deep}</span>}
+              {faccao.telefone && <span className="font-mono">{faccao.telefone}</span>}
+              {faccao.desconto_padrao_pct > 0 && <span className="text-emerald-400">{faccao.desconto_padrao_pct}% desconto</span>}
             </div>
           )}
         </DialogHeader>
@@ -351,6 +411,23 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                       {geralForm.cor_tag === cor && <Check className="h-3 w-3 text-white drop-shadow" />}
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Telefone */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Telefone</Label>
+                  <Input value={geralForm.telefone}
+                    onChange={e => setGeralForm(prev => ({ ...prev, telefone: e.target.value }))}
+                    placeholder="(xx) xxxxx-xxxx" className="h-8 text-sm" />
+                </div>
+
+                {/* Desconto nos meus produtos */}
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Desconto nos meus produtos (%)</Label>
+                  <Input type="number" min="0" max="100" value={geralForm.desconto_padrao_pct}
+                    onChange={e => setGeralForm(prev => ({ ...prev, desconto_padrao_pct: parseFloat(e.target.value) || 0 }))}
+                    placeholder="0" className="h-8 text-sm" />
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -499,8 +576,79 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           </section>
           </div>{/* end coluna direita */}
           </div>{/* end grid 2 colunas */}
+
+          {/* Descontos por Item */}
+          <section className="space-y-2 border-t border-border pt-4">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Percent className="h-4 w-4 text-muted-foreground" />Descontos por Item</p>
+              <span className="text-[11px] text-muted-foreground">(sobrescreve o desconto geral de {faccao.desconto_padrao_pct}%)</span>
+              <div className="relative flex-1 max-w-xs">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input placeholder="Buscar produto..." value={buscaDesconto} onChange={e => setBuscaDesconto(e.target.value)} className="pl-7 h-7 text-xs" />
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 ml-auto shrink-0" onClick={abrirNovoDesconto} disabled={produtosParaDesconto.length === 0}>
+                <Plus className="h-3 w-3" />Adicionar
+              </Button>
+            </div>
+            {loadingDescontos ? (
+              <div className="flex justify-center py-5"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+            ) : descontosFiltrados.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
+                {buscaDesconto ? 'Nenhum resultado' : 'Nenhum desconto específico por item — usando geral'}
+              </p>
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="grid grid-cols-[1fr_120px_44px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Produto</span><span className="text-right">Desconto</span><span />
+                </div>
+                {descontosFiltrados.map((d, idx) => {
+                  const produto = todosProdutos.find(p => p.id === d.item_id)
+                  return (
+                    <div key={d.id} className={cn('grid grid-cols-[1fr_120px_44px] gap-3 items-center px-4 py-2.5', idx < descontosFiltrados.length - 1 && 'border-b border-border/40')}>
+                      <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
+                      <span className="text-sm text-right tabular-nums text-emerald-400">{d.desconto_pct}%</span>
+                      <div className="flex gap-0.5">
+                        <button onClick={() => abrirEditarDesconto(d)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                        <button onClick={() => handleRemoverDesconto(d)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </DialogContent>
+
+      {/* Modal: Desconto por Item */}
+      <Dialog open={!!descontoItemDialog} onOpenChange={v => !v && setDescontoItemDialog(null)}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+          <DialogHeader><DialogTitle className="text-sm">{descontoItemDialog?.item ? 'Editar Desconto' : 'Novo Desconto por Item'}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-1">
+            {!descontoItemDialog?.item && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Produto</Label>
+                <Select value={descontoForm.item_id || '_none'} onValueChange={v => setDescontoForm(f => ({ ...f, item_id: v === '_none' ? '' : v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>{produtosParaDesconto.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
+            {descontoItemDialog?.item && (
+              <p className="text-sm font-medium">{todosProdutos.find(p => p.id === descontoItemDialog.item!.item_id)?.nome}</p>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Desconto (%)</Label>
+              <Input type="number" min="0" max="100" placeholder="Ex: 15" value={descontoForm.desconto_pct}
+                onChange={e => setDescontoForm(f => ({ ...f, desconto_pct: e.target.value }))} className="h-8 text-sm" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDescontoItemDialog(null)}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarDesconto} disabled={descontoSaving}>{descontoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Selecionar produto */}
       <Dialog open={addingPreco} onOpenChange={v => { if (!v) { setAddingPreco(false); setNewItemId('') } }}>
