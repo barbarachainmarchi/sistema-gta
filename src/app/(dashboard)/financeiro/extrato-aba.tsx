@@ -427,10 +427,12 @@ export function ExtratoAba({
                               <Pencil className="h-3 w-3" />
                             </button>
                           )}
-                          <button onClick={() => setDeleteId(l.id)}
-                            className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                          {!isVenda && (
+                            <button onClick={() => setDeleteId(l.id)}
+                              className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

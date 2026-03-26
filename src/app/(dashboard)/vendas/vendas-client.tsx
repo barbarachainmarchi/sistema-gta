@@ -11,12 +11,11 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
-  Plus, X, Edit2, Truck, Trash2, ChevronDown, ChevronUp,
+  Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy,
 } from 'lucide-react'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
-import { RelatorioAba } from './relatorio-aba'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +32,8 @@ type Venda = {
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null; entregue_em: string | null
   estoque_descontado: boolean; created_at: string; itens: VendaItem[]
+  cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
+  cancelamento_solicitado_por: string | null
 }
 type Faccao = { id: string; nome: string; sigla: string | null; telefone: string | null; desconto_padrao_pct: number }
 type Loja   = { id: string; nome: string }
@@ -143,19 +144,22 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
-function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, podeExcluirConcluida,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onDelete }: {
+function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
   receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, Record<string, number>>; itemMap: Record<string, ItemSimples>
-  podeEditar: boolean; podeExcluirConcluida: boolean
+  podeEditar: boolean; isOwner: boolean
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
-  onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void; onDelete: (id: string) => void
+  onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void
+  onSolicitarCancelamento: (id: string, motivo: string) => Promise<void>
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [cancelamentoAberto, setCancelamentoAberto] = useState(false)
+  const [motivoCancelamento, setMotivoCancelamento] = useState('')
+  const [salvandoCanc, setSalvandoCanc] = useState(false)
   const [compartilhando, setCompartilhando] = useState(false)
   const [linkCopiado, setLinkCopiado] = useState(false)
   const [linkImagem, setLinkImagem] = useState<string | null>(null)
@@ -311,30 +315,49 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
           {venda.status === 'cancelado' && (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onStatusChange(venda.id, 'fabricando')}>Reabrir</Button>
           )}
-          <div className="ml-auto flex items-center gap-1">
-            {!confirmDelete && (
+          <div className="ml-auto flex items-center gap-1 flex-wrap justify-end">
+            {!cancelamentoAberto && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                 onClick={handleCompartilhar} disabled={compartilhando} title="Exportar para imgbb">
                 {compartilhando ? <Loader2 className="h-3 w-3 animate-spin" /> : linkCopiado ? <Copy className="h-3 w-3 text-green-400" /> : <ImageUp className="h-3 w-3" />}
               </Button>
             )}
-            {ativo && !confirmDelete && (
+            {ativo && !cancelamentoAberto && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onEdit(venda)}>
                 <Edit2 className="h-3 w-3" />
               </Button>
             )}
-            {(ativo || (entregue && podeExcluirConcluida)) && !confirmDelete && (
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
-                onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="h-3 w-3" />
+            {isOwner && ativo && !venda.cancelamento_solicitado && !cancelamentoAberto && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2 text-muted-foreground hover:text-orange-400"
+                onClick={() => setCancelamentoAberto(true)}>
+                <X className="h-3 w-3 mr-1" />Cancelar
               </Button>
             )}
-            {confirmDelete && (
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2"
-                  onClick={() => setConfirmDelete(false)}>Não</Button>
-                <Button size="sm" className="h-7 text-xs px-2.5 bg-red-500/80 hover:bg-red-500 text-white border-0"
-                  onClick={() => onDelete(venda.id)}>Excluir</Button>
+            {venda.cancelamento_solicitado && !cancelamentoAberto && (
+              <span className="text-[10px] text-orange-400 font-medium px-1" title={venda.cancelamento_motivo ?? ''}>
+                Canc. solicitado
+              </span>
+            )}
+            {cancelamentoAberto && (
+              <div className="flex items-center gap-1 w-full mt-1">
+                <input
+                  type="text" placeholder="Motivo do cancelamento..."
+                  value={motivoCancelamento} onChange={e => setMotivoCancelamento(e.target.value)}
+                  className="flex-1 h-7 text-xs rounded-md border border-input bg-background px-2 text-foreground min-w-0"
+                />
+                <Button size="sm" className="h-7 text-xs px-2.5 bg-orange-500/80 hover:bg-orange-500 text-white border-0"
+                  disabled={salvandoCanc || !motivoCancelamento.trim()}
+                  onClick={async () => {
+                    setSalvandoCanc(true)
+                    await onSolicitarCancelamento(venda.id, motivoCancelamento.trim())
+                    setSalvandoCanc(false)
+                    setCancelamentoAberto(false)
+                    setMotivoCancelamento('')
+                  }}>
+                  {salvandoCanc ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Solicitar'}
+                </Button>
+                <button onClick={() => { setCancelamentoAberto(false); setMotivoCancelamento('') }}
+                  className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
               </div>
             )}
           </div>
@@ -996,7 +1019,7 @@ function OrderDialog({
 export function VendasClient({
   userId, userNome, vendas: vendasIniciais, faccoes, lojas, allItems,
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
-  meuFaccao, meuLoja, filtroInicial, podeEditar, podeExcluirConcluida, ocultarConcluidosDias,
+  meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1110,6 +1133,11 @@ export function VendasClient({
     const totalVenda = subtotal * (1 - venda.desconto_pct / 100)
     if (totalVenda <= 0) return
 
+    // Idempotência: não criar duplicata se já existe lançamento para esta venda
+    const { data: jaExiste } = await sb().from('financeiro_lancamentos')
+      .select('id').eq('venda_id', venda.id).maybeSingle()
+    if (jaExiste) return
+
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
     let contaId: string | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1159,11 +1187,41 @@ export function VendasClient({
     }
   }
 
-  async function handleDelete(id: string) {
-    const { error } = await sb().from('vendas').delete().eq('id', id)
-    if (error) { toast.error('Erro ao excluir pedido'); return }
-    setVendas(prev => prev.filter(v => v.id !== id))
-    toast.success('Pedido excluído')
+  async function removerLancamentosVenda(vendaId: string) {
+    // Buscar e remover lançamentos, revertendo saldo das contas
+    const { data: lancs } = await sb().from('financeiro_lancamentos')
+      .select('id, conta_id, valor, tipo_dinheiro').eq('venda_id', vendaId)
+    if (!lancs || lancs.length === 0) return
+    for (const lanc of lancs as { id: string; conta_id: string | null; valor: number; tipo_dinheiro: string | null }[]) {
+      await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
+      if (lanc.conta_id) {
+        const { data: conta } = await sb().from('financeiro_contas')
+          .select('saldo_sujo, saldo_limpo').eq('id', lanc.conta_id).single()
+        if (conta) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const c = conta as any
+          const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
+          await sb().from('financeiro_contas')
+            .update({ [campo]: Math.max(0, (c[campo] ?? 0) - lanc.valor) })
+            .eq('id', lanc.conta_id)
+        }
+      }
+    }
+  }
+
+  async function handleSolicitarCancelamento(id: string, motivo: string) {
+    const { error } = await sb().from('vendas').update({
+      cancelamento_solicitado: true,
+      cancelamento_motivo: motivo,
+      cancelamento_solicitado_por: userId,
+      cancelamento_solicitado_em: new Date().toISOString(),
+    }).eq('id', id)
+    if (error) { toast.error('Erro ao solicitar cancelamento'); return }
+    setVendas(prev => prev.map(v => v.id === id ? {
+      ...v, cancelamento_solicitado: true, cancelamento_motivo: motivo,
+      cancelamento_solicitado_por: userId,
+    } : v))
+    toast.success('Cancelamento solicitado!')
   }
 
   async function handleDesfazerEntrega(id: string) {
@@ -1171,6 +1229,8 @@ export function VendasClient({
       status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null,
     }).eq('id', id)
     if (error) { toast.error('Erro ao desfazer entrega'); return }
+    // Remover lançamento financeiro e reverter saldo — nova entrega vai recriar corretamente
+    await removerLancamentosVenda(id)
     setVendas(prev => prev.map(v => v.id === id
       ? { ...v, status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null } : v))
     toast.success('Entrega desfeita — voltou para Pronto')
@@ -1208,14 +1268,13 @@ export function VendasClient({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Tabs: Ativos | Encomendas | Concluídos | Relatório */}
+      {/* Tabs: Ativos | Encomendas | Concluídos */}
       <div className="px-6 pt-3 border-b border-border shrink-0">
         <div className="flex gap-0 -mb-px items-end">
           {([
             ['todos',     'Ativos'],
             ['encomenda', 'Encomendas'],
             ['entregue',  'Concluídos'],
-            ['relatorio', 'Relatório'],
           ] as const).map(([key, label]) => (
             <button key={key} onClick={() => setFiltro(key)}
               className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
@@ -1231,7 +1290,7 @@ export function VendasClient({
               )}
             </button>
           ))}
-          {podeEditar && filtro !== 'relatorio' && (
+          {podeEditar && (
             <Button size="sm" className="h-8 text-xs gap-1 ml-auto mb-1" onClick={() => { setEditando(null); setFormOpen(true) }}>
               <Plus className="h-3.5 w-3.5" />Novo Pedido
             </Button>
@@ -1239,9 +1298,7 @@ export function VendasClient({
         </div>
       </div>
 
-      {filtro === 'relatorio' ? (
-        <RelatorioAba vendas={vendas} faccoes={faccoes} lojas={lojas} allItems={allItems} />
-      ) : (
+      {(
         <div className="flex-1 overflow-y-auto p-6">
           {vendasFiltradas.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -1273,12 +1330,12 @@ export function VendasClient({
                     faccoes={faccoes}
                     lojas={lojas}
                     receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
-                    podeEditar={podeEditar} podeExcluirConcluida={podeExcluirConcluida}
+                    podeEditar={podeEditar} isOwner={venda.criado_por === userId}
                     onStatusChange={handleStatusChange}
                     onEntregar={handleEntregar}
                     onDesfazerEntrega={handleDesfazerEntrega}
                     onEdit={v => { setEditando(v); setFormOpen(true) }}
-                    onDelete={handleDelete}
+                    onSolicitarCancelamento={handleSolicitarCancelamento}
                   />
                 ))}
               </div>

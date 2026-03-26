@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import {
-  Search, ShoppingCart, Package, CheckSquare,
+  Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
   ChevronDown, Zap, Activity, HardDriveDownload
@@ -36,9 +36,9 @@ const navGroups = [
     key: 'vendas',
     label: 'Vendas',
     items: [
-      { href: '/vendas',            label: 'Vendas',       icon: ShoppingCart, perm: 'vendas' },
-      { href: '/encomendas',        label: 'Encomendas',   icon: Package,      perm: 'encomendas' },
-      { href: '/vendas-concluidas', label: 'Concluídas',   icon: CheckSquare,  perm: 'vendas_concluidas' },
+      { href: '/vendas',                  label: 'Vendas',         icon: ShoppingCart, perm: 'vendas', exact: true },
+      { href: '/vendas/relatorios',       label: 'Relatórios',     icon: BarChart2,    perm: 'vendas' },
+      { href: '/vendas/minha-carteira',   label: 'Minha Carteira', icon: Wallet,       perm: 'vendas' },
     ],
   },
   {
@@ -171,7 +171,9 @@ export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nome
                 <ul className="mt-0.5 space-y-0.5 pb-1">
                   {group.items.map((item) => {
                     const Icon = item.icon
-                    const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                    const isActive = 'exact' in item && item.exact
+                      ? pathname === item.href
+                      : pathname === item.href || pathname.startsWith(item.href + '/')
 
                     return (
                       <li key={item.href}>

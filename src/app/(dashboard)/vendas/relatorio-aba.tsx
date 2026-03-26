@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { Trash2, Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 
 type VendaItem = { id: string; venda_id: string; item_id: string | null; item_nome: string; quantidade: number; preco_unit: number; origem: 'fabricar' | 'estoque' }
-type Venda = { id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: string; data_encomenda: string | null; created_at: string; entregue_em: string | null; criado_por_nome: string | null; entregue_por_nome: string | null; itens: VendaItem[] }
+type Venda = { id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: string; data_encomenda: string | null; created_at: string; entregue_em: string | null; criado_por_nome: string | null; entregue_por_nome: string | null; itens: VendaItem[]; cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null }
 type Faccao = { id: string; nome: string }
 type Loja = { id: string; nome: string }
 type ItemSimples = { id: string; nome: string }
@@ -15,6 +20,7 @@ interface Props {
   faccoes: Faccao[]
   lojas: Loja[]
   allItems: ItemSimples[]
+  podeExcluirConcluida?: boolean
 }
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` }
@@ -24,13 +30,52 @@ function fmtData(s: string | null) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
-export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
+export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExcluirConcluida }: Props) {
+  const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
+
+  const [vendas, setVendas] = useState<Venda[]>(vendasIniciais)
   const [empresaFiltro, setEmpresaFiltro] = useState<string>('todos')
   const [tipoDinFiltro, setTipoDinFiltro] = useState<'todos' | 'sujo' | 'limpo'>('todos')
   const [busca, setBusca] = useState('')
   const [dataDE, setDataDE] = useState('')
   const [dataATE, setDataATE] = useState('')
   const [aba, setAba] = useState<'itens' | 'vendas'>('itens')
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deletando, setDeletando] = useState(false)
+
+  async function removerLancamentosVenda(vendaId: string) {
+    const { data: lancs } = await sb().from('financeiro_lancamentos')
+      .select('id, conta_id, valor, tipo_dinheiro').eq('venda_id', vendaId)
+    if (!lancs || lancs.length === 0) return
+    for (const lanc of lancs as { id: string; conta_id: string | null; valor: number; tipo_dinheiro: string | null }[]) {
+      await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
+      if (lanc.conta_id) {
+        const { data: conta } = await sb().from('financeiro_contas')
+          .select('saldo_sujo, saldo_limpo').eq('id', lanc.conta_id).single()
+        if (conta) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const c = conta as any
+          const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
+          await sb().from('financeiro_contas')
+            .update({ [campo]: Math.max(0, (c[campo] ?? 0) - lanc.valor) })
+            .eq('id', lanc.conta_id)
+        }
+      }
+    }
+  }
+
+  async function handleDelete(vendaId: string) {
+    setDeletando(true)
+    try {
+      await removerLancamentosVenda(vendaId)
+      const { error } = await sb().from('vendas').delete().eq('id', vendaId)
+      if (error) { toast.error('Erro ao excluir'); return }
+      setVendas(prev => prev.filter(v => v.id !== vendaId))
+      toast.success('Venda excluída do sistema')
+    } catch { toast.error('Erro ao excluir') }
+    finally { setDeletando(false); setDeleteConfirmId(null) }
+  }
 
   // Only entregues for the report
   const vendasEntregues = useMemo(() => vendas.filter(v => v.status === 'entregue'), [vendas])
@@ -189,6 +234,7 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
                     <th className="px-4 py-2 text-right">Subtotal</th>
                     <th className="px-4 py-2 text-right">Total</th>
                     <th className="px-4 py-2 text-center">Tipo</th>
+                    {podeExcluirConcluida && <th className="px-4 py-2 w-10" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
@@ -202,7 +248,7 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
                     const sub = v.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
                     const total = sub * (1 - v.desconto_pct / 100)
                     return (
-                      <tr key={v.id} className="hover:bg-white/[0.02]">
+                      <tr key={v.id} className={cn('hover:bg-white/[0.02] group', v.cancelamento_solicitado && 'bg-orange-500/[0.03]')}>
                         <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">{fmtData(v.entregue_em ?? v.created_at)}</td>
                         <td className="px-4 py-2.5">
                           {empresa ? (
@@ -211,7 +257,14 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
                             </span>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 font-medium text-sm">{v.cliente_nome}</td>
+                        <td className="px-4 py-2.5 font-medium text-sm">
+                          <span>{v.cliente_nome}</span>
+                          {v.cancelamento_solicitado && (
+                            <span className="ml-2 text-[10px] text-orange-400 font-medium" title={v.cancelamento_motivo ?? ''}>
+                              ⚠ Canc. solicitado
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 text-muted-foreground text-xs">{v.entregue_por_nome ?? '—'}</td>
                         <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[200px]">
                           <span className="truncate block">{v.itens.map(it => `${it.quantidade}× ${it.item_nome}`).join(', ')}</span>
@@ -227,6 +280,14 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
                             {v.tipo_dinheiro === 'sujo' ? 'S' : 'L'}
                           </span>
                         </td>
+                        {podeExcluirConcluida && (
+                          <td className="px-4 py-2.5 text-center">
+                            <button onClick={() => setDeleteConfirmId(v.id)}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -236,6 +297,29 @@ export function RelatorioAba({ vendas, faccoes, lojas }: Props) {
           </div>
         )}
       </div>
+
+      {/* Confirm delete */}
+      <Dialog open={!!deleteConfirmId} onOpenChange={o => { if (!o && !deletando) setDeleteConfirmId(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Excluir venda do sistema?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Esta ação remove a venda e todos os lançamentos financeiros vinculados, revertendo o saldo. Não pode ser desfeita.</p>
+          {(() => {
+            const v = vendas.find(x => x.id === deleteConfirmId)
+            return v?.cancelamento_motivo ? (
+              <p className="text-xs text-orange-400 bg-orange-500/10 rounded p-2">
+                Motivo solicitado: {v.cancelamento_motivo}
+              </p>
+            ) : null
+          })()}
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)} disabled={deletando}>Cancelar</Button>
+            <Button variant="destructive" size="sm" disabled={deletando}
+              onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>
+              {deletando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Excluir'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
