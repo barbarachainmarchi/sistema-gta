@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { Trash2, Loader2 } from 'lucide-react'
+import { Trash2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 
@@ -43,6 +43,10 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
   const [aba, setAba] = useState<'itens' | 'vendas'>('itens')
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletando, setDeletando] = useState(false)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  function toggleRow(id: string) {
+    setExpandedRows(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
 
   async function removerLancamentosVenda(vendaId: string) {
     const { data: lancs } = await sb().from('financeiro_lancamentos')
@@ -247,48 +251,74 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
                     const empresaTipo = v.faccao_id ? 'faccao' : v.loja_id ? 'loja' : null
                     const sub = v.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
                     const total = sub * (1 - v.desconto_pct / 100)
+                    const expanded = expandedRows.has(v.id)
                     return (
-                      <tr key={v.id} className={cn('hover:bg-white/[0.02] group', v.cancelamento_solicitado && 'bg-orange-500/[0.03]')}>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">{fmtData(v.entregue_em ?? v.created_at)}</td>
-                        <td className="px-4 py-2.5">
-                          {empresa ? (
-                            <span className={cn('text-xs font-medium', empresaTipo === 'loja' ? 'text-blue-400' : 'text-primary/80')}>
-                              {empresa}
-                            </span>
-                          ) : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                        <td className="px-4 py-2.5 font-medium text-sm">
-                          <span>{v.cliente_nome}</span>
-                          {v.cancelamento_solicitado && (
-                            <span className="ml-2 text-[10px] text-orange-400 font-medium" title={v.cancelamento_motivo ?? ''}>
-                              ⚠ Canc. solicitado
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs">{v.entregue_por_nome ?? '—'}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[200px]">
-                          <span className="truncate block">{v.itens.map(it => `${it.quantidade}× ${it.item_nome}`).join(', ')}</span>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">
-                          {v.desconto_pct > 0 ? <span className="line-through">{fmt(sub)}</span> : fmt(sub)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(total)}</td>
-                        <td className="px-4 py-2.5 text-center">
-                          <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
-                            v.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
-                          )}>
-                            {v.tipo_dinheiro === 'sujo' ? 'S' : 'L'}
-                          </span>
-                        </td>
-                        {podeExcluirConcluida && (
-                          <td className="px-4 py-2.5 text-center">
-                            <button onClick={() => setDeleteConfirmId(v.id)}
-                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                      <>
+                        <tr key={v.id} className={cn('hover:bg-white/[0.02] group cursor-pointer', v.cancelamento_solicitado && 'bg-orange-500/[0.03]')}
+                          onClick={() => toggleRow(v.id)}>
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">{fmtData(v.entregue_em ?? v.created_at)}</td>
+                          <td className="px-4 py-2.5">
+                            {empresa ? (
+                              <span className={cn('text-xs font-medium', empresaTipo === 'loja' ? 'text-blue-400' : 'text-primary/80')}>
+                                {empresa}
+                              </span>
+                            ) : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
+                          <td className="px-4 py-2.5 font-medium text-sm">
+                            <span>{v.cliente_nome}</span>
+                            {v.cancelamento_solicitado && (
+                              <span className="ml-2 text-[10px] text-orange-400 font-medium" title={v.cancelamento_motivo ?? ''}>
+                                ⚠ Canc. solicitado
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs">{v.entregue_por_nome ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                            <div className="flex items-center gap-1">
+                              {expanded
+                                ? <ChevronDown className="h-3 w-3 shrink-0 text-primary" />
+                                : <ChevronRight className="h-3 w-3 shrink-0" />}
+                              <span className="text-[10px]">{v.itens.length} item{v.itens.length !== 1 ? 's' : ''}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">
+                            {v.desconto_pct > 0 ? <span className="line-through">{fmt(sub)}</span> : fmt(sub)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(total)}</td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                              v.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
+                            )}>
+                              {v.tipo_dinheiro === 'sujo' ? 'S' : 'L'}
+                            </span>
+                          </td>
+                          {podeExcluirConcluida && (
+                            <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => setDeleteConfirmId(v.id)}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                        {expanded && (
+                          <tr key={v.id + '-itens'} className="bg-white/[0.01]">
+                            <td colSpan={podeExcluirConcluida ? 9 : 8} className="px-8 pb-2.5 pt-0">
+                              <div className="grid grid-cols-[1fr_48px_72px_72px] gap-x-3 text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wide pb-1 border-b border-border/20">
+                                <span>Item</span><span className="text-right">Qtd</span><span className="text-right">Unitário</span><span className="text-right">Total</span>
+                              </div>
+                              {v.itens.map(it => (
+                                <div key={it.id} className="grid grid-cols-[1fr_48px_72px_72px] gap-x-3 items-center py-0.5">
+                                  <span className="text-xs truncate">{it.item_nome}</span>
+                                  <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
+                                  <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
+                                  <span className="text-xs text-right tabular-nums font-medium">{fmt(it.quantidade * it.preco_unit)}</span>
+                                </div>
+                              ))}
+                            </td>
+                          </tr>
                         )}
-                      </tr>
+                      </>
                     )
                   })}
                 </tbody>

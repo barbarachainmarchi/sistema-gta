@@ -526,23 +526,21 @@ export function CalculadoraClient({ userId, items, precosVigentes, lojas, lojaPr
                 const pesoUnit = ing.ingrediente?.peso
 
                 return (
-                  <div key={ing.ingrediente_id} className="px-4 py-3 space-y-1.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{ing.totalQty}×</span>
+                  <div key={ing.ingrediente_id} className="px-4 py-2 space-y-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="text-xs font-medium truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{ing.totalQty}×</span>
+                        {pesoUnit != null && pesoUnit > 0 && (
+                          <span className="text-[10px] text-muted-foreground/60 shrink-0">{fmtKg(ing.totalPeso)}</span>
+                        )}
                       </div>
-                      <span className={cn('text-sm tabular-nums font-medium shrink-0',
+                      <span className={cn('text-xs tabular-nums font-medium shrink-0',
                         subtotal != null ? 'text-foreground' : 'text-muted-foreground'
                       )}>
                         {subtotal != null ? fmt(subtotal) : '—'}
                       </span>
                     </div>
-                    {pesoUnit != null && pesoUnit > 0 && (
-                      <div className="text-[10px] text-muted-foreground">
-                        {fmtKg(ing.totalPeso)} · {ing.totalQty} × {fmtKg(pesoUnit)}
-                      </div>
-                    )}
                     {ing.lojasDisponiveis.length > 0 && (
                       <Select
                         value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
@@ -550,7 +548,7 @@ export function CalculadoraClient({ userId, items, precosVigentes, lojas, lojaPr
                           ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v
                         }))}
                       >
-                        <SelectTrigger className="h-7 text-xs">
+                        <SelectTrigger className="h-6 text-[10px] text-muted-foreground border-0 shadow-none px-0 w-auto gap-1 hover:text-foreground">
                           <SelectValue placeholder="— loja —" />
                         </SelectTrigger>
                         <SelectContent>

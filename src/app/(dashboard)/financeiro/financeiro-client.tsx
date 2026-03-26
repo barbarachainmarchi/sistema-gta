@@ -8,7 +8,6 @@ import { BancoAba } from './banco-aba'
 import { TransferenciasAba } from './transferencias-aba'
 import { LavagemAba } from './lavagem-aba'
 import { ContasAba } from './contas-aba'
-import { MinhaCarteiraAba } from './minha-carteira-aba'
 
 // ── Tipos exportados ──────────────────────────────────────────────────────────
 
@@ -53,12 +52,11 @@ export type SbClient = () => ReturnType<typeof createClient>
 
 // ── Tipos da aba ──────────────────────────────────────────────────────────────
 
-type Aba = 'extrato' | 'banco' | 'minha-carteira' | 'transferencias' | 'lavagem' | 'contas'
+type Aba = 'extrato' | 'banco' | 'transferencias' | 'lavagem' | 'contas'
 
 const ABAS: [Aba, string][] = [
   ['extrato',          'Extrato'],
   ['banco',            'Banco'],
-  ['minha-carteira',   'Minha Carteira'],
   ['transferencias',   'Transferências'],
   ['lavagem',          'Lavagem'],
   ['contas',           'Cadastro de Contas'],
@@ -134,12 +132,6 @@ export function FinanceiroClient({
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'banco' && 'hidden')}>
         <BancoAba contas={contas} lancamentos={lancamentos} />
-      </div>
-      <div className={cn('flex-1 overflow-hidden', aba !== 'minha-carteira' && 'hidden')}>
-        <MinhaCarteiraAba
-          userId={userId} userNome={userNome ?? null} contas={contas} setContas={setContas}
-          lancamentos={lancamentos} setLancamentos={setLancamentos} sb={sb}
-        />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'transferencias' && 'hidden')}>
         <TransferenciasAba

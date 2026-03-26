@@ -687,7 +687,7 @@ function OrderDialog({
                   onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
                   onFocus={() => setMembroAberta(true)}
                   onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
-                  placeholder={form.faccao_id ? 'Buscar na facção...' : 'Nome da pessoa...'}
+                  placeholder={form.faccao_id ? 'Nome ou vulgo (facção)...' : form.loja_id ? 'Nome ou vulgo...' : 'Nome ou vulgo...'}
                   className="h-8 text-sm" />
                 {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
                   <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
