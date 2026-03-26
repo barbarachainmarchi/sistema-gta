@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, Minus, Trash2, Edit2, Check, X, Users, ArrowLeft,
-  ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye
+  ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye, XCircle,
 } from 'lucide-react'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 
@@ -162,6 +162,11 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   // Deletar cotação
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [deletando, setDeletando] = useState(false)
+
+  // Solicitar cancelamento (quando já finalizada)
+  const [solicitarCancelOpen, setSolicitarCancelOpen] = useState(false)
+  const [motivoCancel, setMotivoCancel] = useState('')
+  const [enviandoSolicit, setEnviandoSolicit] = useState(false)
 
   // Add pessoa
   const [novaPessoaOpen, setNovaPessoaOpen] = useState(false)
@@ -341,6 +346,23 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     setCotacao(c => ({ ...c, status: 'finalizada' })); toast.success('Cotação finalizada')
   }
 
+  async function handleSolicitarCancelamento() {
+    setEnviandoSolicit(true)
+    const { error } = await sb().from('sistema_solicitacoes').insert({
+      tipo: 'cancelamento_cotacao',
+      referencia_id: cotacao.id,
+      referencia_tipo: 'cotacao',
+      descricao: `Cancelamento: ${cotacao.fornecedor_nome}`,
+      solicitante_id: userId,
+      solicitante_nome: userNome,
+      dados: { fornecedor_nome: cotacao.fornecedor_nome, motivo: motivoCancel.trim() || null, status_atual: cotacao.status },
+    })
+    setEnviandoSolicit(false)
+    if (error) { toast.error('Erro ao enviar solicitação'); return }
+    setSolicitarCancelOpen(false); setMotivoCancel('')
+    toast.success('Solicitação enviada! Aguarde aprovação de um administrador.')
+  }
+
   async function handleDeletar() {
     setDeletando(true)
     // Deletar itens e pessoas manualmente (caso o cascade não esteja ativo via RLS)
@@ -397,9 +419,14 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                 <Check className="h-3 w-3 mr-1" />Finalizar
               </Button>
             )}
-            {podeEditar && (
+            {podeEditar && cotacao.status === 'rascunho' && (
               <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setConfirmDeleteOpen(true)}>
                 <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+            {podeEditar && cotacao.status !== 'rascunho' && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={() => setSolicitarCancelOpen(true)}>
+                <XCircle className="h-3 w-3" />Solicitar cancelamento
               </Button>
             )}
           </div>
@@ -812,6 +839,29 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
             <Button variant="outline" size="sm" onClick={() => setConfirmDeleteOpen(false)}>Cancelar</Button>
             <Button variant="destructive" size="sm" onClick={handleDeletar} disabled={deletando}>
               {deletando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Excluir'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Solicitar cancelamento (finalizada) ── */}
+      <Dialog open={solicitarCancelOpen} onOpenChange={v => { if (!v) { setSolicitarCancelOpen(false); setMotivoCancel('') } }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm">
+          <DialogHeader><DialogTitle className="text-sm">Solicitar cancelamento</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Esta cotação já está <strong>{cotacao.status}</strong>. Um administrador precisará aprovar o cancelamento.</p>
+          <div className="space-y-1">
+            <Label className="text-xs">Motivo (opcional)</Label>
+            <Input
+              placeholder="Por que deseja cancelar?"
+              value={motivoCancel}
+              onChange={e => setMotivoCancel(e.target.value)}
+              className="text-xs"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setSolicitarCancelOpen(false); setMotivoCancel('') }}>Voltar</Button>
+            <Button size="sm" onClick={handleSolicitarCancelamento} disabled={enviandoSolicit}>
+              {enviandoSolicit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Enviar solicitação'}
             </Button>
           </div>
         </DialogContent>

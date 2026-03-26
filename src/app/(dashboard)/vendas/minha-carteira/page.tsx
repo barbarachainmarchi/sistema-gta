@@ -38,6 +38,21 @@ export default async function MinhaCarteiraPage() {
     meuContaId = contaMembro?.id ?? null
   }
 
+  // Transferências pendentes destinadas à minha conta
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let transferPendentes: any[] = []
+  if (meuContaId) {
+    const { data: solData } = await supabase
+      .from('sistema_solicitacoes')
+      .select('id, solicitante_nome, descricao, dados, created_at')
+      .eq('tipo', 'transferencia_financeiro')
+      .eq('status', 'pendente')
+      .neq('solicitante_id', user.id)
+    const meuId = meuContaId
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    transferPendentes = (solData ?? []).filter((s: any) => s.dados?.conta_destino_id === meuId)
+  }
+
   // Filtrar: sem perm → só próprias vendas; com perm → todas
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
   for (const it of vendaItensData ?? []) {
@@ -67,6 +82,7 @@ export default async function MinhaCarteiraPage() {
         contas={contasData ?? []}
         podeExcluirConcluida={podeExcluirConcluida}
         meuContaId={meuContaId}
+        transferPendentesIniciais={transferPendentes}
       />
     </>
   )

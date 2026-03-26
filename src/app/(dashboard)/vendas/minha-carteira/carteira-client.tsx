@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
-  ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2, Trash2, Users, ChevronDown, ChevronRight,
+  ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2, Trash2, Users, ChevronDown, ChevronRight, Clock, Check,
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,18 @@ type Conta = {
   id: string; nome: string; tipo: string
   saldo_sujo: number; saldo_limpo: number; status: 'ativo' | 'inativo'
 }
+type TransferPendente = {
+  id: string
+  solicitante_nome: string | null
+  descricao: string | null
+  dados: {
+    lancamento_id: string; venda_id: string
+    conta_origem_id: string; conta_destino_id: string
+    valor: number; tipo_dinheiro: 'sujo' | 'limpo'
+    descricao: string
+  } | null
+  created_at: string
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -53,11 +65,12 @@ interface Props {
   contas: Conta[]
   podeExcluirConcluida: boolean
   meuContaId: string | null
+  transferPendentesIniciais: TransferPendente[]
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lancamentos: lancsIniciais, contas: contasIniciais, podeExcluirConcluida, meuContaId }: Props) {
+export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lancamentos: lancsIniciais, contas: contasIniciais, podeExcluirConcluida, meuContaId, transferPendentesIniciais }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -86,6 +99,10 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   const [deletando, setDeletando] = useState(false)
 
   const [salvando, setSalvando] = useState(false)
+
+  // Transferências pendentes para mim
+  const [transferPendentes, setTransferPendentes] = useState<TransferPendente[]>(transferPendentesIniciais)
+  const [aceitando, setAceitando] = useState<string | null>(null)
 
   const contaMap = useMemo(() => Object.fromEntries(contas.map(c => [c.id, c])), [contas])
   const lancMap = useMemo(() => {
@@ -176,13 +193,38 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     setLancamentos(prev => prev.map(l => l.id === lanc.id ? { ...l, conta_id: newContaId } : l))
   }
 
+  async function criarSolicitacaoTransfer(vendaId: string, contaDestinoId: string) {
+    const lanc = lancMap[vendaId]
+    if (!lanc) throw new Error('Lançamento não encontrado')
+    const venda = vendas.find(v => v.id === vendaId)
+    const { data, error } = await sb().from('sistema_solicitacoes').insert({
+      tipo: 'transferencia_financeiro',
+      referencia_id: lanc.id,
+      referencia_tipo: 'financeiro_lancamento',
+      descricao: `Repasse: ${venda?.cliente_nome ?? 'Venda'} → ${contaMap[contaDestinoId]?.nome ?? 'conta'}`,
+      solicitante_id: userId,
+      solicitante_nome: userNome,
+      dados: {
+        lancamento_id: lanc.id,
+        venda_id: vendaId,
+        conta_origem_id: lanc.conta_id,
+        conta_destino_id: contaDestinoId,
+        valor: lanc.valor,
+        tipo_dinheiro: lanc.tipo_dinheiro,
+        descricao: venda ? `Venda: ${venda.cliente_nome}` : 'Venda',
+      },
+    }).select().single()
+    if (error) throw new Error(error.message)
+    return data
+  }
+
   async function handleTransferirSingle(vendaId: string) {
     if (!destSingle) { toast.error('Escolha uma conta destino'); return }
     setSalvando(true)
     try {
-      await moverLancamento(vendaId, destSingle)
+      await criarSolicitacaoTransfer(vendaId, destSingle)
       setTransferindoVendaId(null); setDestSingle('')
-      toast.success(`Transferido para ${contaMap[destSingle]?.nome ?? 'conta'}`)
+      toast.success(`Solicitação enviada para ${contaMap[destSingle]?.nome ?? 'conta'} — aguardando confirmação`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
   }
@@ -192,11 +234,63 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     if (comigo.length === 0) { toast.info('Nenhuma venda com você'); return }
     setSalvando(true)
     try {
-      for (const v of comigo) await moverLancamento(v.id, destTudo)
+      for (const v of comigo) await criarSolicitacaoTransfer(v.id, destTudo)
       setTransferTudoOpen(false); setDestTudo('')
-      toast.success(`${comigo.length} venda(s) transferida(s)`)
+      toast.success(`${comigo.length} solicitação(ões) enviada(s) — aguardando confirmação`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
+  }
+
+  async function handleAceitarTransfer(sol: TransferPendente) {
+    if (!sol.dados) return
+    setAceitando(sol.id)
+    try {
+      const { lancamento_id, conta_origem_id, conta_destino_id, valor, tipo_dinheiro } = sol.dados
+      const sujo = tipo_dinheiro === 'sujo'
+      const campo = sujo ? 'saldo_sujo' : 'saldo_limpo'
+
+      // Move o lancamento
+      const { error: errLanc } = await sb().from('financeiro_lancamentos').update({ conta_id: conta_destino_id }).eq('id', lancamento_id)
+      if (errLanc) throw new Error(errLanc.message)
+
+      // Ajusta saldo origem
+      if (conta_origem_id) {
+        const orig = contaMap[conta_origem_id]
+        if (orig) {
+          await sb().from('financeiro_contas').update({ [campo]: Math.max(0, (orig[campo] ?? 0) - valor) }).eq('id', conta_origem_id)
+          setContas(prev => prev.map(c => c.id === conta_origem_id ? { ...c, [campo]: Math.max(0, (c[campo] ?? 0) - valor) } : c))
+        }
+      }
+      // Ajusta saldo destino
+      const dest = contaMap[conta_destino_id]
+      if (dest) {
+        await sb().from('financeiro_contas').update({ [campo]: (dest[campo] ?? 0) + valor }).eq('id', conta_destino_id)
+        setContas(prev => prev.map(c => c.id === conta_destino_id ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
+      }
+      // Atualiza lancamento local
+      setLancamentos(prev => prev.map(l => l.id === lancamento_id ? { ...l, conta_id: conta_destino_id } : l))
+
+      // Marca solicitação como aprovada
+      await sb().from('sistema_solicitacoes').update({
+        status: 'aprovado', aprovador_id: userId, aprovador_nome: userNome, resolved_at: new Date().toISOString(),
+      }).eq('id', sol.id)
+
+      setTransferPendentes(prev => prev.filter(s => s.id !== sol.id))
+      toast.success('Transferência aceita!')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setAceitando(null) }
+  }
+
+  async function handleRejeitarTransfer(solId: string) {
+    setAceitando(solId)
+    try {
+      await sb().from('sistema_solicitacoes').update({
+        status: 'rejeitado', aprovador_id: userId, aprovador_nome: userNome, resolved_at: new Date().toISOString(),
+      }).eq('id', solId)
+      setTransferPendentes(prev => prev.filter(s => s.id !== solId))
+      toast.success('Transferência recusada')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setAceitando(null) }
   }
 
   // ── Delete ───────────────────────────────────────────────────────────────────
@@ -240,6 +334,46 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+        {/* ── Transferências pendentes para mim ── */}
+        {transferPendentes.length > 0 && (
+          <div className="rounded-lg border border-primary/30 bg-primary/[0.03] p-4 space-y-2">
+            <p className="text-xs font-semibold flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-primary" />
+              Transferências aguardando sua confirmação ({transferPendentes.length})
+            </p>
+            {transferPendentes.map(sol => (
+              <div key={sol.id} className="flex items-center gap-3 bg-card rounded-lg border border-border px-3 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{sol.dados?.descricao ?? sol.descricao ?? '—'}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    De: <span className="text-foreground/70">{sol.solicitante_nome ?? '—'}</span>
+                    {sol.dados && (
+                      <span className={cn('ml-2 font-medium',
+                        sol.dados.tipo_dinheiro === 'sujo' ? 'text-orange-400' : 'text-emerald-400'
+                      )}>
+                        R$ {Math.abs(sol.dados.valor).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+                        {' '}{sol.dados.tipo_dinheiro === 'sujo' ? '(sujo)' : '(limpo)'}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-[11px] px-2 text-red-400 border-red-500/30"
+                    disabled={aceitando === sol.id}
+                    onClick={() => handleRejeitarTransfer(sol.id)}>
+                    {aceitando === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Recusar'}
+                  </Button>
+                  <Button size="sm" className="h-7 text-[11px] px-2 gap-1"
+                    disabled={aceitando === sol.id}
+                    onClick={() => handleAceitarTransfer(sol)}>
+                    {aceitando === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Check className="h-3 w-3" />Aceitar</>}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

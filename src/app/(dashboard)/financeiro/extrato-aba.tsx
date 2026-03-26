@@ -415,9 +415,10 @@ export function ExtratoAba({
                         {isEntrada ? '+' : isTrans ? '' : '-'}{fmt(l.total ?? l.valor)}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">
-                        {isVenda && l.responsavel_nome ? (
-                          <span className="text-foreground/80">{l.responsavel_nome}</span>
-                        ) : conta?.nome ?? '—'}
+                        <span className="text-foreground/80">{conta?.nome ?? '—'}</span>
+                        {isVenda && l.responsavel_nome && conta?.nome && l.responsavel_nome !== conta.nome && (
+                          <p className="text-[10px] opacity-50 truncate">vend: {l.responsavel_nome}</p>
+                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -427,12 +428,10 @@ export function ExtratoAba({
                               <Pencil className="h-3 w-3" />
                             </button>
                           )}
-                          {!isVenda && (
-                            <button onClick={() => setDeleteId(l.id)}
-                              className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          )}
+                          <button onClick={() => setDeleteId(l.id)}
+                            className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
                         </div>
                       </td>
                     </tr>

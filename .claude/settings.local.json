@@ -24,7 +24,8 @@
       "Bash(find \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\" -maxdepth 2 -type d)",
       "Bash(grep:*)",
       "Bash(ls -la src/app/\\\\\\(dashboard\\\\\\)/vendas/)",
-      "Bash(ls -la src/app/\\\\\\(dashboard\\\\\\)/)"
+      "Bash(ls -la src/app/\\\\\\(dashboard\\\\\\)/)",
+      "Bash(find:*)"
     ]
   }
 }

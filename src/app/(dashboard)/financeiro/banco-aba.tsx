@@ -178,7 +178,7 @@ export function BancoAba({ contas, lancamentos }: Props) {
                             {isTrans && destNome && <span className="text-muted-foreground"> → {destNome}</span>}
                           </p>
                           {l.tipo === 'venda' && l.responsavel_nome && (
-                            <p className="text-[10px] text-muted-foreground">{l.responsavel_nome}</p>
+                            <p className="text-[10px] text-muted-foreground">vend: {l.responsavel_nome}</p>
                           )}
                           {l.categoria && <p className="text-[10px] text-muted-foreground">{l.categoria}</p>}
                         </td>
