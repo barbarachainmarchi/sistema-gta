@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2,
 } from 'lucide-react'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
@@ -145,7 +145,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -154,6 +154,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
   onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void
   onSolicitarCancelamento: (id: string, motivo: string) => Promise<void>
+  onDelete: (id: string) => Promise<void>
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState(false)
@@ -327,10 +328,17 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                 <Edit2 className="h-3 w-3" />
               </Button>
             )}
-            {isOwner && ativo && !venda.cancelamento_solicitado && !cancelamentoAberto && (
+            {isOwner && venda.status === 'fabricando' && !cancelamentoAberto && (
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                title="Excluir pedido"
+                onClick={() => onDelete(venda.id)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+            {isOwner && ativo && venda.status !== 'fabricando' && !venda.cancelamento_solicitado && !cancelamentoAberto && (
               <Button variant="ghost" size="sm" className="h-7 text-xs px-2 text-muted-foreground hover:text-orange-400"
                 onClick={() => setCancelamentoAberto(true)}>
-                <X className="h-3 w-3 mr-1" />Cancelar
+                <X className="h-3 w-3 mr-1" />Solicitar cancelamento
               </Button>
             )}
             {venda.cancelamento_solicitado && !cancelamentoAberto && (
@@ -1209,7 +1217,18 @@ export function VendasClient({
     }
   }
 
+  async function handleDeletarVendaAtiva(id: string) {
+    // Só permitido quando status ainda é 'fabricando' (inicial, sem mudança)
+    const venda = vendas.find(v => v.id === id)
+    if (!venda || venda.status !== 'fabricando') return
+    const { error } = await sb().from('vendas').delete().eq('id', id)
+    if (error) { toast.error('Erro ao excluir'); return }
+    setVendas(prev => prev.filter(v => v.id !== id))
+    toast.success('Pedido excluído')
+  }
+
   async function handleSolicitarCancelamento(id: string, motivo: string) {
+    const venda = vendas.find(v => v.id === id)
     const { error } = await sb().from('vendas').update({
       cancelamento_solicitado: true,
       cancelamento_motivo: motivo,
@@ -1217,6 +1236,16 @@ export function VendasClient({
       cancelamento_solicitado_em: new Date().toISOString(),
     }).eq('id', id)
     if (error) { toast.error('Erro ao solicitar cancelamento'); return }
+    // Cria registro em sistema_solicitacoes para aparecer em Admin > Logs
+    await sb().from('sistema_solicitacoes').insert({
+      tipo: 'cancelamento_venda',
+      referencia_id: id,
+      referencia_tipo: 'venda',
+      descricao: `Cancelamento: ${venda?.cliente_nome ?? 'Venda'} (${venda?.status ?? ''})`,
+      solicitante_id: userId,
+      solicitante_nome: userNome,
+      dados: { cliente_nome: venda?.cliente_nome, status_atual: venda?.status, motivo },
+    })
     setVendas(prev => prev.map(v => v.id === id ? {
       ...v, cancelamento_solicitado: true, cancelamento_motivo: motivo,
       cancelamento_solicitado_por: userId,
@@ -1336,6 +1365,7 @@ export function VendasClient({
                     onDesfazerEntrega={handleDesfazerEntrega}
                     onEdit={v => { setEditando(v); setFormOpen(true) }}
                     onSolicitarCancelamento={handleSolicitarCancelamento}
+                    onDelete={handleDeletarVendaAtiva}
                   />
                 ))}
               </div>

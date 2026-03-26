@@ -77,6 +77,26 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
         await sb().from('cotacoes').delete().eq('id', sol.referencia_id)
       }
 
+      // Se aprovado e é cancelamento de venda → reverte lancamentos e deleta a venda
+      if (novoStatus === 'aprovado' && sol.tipo === 'cancelamento_venda' && sol.referencia_id) {
+        const vendaId = sol.referencia_id
+        const { data: lancs } = await sb().from('financeiro_lancamentos')
+          .select('id, conta_id, valor, tipo_dinheiro').eq('venda_id', vendaId)
+        for (const lanc of (lancs ?? []) as { id: string; conta_id: string | null; valor: number; tipo_dinheiro: string | null }[]) {
+          await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
+          if (lanc.conta_id) {
+            const { data: conta } = await sb().from('financeiro_contas').select('saldo_sujo, saldo_limpo').eq('id', lanc.conta_id).single()
+            if (conta) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const c = conta as any
+              const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
+              await sb().from('financeiro_contas').update({ [campo]: Math.max(0, (c[campo] ?? 0) - lanc.valor) }).eq('id', lanc.conta_id)
+            }
+          }
+        }
+        await sb().from('vendas').delete().eq('id', vendaId)
+      }
+
       setSolicitacoes(prev => prev.map(s => s.id === sol.id
         ? { ...s, status: novoStatus, aprovador_nome: userNome, resolved_at: new Date().toISOString() }
         : s

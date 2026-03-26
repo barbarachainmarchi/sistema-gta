@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS sistema_logs (
 );
 
 ALTER TABLE sistema_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "log_select" ON sistema_logs;
+DROP POLICY IF EXISTS "log_insert" ON sistema_logs;
 CREATE POLICY "log_select" ON sistema_logs FOR SELECT TO authenticated USING (true);
 CREATE POLICY "log_insert" ON sistema_logs FOR INSERT TO authenticated WITH CHECK (true);
 
@@ -33,6 +35,9 @@ CREATE TABLE IF NOT EXISTS sistema_solicitacoes (
 );
 
 ALTER TABLE sistema_solicitacoes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sol_select" ON sistema_solicitacoes;
+DROP POLICY IF EXISTS "sol_insert" ON sistema_solicitacoes;
+DROP POLICY IF EXISTS "sol_update" ON sistema_solicitacoes;
 CREATE POLICY "sol_select" ON sistema_solicitacoes FOR SELECT TO authenticated USING (true);
 CREATE POLICY "sol_insert" ON sistema_solicitacoes FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "sol_update" ON sistema_solicitacoes FOR UPDATE TO authenticated USING (true);
