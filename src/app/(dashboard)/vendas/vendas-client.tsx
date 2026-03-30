@@ -1180,40 +1180,15 @@ export function VendasClient({
       responsavel_nome: userNome,
     })
     if (error) { toast.error('Erro ao registrar no financeiro: ' + error.message); return }
-
-    // Atualizar saldo da conta
-    if (contaId) {
-      const { data: conta } = await sb().from('financeiro_contas').select('saldo_sujo, saldo_limpo').eq('id', contaId).single()
-      if (conta) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = conta as any
-        const upd = venda.tipo_dinheiro === 'sujo'
-          ? { saldo_sujo: c.saldo_sujo + totalVenda }
-          : { saldo_limpo: c.saldo_limpo + totalVenda }
-        await sb().from('financeiro_contas').update(upd).eq('id', contaId)
-      }
-    }
   }
 
   async function removerLancamentosVenda(vendaId: string) {
-    // Buscar e remover lançamentos, revertendo saldo das contas
+    // Trigger financeiro_atualizar_saldo reverte o saldo automaticamente no DELETE
     const { data: lancs } = await sb().from('financeiro_lancamentos')
-      .select('id, conta_id, valor, tipo_dinheiro').eq('venda_id', vendaId)
+      .select('id').eq('venda_id', vendaId)
     if (!lancs || lancs.length === 0) return
-    for (const lanc of lancs as { id: string; conta_id: string | null; valor: number; tipo_dinheiro: string | null }[]) {
+    for (const lanc of lancs as { id: string }[]) {
       await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
-      if (lanc.conta_id) {
-        const { data: conta } = await sb().from('financeiro_contas')
-          .select('saldo_sujo, saldo_limpo').eq('id', lanc.conta_id).single()
-        if (conta) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const c = conta as any
-          const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
-          await sb().from('financeiro_contas')
-            .update({ [campo]: Math.max(0, (c[campo] ?? 0) - lanc.valor) })
-            .eq('id', lanc.conta_id)
-        }
-      }
     }
   }
 
