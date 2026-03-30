@@ -150,24 +150,32 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
     setSalvando(true)
     try {
       const tituloFinal = titulo.trim() || `Semana ${fmtSemana(dataInicio, dataFim)}`
-      const { data: meta, error: errMeta } = await sb().from('metas_semanais').insert({
+
+      // 1. Inserir a meta
+      const { data: metaRow, error: errMeta } = await sb().from('metas_semanais').insert({
         titulo: tituloFinal, semana_inicio: dataInicio, semana_fim: dataFim,
         status: 'ativa', created_by: userId,
-      }).select('*, metas_itens_template(*), metas_membros(*, metas_membros_itens(*))').single()
+      }).select('id').single()
       if (errMeta) { toast.error(errMeta.message); return }
 
-      if (itensValidos.length) {
-        const rows = itensValidos.map((it, i) => ({
-          meta_id: meta.id, item_nome: it.item_nome.trim(),
-          quantidade: Number(it.quantidade),
-          tipo_dinheiro: it.tipo_dinheiro || null, ordem: i,
-        }))
-        const { error: errIt } = await sb().from('metas_itens_template').insert(rows)
-        if (errIt) { toast.error(errIt.message); return }
-        meta.metas_itens_template = rows.map((r, i) => ({ ...r, id: `tmp-${i}`, created_at: '' }))
-      }
+      // 2. Inserir itens do template
+      const rows = itensValidos.map((it, i) => ({
+        meta_id: metaRow.id, item_nome: it.item_nome.trim(),
+        quantidade: Number(it.quantidade),
+        tipo_dinheiro: it.tipo_dinheiro || null, ordem: i,
+      }))
+      const { error: errIt } = await sb().from('metas_itens_template').insert(rows)
+      if (errIt) { toast.error(errIt.message); return }
 
-      setMetaAtual(meta as MetaSemanal)
+      // 3. Buscar meta completa com dados nested reais
+      const { data: metaCompleta, error: errFetch } = await sb()
+        .from('metas_semanais')
+        .select('*, metas_itens_template(*), metas_membros(*, metas_membros_itens(*))')
+        .eq('id', metaRow.id)
+        .single()
+      if (errFetch) { toast.error(errFetch.message); return }
+
+      setMetaAtual(metaCompleta as MetaSemanal)
       setModalNova(false)
       toast.success('Meta criada!')
     } finally { setSalvando(false) }

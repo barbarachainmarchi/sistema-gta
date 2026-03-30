@@ -9,10 +9,17 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload
+  ChevronDown, Zap, Activity, HardDriveDownload, Home
 } from 'lucide-react'
 
 const navGroups = [
+  {
+    key: 'inicio',
+    label: 'Início',
+    items: [
+      { href: '/', label: 'Dashboard', icon: Home, perm: 'dashboard', exact: true, alwaysShow: true },
+    ],
+  },
   {
     key: 'admin',
     label: 'Admin',
@@ -115,7 +122,7 @@ export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nome
       ...group,
       items: modulosVisiveis === null
         ? group.items
-        : group.items.filter(item => modulosVisiveis.includes(item.perm)),
+        : group.items.filter(item => ('alwaysShow' in item && item.alwaysShow) || modulosVisiveis.includes(item.perm)),
     }))
     .filter(group => group.items.length > 0)
 
