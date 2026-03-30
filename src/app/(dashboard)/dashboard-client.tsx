@@ -1,10 +1,14 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { TrendingUp, CheckCircle2, Clock, XCircle, Wallet, ShoppingCart, CalendarCheck, Target } from 'lucide-react'
+import {
+  TrendingUp, CheckCircle2, Clock, XCircle, Wallet, ShoppingCart,
+  CalendarCheck, Target, ArrowRight, DollarSign, BarChart2,
+} from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -17,20 +21,14 @@ type MetaMembroItem = {
 }
 
 type MetaMembro = {
-  id: string; status: string; status_forcado: boolean
-  observacao: string | null; membro_id: string
+  id: string; status: string
+  observacao: string | null
   metas_membros_itens: MetaMembroItem[]
-}
-
-type MetaTemplate = {
-  id: string; item_nome: string; quantidade: number
-  tipo_dinheiro: 'limpo' | 'sujo' | null; ordem: number
 }
 
 type MetaAtual = {
   id: string; titulo: string
   semana_inicio: string; semana_fim: string
-  metas_itens_template: MetaTemplate[]
   metas_membros: MetaMembro[]
 }
 
@@ -41,7 +39,6 @@ type Disponibilidade = { id: string; disponivel: boolean; observacao: string | n
 interface Props {
   userId: string
   userNome: string | null
-  membroId: string | null
   conta: Conta | null
   metaAtual: MetaAtual | null
   vendasSemana: Venda[]
@@ -52,10 +49,10 @@ interface Props {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
-  em_andamento: { label: 'Em andamento', icon: Clock,         cls: 'text-blue-400' },
-  completo:     { label: 'Completo',     icon: CheckCircle2,  cls: 'text-emerald-400' },
-  incompleto:   { label: 'Incompleto',   icon: XCircle,       cls: 'text-red-400' },
-  justificado:  { label: 'Justificado',  icon: CheckCircle2,  cls: 'text-amber-400' },
+  em_andamento: { label: 'Em andamento', icon: Clock,        cls: 'text-blue-400' },
+  completo:     { label: 'Completo',     icon: CheckCircle2, cls: 'text-emerald-400' },
+  incompleto:   { label: 'Incompleto',   icon: XCircle,      cls: 'text-red-400' },
+  justificado:  { label: 'Justificado',  icon: CheckCircle2, cls: 'text-amber-400' },
 }
 
 function fmtMoeda(v: number) {
@@ -75,16 +72,17 @@ function saudacao(nome: string | null) {
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, vendasSemana, disponibilidade: dispInicial, hoje }: Props) {
+export function DashboardClient({
+  userId, userNome, conta, metaAtual, vendasSemana,
+  disponibilidade: dispInicial, hoje,
+}: Props) {
   const sb = useCallback(() => createClient(), [])
 
-  const [disp, setDisp]         = useState<Disponibilidade | null>(dispInicial)
+  const [disp, setDisp]             = useState<Disponibilidade | null>(dispInicial)
   const [salvandoDisp, setSalvandoDisp] = useState(false)
 
-  // Meta do membro logado (só a entrada dele em metas_membros)
   const minhaEntradaMeta = metaAtual?.metas_membros[0] ?? null
 
-  // Progresso da meta
   const progresso = (() => {
     if (!minhaEntradaMeta) return 0
     const itens = minhaEntradaMeta.metas_membros_itens
@@ -93,7 +91,6 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
     return Math.round((total / itens.length) * 100)
   })()
 
-  // Vendas da semana
   const vendasCount     = vendasSemana.length
   const vendasEntregues = vendasSemana.filter(v => v.status === 'entregue').length
 
@@ -122,7 +119,7 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
   const statusCfg = STATUS_META[minhaEntradaMeta?.status ?? 'em_andamento']
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl">
 
       {/* Saudação */}
       <div>
@@ -134,7 +131,7 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
         {/* Meta */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <Link href="/metas" className="rounded-xl border border-border bg-card p-4 space-y-3 hover:border-border/60 transition-colors group block">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium">Meta da Semana</p>
             <Target className="h-4 w-4 text-muted-foreground" />
@@ -159,12 +156,17 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">Sem meta ativa</p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Sem meta ativa</p>
+              <p className="text-[11px] text-primary flex items-center gap-1 group-hover:underline">
+                Criar meta <ArrowRight className="h-3 w-3" />
+              </p>
+            </div>
           )}
-        </div>
+        </Link>
 
         {/* Saldo Sujo */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <Link href="/vendas/minha-carteira" className="rounded-xl border border-border bg-card p-4 space-y-3 hover:border-border/60 transition-colors block">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium">Saldo Sujo</p>
             <Wallet className="h-4 w-4 text-muted-foreground" />
@@ -177,10 +179,10 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
           ) : (
             <p className="text-sm text-muted-foreground">Sem conta vinculada</p>
           )}
-        </div>
+        </Link>
 
         {/* Saldo Limpo */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <Link href="/vendas/minha-carteira" className="rounded-xl border border-border bg-card p-4 space-y-3 hover:border-border/60 transition-colors block">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium">Saldo Limpo</p>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -193,25 +195,32 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
           ) : (
             <p className="text-sm text-muted-foreground">Sem conta vinculada</p>
           )}
-        </div>
+        </Link>
 
         {/* Vendas da semana */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <Link href="/vendas" className="rounded-xl border border-border bg-card p-4 space-y-3 hover:border-border/60 transition-colors block">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground font-medium">Vendas Esta Semana</p>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </div>
           <p className="text-2xl font-bold">{vendasCount}</p>
           <p className="text-[11px] text-muted-foreground">
-            {vendasEntregues > 0 ? `${vendasEntregues} entregue${vendasEntregues !== 1 ? 's' : ''}` : 'nenhuma entregue ainda'}
+            {vendasEntregues > 0
+              ? `${vendasEntregues} entregue${vendasEntregues !== 1 ? 's' : ''}`
+              : 'nenhuma entregue ainda'}
           </p>
-        </div>
+        </Link>
       </div>
 
       {/* Detalhes da meta */}
       {metaAtual && minhaEntradaMeta && minhaEntradaMeta.metas_membros_itens.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-          <p className="text-xs font-semibold text-muted-foreground">ITENS DA META</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-muted-foreground">ITENS DA META</p>
+            <Link href="/metas" className="text-[11px] text-primary hover:underline flex items-center gap-1">
+              Ver metas <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
           <div className="space-y-2.5">
             {[...minhaEntradaMeta.metas_membros_itens]
               .sort((a, b) => a.ordem - b.ordem)
@@ -243,23 +252,23 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
 
       {/* Disponibilidade para Ação */}
       <div className="rounded-xl border border-border bg-card p-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <CalendarCheck className="h-4 w-4 text-muted-foreground shrink-0" />
             <div>
               <p className="text-sm font-medium">Disponível para Ação hoje?</p>
               <p className="text-[11px] text-muted-foreground">Informe sua disponibilidade para as operações de hoje.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => toggleDisponivel(false)}
               disabled={salvandoDisp}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
                 disp?.disponivel === false
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                  : 'border border-border text-muted-foreground hover:text-foreground hover:border-border/60'
+                  ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-border/60'
               )}
             >
               Não
@@ -268,10 +277,10 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
               onClick={() => toggleDisponivel(true)}
               disabled={salvandoDisp}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
                 disp?.disponivel === true
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'border border-border text-muted-foreground hover:text-foreground hover:border-border/60'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-border/60'
               )}
             >
               Sim
@@ -279,8 +288,33 @@ export function DashboardClient({ userId, userNome, membroId, conta, metaAtual, 
           </div>
         </div>
         {disp === null && (
-          <p className="text-[11px] text-muted-foreground mt-3">Você ainda não marcou sua disponibilidade para hoje.</p>
+          <p className="text-[11px] text-muted-foreground mt-3 ml-7">Você ainda não marcou sua disponibilidade para hoje.</p>
         )}
+      </div>
+
+      {/* Acesso Rápido */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-muted-foreground">ACESSO RÁPIDO</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { href: '/metas',                label: 'Metas',         icon: Target,     desc: 'Ver e criar metas' },
+            { href: '/vendas',               label: 'Vendas',        icon: ShoppingCart, desc: 'Registrar venda' },
+            { href: '/vendas/minha-carteira', label: 'Minha Carteira', icon: Wallet,    desc: 'Saldo e transferências' },
+            { href: '/financeiro',           label: 'Financeiro',    icon: DollarSign, desc: 'Extrato e contas' },
+          ].map(item => {
+            const Icon = item.icon
+            return (
+              <Link key={item.href} href={item.href}
+                className="rounded-xl border border-border bg-card p-4 hover:border-border/60 hover:bg-white/[0.02] transition-colors">
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+              </Link>
+            )
+          })}
+        </div>
       </div>
 
     </div>

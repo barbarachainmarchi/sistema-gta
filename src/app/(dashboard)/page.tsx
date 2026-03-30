@@ -72,7 +72,6 @@ export default async function DashboardPage() {
       <DashboardClient
         userId={user.id}
         userNome={usuarioRow?.nome ?? null}
-        membroId={membroId}
         conta={contaRow ?? null}
         metaAtual={metaAtualRow ?? null}
         vendasSemana={vendasSemana ?? []}
