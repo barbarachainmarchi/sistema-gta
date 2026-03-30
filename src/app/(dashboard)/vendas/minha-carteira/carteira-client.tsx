@@ -178,18 +178,12 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     const { error } = await sb().from('financeiro_lancamentos').update({ conta_id: newContaId }).eq('id', lanc.id)
     if (error) throw new Error(error.message)
 
-    if (oldContaId) {
-      const orig = contaMap[oldContaId]
-      if (orig) {
-        await sb().from('financeiro_contas').update({ [campo]: Math.max(0, (orig[campo] ?? 0) - valor) }).eq('id', oldContaId)
-        setContas(prev => prev.map(c => c.id === oldContaId ? { ...c, [campo]: Math.max(0, (c[campo] ?? 0) - valor) } : c))
-      }
-    }
-    const dest = contaMap[newContaId]
-    if (dest) {
-      await sb().from('financeiro_contas').update({ [campo]: (dest[campo] ?? 0) + valor }).eq('id', newContaId)
-      setContas(prev => prev.map(c => c.id === newContaId ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
-    }
+    // Trigger financeiro_atualizar_saldo cuida do DB; apenas atualizar estado local
+    setContas(prev => prev.map(c => {
+      if (c.id === oldContaId) return { ...c, [campo]: Math.max(0, (c[campo] ?? 0) - valor) }
+      if (c.id === newContaId) return { ...c, [campo]: (c[campo] ?? 0) + valor }
+      return c
+    }))
     setLancamentos(prev => prev.map(l => l.id === lanc.id ? { ...l, conta_id: newContaId } : l))
   }
 
@@ -220,11 +214,19 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
 
   async function handleTransferirSingle(vendaId: string) {
     if (!destSingle) { toast.error('Escolha uma conta destino'); return }
+    const destConta = contaMap[destSingle]
     setSalvando(true)
     try {
-      await criarSolicitacaoTransfer(vendaId, destSingle)
+      if (destConta?.tipo === 'membro') {
+        // Conta com dono: pede aprovação
+        await criarSolicitacaoTransfer(vendaId, destSingle)
+        toast.success(`Solicitação enviada para ${destConta.nome} — aguardando confirmação`)
+      } else {
+        // Conta sem dono (facção, caixa, setor…): transferir direto
+        await moverLancamento(vendaId, destSingle)
+        toast.success(`Transferido para ${destConta?.nome ?? 'conta'}`)
+      }
       setTransferindoVendaId(null); setDestSingle('')
-      toast.success(`Solicitação enviada para ${contaMap[destSingle]?.nome ?? 'conta'} — aguardando confirmação`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
   }
@@ -232,11 +234,17 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   async function handleTransferirTudo() {
     if (!destTudo) { toast.error('Escolha uma conta destino'); return }
     if (comigo.length === 0) { toast.info('Nenhuma venda com você'); return }
+    const destConta = contaMap[destTudo]
     setSalvando(true)
     try {
-      for (const v of comigo) await criarSolicitacaoTransfer(v.id, destTudo)
+      if (destConta?.tipo === 'membro') {
+        for (const v of comigo) await criarSolicitacaoTransfer(v.id, destTudo)
+        toast.success(`${comigo.length} solicitação(ões) enviada(s) — aguardando confirmação`)
+      } else {
+        for (const v of comigo) await moverLancamento(v.id, destTudo)
+        toast.success(`${comigo.length} venda(s) transferida(s) para ${destConta?.nome ?? 'conta'}`)
+      }
       setTransferTudoOpen(false); setDestTudo('')
-      toast.success(`${comigo.length} solicitação(ões) enviada(s) — aguardando confirmação`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
   }
@@ -249,24 +257,16 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
       const sujo = tipo_dinheiro === 'sujo'
       const campo = sujo ? 'saldo_sujo' : 'saldo_limpo'
 
-      // Move o lancamento
+      // Move o lancamento; trigger financeiro_atualizar_saldo cuida do saldo no DB
       const { error: errLanc } = await sb().from('financeiro_lancamentos').update({ conta_id: conta_destino_id }).eq('id', lancamento_id)
       if (errLanc) throw new Error(errLanc.message)
 
-      // Ajusta saldo origem
-      if (conta_origem_id) {
-        const orig = contaMap[conta_origem_id]
-        if (orig) {
-          await sb().from('financeiro_contas').update({ [campo]: Math.max(0, (orig[campo] ?? 0) - valor) }).eq('id', conta_origem_id)
-          setContas(prev => prev.map(c => c.id === conta_origem_id ? { ...c, [campo]: Math.max(0, (c[campo] ?? 0) - valor) } : c))
-        }
-      }
-      // Ajusta saldo destino
-      const dest = contaMap[conta_destino_id]
-      if (dest) {
-        await sb().from('financeiro_contas').update({ [campo]: (dest[campo] ?? 0) + valor }).eq('id', conta_destino_id)
-        setContas(prev => prev.map(c => c.id === conta_destino_id ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
-      }
+      // Atualiza estado local
+      setContas(prev => prev.map(c => {
+        if (c.id === conta_origem_id) return { ...c, [campo]: Math.max(0, (c[campo] ?? 0) - valor) }
+        if (c.id === conta_destino_id) return { ...c, [campo]: (c[campo] ?? 0) + valor }
+        return c
+      }))
       // Atualiza lancamento local
       setLancamentos(prev => prev.map(l => l.id === lancamento_id ? { ...l, conta_id: conta_destino_id } : l))
 
@@ -298,20 +298,14 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   async function handleDelete(vendaId: string) {
     setDeletando(true)
     try {
-      // Reverter saldo e remover lancamentos
+      // Remover lancamentos; trigger financeiro_atualizar_saldo reverte saldo no DB
       const { data: lancs } = await sb().from('financeiro_lancamentos')
         .select('id, conta_id, valor, tipo_dinheiro').eq('venda_id', vendaId)
       for (const lanc of (lancs ?? []) as { id: string; conta_id: string | null; valor: number; tipo_dinheiro: string | null }[]) {
         await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
         if (lanc.conta_id) {
-          const { data: conta } = await sb().from('financeiro_contas').select('saldo_sujo, saldo_limpo').eq('id', lanc.conta_id).single()
-          if (conta) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const c = conta as any
-            const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
-            await sb().from('financeiro_contas').update({ [campo]: Math.max(0, (c[campo] ?? 0) - lanc.valor) }).eq('id', lanc.conta_id)
-            setContas(prev => prev.map(ct => ct.id === lanc.conta_id ? { ...ct, [campo]: Math.max(0, (ct[campo as keyof Conta] as number ?? 0) - lanc.valor) } : ct))
-          }
+          const campo = lanc.tipo_dinheiro === 'sujo' ? 'saldo_sujo' : 'saldo_limpo'
+          setContas(prev => prev.map(ct => ct.id === lanc.conta_id ? { ...ct, [campo]: Math.max(0, (ct[campo as keyof Conta] as number ?? 0) - lanc.valor) } : ct))
         }
       }
       // Remover a venda
@@ -551,9 +545,9 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2.5 text-muted-foreground text-[11px] truncate max-w-[128px]">
+                        <td className="px-3 py-2.5 text-muted-foreground text-[10px] max-w-[160px]">
                           {venda.itens.length > 0
-                            ? <span className="opacity-60">{venda.itens.length} item(ns)</span>
+                            ? <span className="opacity-60 truncate block leading-4">{venda.itens.map(it => `${it.item_nome} (${it.quantidade})`).join(' · ')}</span>
                             : <span className="italic opacity-30">—</span>}
                         </td>
                         <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>

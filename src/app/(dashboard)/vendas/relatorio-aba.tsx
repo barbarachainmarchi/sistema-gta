@@ -274,11 +274,13 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
                           </td>
                           <td className="px-4 py-2.5 text-muted-foreground text-xs">{v.entregue_por_nome ?? '—'}</td>
                           <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 min-w-0">
                               {expanded
                                 ? <ChevronDown className="h-3 w-3 shrink-0 text-primary" />
                                 : <ChevronRight className="h-3 w-3 shrink-0" />}
-                              <span className="text-[10px]">{v.itens.length} item{v.itens.length !== 1 ? 's' : ''}</span>
+                              <span className="text-[10px] truncate">
+                                {v.itens.map(it => `${it.item_nome} (${it.quantidade})`).join(' · ')}
+                              </span>
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">

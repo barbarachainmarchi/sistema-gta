@@ -112,19 +112,13 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
   async function moverLancamento(lancId: string, oldContaId: string | null, newContaId: string, valor: number, sujo: boolean) {
     const { error } = await sb().from('financeiro_lancamentos').update({ conta_id: newContaId }).eq('id', lancId)
     if (error) throw new Error(error.message)
+    // Trigger financeiro_atualizar_saldo cuida do DB; apenas atualizar estado local
     const campo = sujo ? 'saldo_sujo' : 'saldo_limpo'
-    if (oldContaId) {
-      const orig = contaMap[oldContaId]
-      if (orig) {
-        await sb().from('financeiro_contas').update({ [campo]: (orig[campo] ?? 0) - valor }).eq('id', oldContaId)
-        setContas(prev => prev.map(c => c.id === oldContaId ? { ...c, [campo]: (c[campo] ?? 0) - valor } : c))
-      }
-    }
-    const dest = contaMap[newContaId]
-    if (dest) {
-      await sb().from('financeiro_contas').update({ [campo]: (dest[campo] ?? 0) + valor }).eq('id', newContaId)
-      setContas(prev => prev.map(c => c.id === newContaId ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
-    }
+    setContas(prev => prev.map(c => {
+      if (c.id === oldContaId) return { ...c, [campo]: (c[campo] ?? 0) - valor }
+      if (c.id === newContaId) return { ...c, [campo]: (c[campo] ?? 0) + valor }
+      return c
+    }))
     setLancamentos(prev => prev.map(l => l.id === lancId ? { ...l, conta_id: newContaId } : l))
   }
 
@@ -170,18 +164,14 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
       const campo = sujo ? 'saldo_sujo' : 'saldo_limpo'
       const dataHoje = new Date().toISOString().split('T')[0]
 
-      // Saída na minha conta
+      // Saída na minha conta; trigger financeiro_atualizar_saldo cuida do saldo no DB
       await sb().from('financeiro_lancamentos').insert({
         conta_id: meuContaId, tipo: 'saida', tipo_dinheiro: tipoValor,
         valor, total: valor, descricao: `Repasse: ${contaMap[destValor]?.nome ?? 'conta'}`,
         categoria: 'repasse', data: dataHoje, created_by: userId,
         vai_para_faccao: false, origem: 'repasse',
       })
-      const minhaConta = contaMap[meuContaId]
-      if (minhaConta) {
-        await sb().from('financeiro_contas').update({ [campo]: (minhaConta[campo] ?? 0) - valor }).eq('id', meuContaId)
-        setContas(prev => prev.map(c => c.id === meuContaId ? { ...c, [campo]: (c[campo] ?? 0) - valor } : c))
-      }
+      setContas(prev => prev.map(c => c.id === meuContaId ? { ...c, [campo]: (c[campo] ?? 0) - valor } : c))
 
       // Entrada na conta destino
       const { data: novoLanc } = await sb().from('financeiro_lancamentos').insert({
@@ -190,11 +180,7 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
         categoria: 'repasse', data: dataHoje, created_by: userId,
         vai_para_faccao: false, origem: 'repasse',
       }).select().single()
-      const contaDest = contaMap[destValor]
-      if (contaDest) {
-        await sb().from('financeiro_contas').update({ [campo]: (contaDest[campo] ?? 0) + valor }).eq('id', destValor)
-        setContas(prev => prev.map(c => c.id === destValor ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
-      }
+      setContas(prev => prev.map(c => c.id === destValor ? { ...c, [campo]: (c[campo] ?? 0) + valor } : c))
       if (novoLanc) setLancamentos(prev => [novoLanc as Lancamento, ...prev])
 
       setTransferValorOpen(false); setDestValor(''); setValorInput('')

@@ -1165,6 +1165,7 @@ export function VendasClient({
       }
     }
 
+    const itensDesc = venda.itens.map(it => `${it.item_nome} (${it.quantidade})`).join(' · ')
     const { error } = await sb().from('financeiro_lancamentos').insert({
       conta_id: contaId,
       venda_id: venda.id,
@@ -1172,6 +1173,7 @@ export function VendasClient({
       tipo_dinheiro: venda.tipo_dinheiro,
       valor: totalVenda,
       descricao: `Venda: ${venda.cliente_nome}`,
+      item_descricao: itensDesc || null,
       categoria: 'venda',
       data: new Date().toISOString().split('T')[0],
       vai_para_faccao: !!venda.faccao_id,
