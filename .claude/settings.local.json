@@ -25,7 +25,10 @@
       "Bash(grep:*)",
       "Bash(ls -la src/app/\\\\\\(dashboard\\\\\\)/vendas/)",
       "Bash(ls -la src/app/\\\\\\(dashboard\\\\\\)/)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(ls \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\")",
+      "Bash(ls \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\metas\")",
+      "Bash(ls \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\acao\")"
     ]
   }
 }
