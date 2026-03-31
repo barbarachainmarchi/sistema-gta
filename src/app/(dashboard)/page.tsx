@@ -18,6 +18,7 @@ export default async function DashboardPage() {
   const [
     { data: usuarioRow },
     { data: disponibilidadeRow },
+    { data: dispTodosRow },
   ] = await Promise.all([
     supabase
       .from('usuarios')
@@ -26,10 +27,16 @@ export default async function DashboardPage() {
       .maybeSingle(),
     supabase
       .from('usuarios_disponibilidade')
-      .select('id, disponivel, observacao')
+      .select('id, disponivel, observacao, hora_inicio, hora_fim')
       .eq('usuario_id', user.id)
       .eq('data', hoje)
       .maybeSingle(),
+    supabase
+      .from('usuarios_disponibilidade')
+      .select('disponivel, hora_inicio, hora_fim, usuarios(nome)')
+      .eq('data', hoje)
+      .eq('disponivel', true)
+      .order('hora_inicio', { ascending: true, nullsFirst: false }),
   ])
 
   const membroId = usuarioRow?.membro_id ?? null
@@ -66,6 +73,13 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false }),
   ])
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dispTodos = (dispTodosRow ?? []).map((d: any) => ({
+    nome: d.usuarios?.nome ?? '?',
+    hora_inicio: d.hora_inicio ?? null,
+    hora_fim: d.hora_fim ?? null,
+  }))
+
   return (
     <>
       <Header title="Início" />
@@ -77,6 +91,7 @@ export default async function DashboardPage() {
         vendasSemana={vendasSemana ?? []}
         disponibilidade={disponibilidadeRow ?? null}
         hoje={hoje}
+        dispTodos={dispTodos}
       />
     </>
   )

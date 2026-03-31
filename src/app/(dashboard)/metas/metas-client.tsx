@@ -117,6 +117,10 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
   const [modalNova, setModalNova]     = useState(false)
   const [salvando, setSalvando]       = useState(false)
   const [aplicando, setAplicando]     = useState(false)
+
+  // ── Modal selecionar membros para aplicar ──────────────────────────────────
+  const [modalAplicar, setModalAplicar]         = useState(false)
+  const [membrosParaAplicar, setMembrosParaAplicar] = useState<Set<string>>(new Set())
   const [titulo, setTitulo]           = useState('')
   const [dataInicio, setDataInicio]   = useState(getMondayOfWeek)
   const [dataFim, setDataFim]         = useState(getSundayOfWeek)
@@ -180,12 +184,22 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
     } finally { setSalvando(false) }
   }
 
-  async function handleAplicarTodos() {
+  function abrirModalAplicar() {
     if (!metaAtual) return
     const membrosExistentes = new Set(metaAtual.metas_membros.map(m => m.membro_id))
-    const novosMembros = membros.filter(m => !membrosExistentes.has(m.id))
-    if (!novosMembros.length) { toast.info('Todos os membros já têm meta'); return }
+    const disponiveis = membros.filter(m => !membrosExistentes.has(m.id))
+    if (!disponiveis.length) { toast.info('Todos os membros já têm meta'); return }
+    setMembrosParaAplicar(new Set(disponiveis.map(m => m.id)))
+    setModalAplicar(true)
+  }
 
+  async function aplicarParaSelecionados() {
+    if (!metaAtual || !membrosParaAplicar.size) return
+    const membrosExistentes = new Set(metaAtual.metas_membros.map(m => m.membro_id))
+    const novosMembros = membros.filter(m => membrosParaAplicar.has(m.id) && !membrosExistentes.has(m.id))
+    if (!novosMembros.length) { toast.info('Nenhum membro novo selecionado'); return }
+
+    setModalAplicar(false)
     setAplicando(true)
     try {
       const novosMembrosMeta: MembroMeta[] = []
@@ -246,7 +260,7 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
             <>
               <span className="text-xs text-muted-foreground">{metaAtual.titulo} · {fmtSemana(metaAtual.semana_inicio, metaAtual.semana_fim)}</span>
               {podeEditar && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleAplicarTodos} disabled={aplicando}>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={abrirModalAplicar} disabled={aplicando}>
                   {aplicando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                   Aplicar a todos
                 </Button>
@@ -350,6 +364,55 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Modal selecionar membros ── */}
+      {(() => {
+        const membrosExistentes = new Set(metaAtual?.metas_membros.map(m => m.membro_id) ?? [])
+        const disponiveis = membros.filter(m => !membrosExistentes.has(m.id))
+        const todosSelecionados = disponiveis.length > 0 && disponiveis.every(m => membrosParaAplicar.has(m.id))
+        return (
+          <Dialog open={modalAplicar} onOpenChange={o => { if (!o) setModalAplicar(false) }}>
+            <DialogContent className="max-w-sm" aria-describedby={undefined}>
+              <DialogHeader>
+                <DialogTitle>Selecionar membros</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {disponiveis.map(m => (
+                  <label key={m.id} className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-white/[0.04] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={membrosParaAplicar.has(m.id)}
+                      onChange={e => {
+                        setMembrosParaAplicar(prev => {
+                          const next = new Set(prev)
+                          e.target.checked ? next.add(m.id) : next.delete(m.id)
+                          return next
+                        })
+                      }}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm">{m.nome}{m.vulgo ? ` (${m.vulgo})` : ''}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <button
+                  onClick={() => setMembrosParaAplicar(todosSelecionados ? new Set() : new Set(disponiveis.map(m => m.id)))}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {todosSelecionados ? 'Desmarcar todos' : 'Selecionar todos'}
+                </button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setModalAplicar(false)}>Cancelar</Button>
+                  <Button size="sm" onClick={aplicarParaSelecionados} disabled={membrosParaAplicar.size === 0}>
+                    Aplicar ({membrosParaAplicar.size})
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
     </div>
   )

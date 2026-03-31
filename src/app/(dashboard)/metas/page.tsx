@@ -8,6 +8,15 @@ export default async function MetasPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // Buscar IDs dos meus produtos para depois pegar os ingredientes
+  const { data: meusProds } = await supabase
+    .from('items')
+    .select('id')
+    .eq('eh_meu_produto', true)
+    .eq('status', 'ativo')
+
+  const prodIds = meusProds?.map(p => p.id) ?? []
+
   const [
     { data: membrosData },
     { data: metaAtualData },
@@ -15,7 +24,7 @@ export default async function MetasPage() {
     { data: contasData },
     { data: permRow },
     { data: userRow },
-    { data: itensData },
+    { data: receitasData },
   ] = await Promise.all([
     supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').eq('membro_proprio', true).order('nome'),
     supabase
@@ -38,8 +47,23 @@ export default async function MetasPage() {
       .eq('status', 'ativo'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
-    supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
+    prodIds.length > 0
+      ? supabase.from('item_receita').select('ingrediente_id').in('item_id', prodIds)
+      : Promise.resolve({ data: [] as { ingrediente_id: string }[] }),
   ])
+
+  // Buscar nomes dos ingredientes únicos
+  const ingredIds = [...new Set(receitasData?.map(r => r.ingrediente_id) ?? [])]
+  let catalogoItens: { id: string; nome: string }[] = []
+  if (ingredIds.length > 0) {
+    const { data: ingredItems } = await supabase
+      .from('items')
+      .select('id, nome')
+      .in('id', ingredIds)
+      .eq('status', 'ativo')
+      .order('nome')
+    catalogoItens = ingredItems ?? []
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
@@ -58,7 +82,7 @@ export default async function MetasPage() {
         contas={contasData ?? []}
         podeEditar={podeEditar}
         podeLancar={podeLancar}
-        catalogoItens={itensData ?? []}
+        catalogoItens={catalogoItens}
       />
     </>
   )

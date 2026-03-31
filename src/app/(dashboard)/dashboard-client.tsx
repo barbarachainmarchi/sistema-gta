@@ -5,9 +5,12 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 import {
   TrendingUp, CheckCircle2, Clock, XCircle, Wallet, ShoppingCart,
-  CalendarCheck, Target, ArrowRight, DollarSign, BarChart2,
+  CalendarCheck, Target, ArrowRight, DollarSign, Users,
 } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -34,7 +37,8 @@ type MetaAtual = {
 
 type Venda = { id: string; status: string; created_at: string }
 
-type Disponibilidade = { id: string; disponivel: boolean; observacao: string | null }
+type Disponibilidade = { id: string; disponivel: boolean; observacao: string | null; hora_inicio: string | null; hora_fim: string | null }
+type DispMembro = { nome: string; hora_inicio: string | null; hora_fim: string | null }
 
 interface Props {
   userId: string
@@ -44,6 +48,7 @@ interface Props {
   vendasSemana: Venda[]
   disponibilidade: Disponibilidade | null
   hoje: string
+  dispTodos: DispMembro[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -74,12 +79,15 @@ function saudacao(nome: string | null) {
 
 export function DashboardClient({
   userId, userNome, conta, metaAtual, vendasSemana,
-  disponibilidade: dispInicial, hoje,
+  disponibilidade: dispInicial, hoje, dispTodos,
 }: Props) {
   const sb = useCallback(() => createClient(), [])
 
   const [disp, setDisp]             = useState<Disponibilidade | null>(dispInicial)
   const [salvandoDisp, setSalvandoDisp] = useState(false)
+  const [modalHorario, setModalHorario] = useState(false)
+  const [horaInicio, setHoraInicio] = useState('')
+  const [horaFim, setHoraFim]       = useState('')
 
   const minhaEntradaMeta = metaAtual?.metas_membros[0] ?? null
 
@@ -94,26 +102,39 @@ export function DashboardClient({
   const vendasCount     = vendasSemana.length
   const vendasEntregues = vendasSemana.filter(v => v.status === 'entregue').length
 
-  async function toggleDisponivel(valor: boolean) {
+  async function salvarDisponivel(valor: boolean, hora_inicio: string | null, hora_fim: string | null) {
     setSalvandoDisp(true)
     try {
+      const payload = { disponivel: valor, hora_inicio: hora_inicio || null, hora_fim: hora_fim || null }
       if (disp) {
         const { error } = await sb()
           .from('usuarios_disponibilidade')
-          .update({ disponivel: valor })
+          .update(payload)
           .eq('id', disp.id)
         if (error) { toast.error(error.message); return }
-        setDisp(prev => prev ? { ...prev, disponivel: valor } : prev)
+        setDisp(prev => prev ? { ...prev, ...payload } : prev)
       } else {
         const { data, error } = await sb()
           .from('usuarios_disponibilidade')
-          .insert({ usuario_id: userId, data: hoje, disponivel: valor })
-          .select('id, disponivel, observacao')
+          .insert({ usuario_id: userId, data: hoje, ...payload })
+          .select('id, disponivel, observacao, hora_inicio, hora_fim')
           .single()
         if (error) { toast.error(error.message); return }
         setDisp(data)
       }
     } finally { setSalvandoDisp(false) }
+  }
+
+  function handleClickSim() {
+    if (disp?.disponivel === true) return // já marcado, não abre modal de novo
+    setHoraInicio(disp?.hora_inicio ?? '')
+    setHoraFim(disp?.hora_fim ?? '')
+    setModalHorario(true)
+  }
+
+  async function confirmarHorario() {
+    setModalHorario(false)
+    await salvarDisponivel(true, horaInicio, horaFim)
   }
 
   const statusCfg = STATUS_META[minhaEntradaMeta?.status ?? 'em_andamento']
@@ -251,18 +272,22 @@ export function DashboardClient({
       )}
 
       {/* Disponibilidade para Ação */}
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <CalendarCheck className="h-4 w-4 text-muted-foreground shrink-0" />
             <div>
               <p className="text-sm font-medium">Disponível para Ação hoje?</p>
-              <p className="text-[11px] text-muted-foreground">Informe sua disponibilidade para as operações de hoje.</p>
+              <p className="text-[11px] text-muted-foreground">
+                {disp?.disponivel === true && disp.hora_inicio
+                  ? `${disp.hora_inicio.slice(0, 5)}${disp.hora_fim ? ` – ${disp.hora_fim.slice(0, 5)}` : ''}`
+                  : 'Informe sua disponibilidade para as operações de hoje.'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => toggleDisponivel(false)}
+              onClick={() => salvarDisponivel(false, null, null)}
               disabled={salvandoDisp}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
@@ -274,7 +299,7 @@ export function DashboardClient({
               Não
             </button>
             <button
-              onClick={() => toggleDisponivel(true)}
+              onClick={handleClickSim}
               disabled={salvandoDisp}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
@@ -287,10 +312,65 @@ export function DashboardClient({
             </button>
           </div>
         </div>
-        {disp === null && (
-          <p className="text-[11px] text-muted-foreground mt-3 ml-7">Você ainda não marcou sua disponibilidade para hoje.</p>
+
+        {/* Tabela de disponíveis hoje */}
+        {dispTodos.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground">DISPONÍVEIS HOJE</p>
+            </div>
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/20 border-b border-border">
+                  <tr>
+                    <th className="text-left px-3 py-1.5 text-[11px] text-muted-foreground font-medium">Membro</th>
+                    <th className="text-left px-3 py-1.5 text-[11px] text-muted-foreground font-medium">Horário</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {dispTodos.map((d, i) => (
+                    <tr key={i} className="hover:bg-white/[0.02]">
+                      <td className="px-3 py-2 text-sm">{d.nome}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        {d.hora_inicio
+                          ? `${d.hora_inicio.slice(0, 5)}${d.hora_fim ? ` – ${d.hora_fim.slice(0, 5)}` : ''}`
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
+
+      {/* Modal horário disponibilidade */}
+      <Dialog open={modalHorario} onOpenChange={o => { if (!o) setModalHorario(false) }}>
+        <DialogContent className="max-w-xs" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Qual horário você estará disponível?</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Das</Label>
+              <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Até</Label>
+              <input type="time" value={horaFim} onChange={e => setHoraFim(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus:border-ring" />
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Horário opcional — deixe em branco se preferir não informar.</p>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => setModalHorario(false)}>Cancelar</Button>
+            <Button size="sm" onClick={confirmarHorario}>Confirmar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Acesso Rápido */}
       <div className="space-y-2">
