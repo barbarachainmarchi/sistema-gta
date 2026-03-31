@@ -65,6 +65,18 @@ export default async function MetasPage() {
     catalogoItens = ingredItems ?? []
   }
 
+  // Itens do template da última meta encerrada (para sugestões ao criar nova meta)
+  const ultimaMetaId = metasHistoricoData?.[0]?.id ?? null
+  let ultimaMetaItens: { item_nome: string; quantidade: number; tipo_dinheiro: 'limpo' | 'sujo' | null }[] = []
+  if (ultimaMetaId) {
+    const { data: tmpl } = await supabase
+      .from('metas_itens_template')
+      .select('item_nome, quantidade, tipo_dinheiro')
+      .eq('meta_id', ultimaMetaId)
+      .order('ordem')
+    ultimaMetaItens = (tmpl ?? []) as typeof ultimaMetaItens
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
   const podeEditar  = perms == null ? true : (perms.find((p: any) => p.modulo === 'metas')?.pode_editar  ?? false)
@@ -83,6 +95,7 @@ export default async function MetasPage() {
         podeEditar={podeEditar}
         podeLancar={podeLancar}
         catalogoItens={catalogoItens}
+        ultimaMetaItens={ultimaMetaItens}
       />
     </>
   )

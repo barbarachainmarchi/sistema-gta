@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Loader2, Target, Plus } from 'lucide-react'
+import { Loader2, Target, Plus, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MetaSemanal, MembroMeta, MembroMetaItem, Membro, ContaMembro, SbClient } from './metas-client'
 import { progressoMembro, fmtSemana } from './metas-client'
@@ -25,6 +25,8 @@ function fmt(n: number) {
   return n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })
 }
 
+type FormItem = { id?: string; item_nome: string; quantidade_meta: string; tipo_dinheiro: 'limpo' | 'sujo' | '' }
+
 function isDinheiro(it: MembroMetaItem) {
   return it.tipo_dinheiro != null || it.item_nome.toLowerCase().includes('dinheiro')
 }
@@ -40,17 +42,63 @@ interface Props {
   setMetaAtual: React.Dispatch<React.SetStateAction<MetaSemanal | null>>
   podeEditar: boolean; podeLancar: boolean
   onAbrirNovaMeta: () => void
+  catalogoItens: { id: string; nome: string }[]
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMetaAtual, podeEditar, podeLancar, onAbrirNovaMeta }: Props) {
+export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMetaAtual, podeEditar, podeLancar, onAbrirNovaMeta, catalogoItens }: Props) {
   const membroMap = useMemo(() => Object.fromEntries(membros.map(m => [m.id, m])), [membros])
   const contaMap  = useMemo(() => {
     const m: Record<string, ContaMembro> = {}
     for (const c of contas) if (c.membro_id) m[c.membro_id] = c
     return m
   }, [contas])
+
+  // ── Editar meta do membro ──────────────────────────────────────────────────
+  const [editando, setEditando]   = useState<MembroMeta | null>(null)
+  const [formItens, setFormItens] = useState<FormItem[]>([])
+  const [salvandoEdit, setSalvandoEdit] = useState(false)
+
+  function abrirEditar(mm: MembroMeta) {
+    setEditando(mm)
+    setFormItens(mm.metas_membros_itens.map(it => ({
+      id: it.id, item_nome: it.item_nome,
+      quantidade_meta: String(it.quantidade_meta),
+      tipo_dinheiro: it.tipo_dinheiro ?? '',
+    })))
+  }
+  function setFI(i: number, p: Partial<FormItem>) { setFormItens(prev => prev.map((x, j) => j === i ? { ...x, ...p } : x)) }
+  function removeFI(i: number) { setFormItens(prev => prev.filter((_, j) => j !== i)) }
+  function addFI() { setFormItens(prev => [...prev, { item_nome: '', quantidade_meta: '', tipo_dinheiro: '' }]) }
+
+  async function handleSalvarEdit() {
+    if (!editando) return
+    const validos = formItens.filter(it => it.item_nome.trim() && Number(it.quantidade_meta) > 0)
+    if (!validos.length) { toast.error('Adicione pelo menos um item'); return }
+    setSalvandoEdit(true)
+    try {
+      await sb().from('metas_membros_itens').delete().eq('membro_meta_id', editando.id)
+      const rows = validos.map((it, i) => ({
+        membro_meta_id: editando.id, item_nome: it.item_nome.trim(),
+        quantidade_meta: Number(it.quantidade_meta), quantidade_entregue: 0,
+        tipo_dinheiro: it.tipo_dinheiro || null, ordem: i,
+      }))
+      const { data: novosItens, error } = await sb().from('metas_membros_itens').insert(rows).select('*')
+      if (error) { toast.error(error.message); return }
+      setMetaAtual(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          metas_membros: prev.metas_membros.map(mm =>
+            mm.id === editando.id ? { ...mm, metas_membros_itens: (novosItens ?? []) as MembroMetaItem[] } : mm
+          ),
+        }
+      })
+      toast.success('Meta atualizada!')
+      setEditando(null)
+    } finally { setSalvandoEdit(false) }
+  }
 
   // ── Lançar entrega ─────────────────────────────────────────────────────────
   const [lancandoMm, setLancandoMm] = useState<MembroMeta | null>(null)
@@ -256,6 +304,11 @@ export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMet
                   </Button>
                 )}
                 {podeEditar && (
+                  <Button size="sm" variant="ghost" className="h-7 text-[11px] px-2 text-muted-foreground hover:text-foreground" onClick={() => abrirEditar(mm)}>
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                )}
+                {podeEditar && (
                   <Select onValueChange={v => handleAlterarStatus(mm, v as MembroMeta['status'])}>
                     <SelectTrigger className="h-7 text-[11px] w-auto px-2">
                       <span className="text-muted-foreground">Status</span>
@@ -290,6 +343,51 @@ export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMet
           </div>
         )}
       </div>
+
+      {/* ── Modal editar meta do membro ── */}
+      <Dialog open={!!editando} onOpenChange={o => { if (!salvandoEdit && !o) setEditando(null) }}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Editar Meta — {membroMap[editando?.membro_id ?? '']?.nome}</DialogTitle>
+          </DialogHeader>
+          {editando && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">Substitui todos os itens da meta deste membro. Entregas já registradas são mantidas.</p>
+              <datalist id="visao-geral-itens-list">
+                {catalogoItens.map(item => <option key={item.id} value={item.nome} />)}
+              </datalist>
+              {formItens.map((it, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input className="h-8 text-xs flex-1" placeholder="Item" list="visao-geral-itens-list"
+                    value={it.item_nome} onChange={e => setFI(i, { item_nome: e.target.value })} />
+                  <Input className="h-8 text-xs w-24" placeholder="Meta" type="number" min="0"
+                    value={it.quantidade_meta} onChange={e => setFI(i, { quantidade_meta: e.target.value })} />
+                  <Select value={it.tipo_dinheiro || 'none'} onValueChange={v => setFI(i, { tipo_dinheiro: v === 'none' ? '' : v as 'limpo' | 'sujo' })}>
+                    <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">—</SelectItem>
+                      <SelectItem value="limpo">Limpo</SelectItem>
+                      <SelectItem value="sujo">Sujo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <button onClick={() => removeFI(i)} className="p-1 text-muted-foreground hover:text-red-400">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={addFI} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <Plus className="h-3 w-3" /> Adicionar item
+              </button>
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <Button variant="outline" size="sm" onClick={() => setEditando(null)} disabled={salvandoEdit}>Cancelar</Button>
+                <Button size="sm" onClick={handleSalvarEdit} disabled={salvandoEdit}>
+                  {salvandoEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Modal lançar entrega ── */}
       <Dialog open={!!lancandoMm} onOpenChange={o => { if (!salvando && !o) setLancandoMm(null) }}>

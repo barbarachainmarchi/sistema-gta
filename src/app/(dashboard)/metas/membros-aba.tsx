@@ -38,11 +38,12 @@ interface Props {
   userId: string; userNome: string | null
   setMetaAtual: React.Dispatch<React.SetStateAction<MetaSemanal | null>>
   podeEditar: boolean; podeLancar: boolean
+  catalogoItens: { id: string; nome: string }[]
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function MembrosAba({ metaAtual, membros, contas, sb, userNome, setMetaAtual, podeEditar, podeLancar }: Props) {
+export function MembrosAba({ metaAtual, membros, contas, sb, userNome, setMetaAtual, podeEditar, podeLancar, catalogoItens }: Props) {
   const membroMap = useMemo(() => Object.fromEntries(membros.map(m => [m.id, m])), [membros])
   const contaMap  = useMemo(() => {
     const m: Record<string, ContaMembro> = {}
@@ -342,9 +343,13 @@ export function MembrosAba({ metaAtual, membros, contas, sb, userNome, setMetaAt
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">Substitui todos os itens da meta deste membro. As entregas já registradas são mantidas.</p>
 
+              <datalist id="membros-aba-itens-list">
+                {catalogoItens.map(item => <option key={item.id} value={item.nome} />)}
+              </datalist>
+
               {formItens.map((it, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <Input className="h-8 text-xs flex-1" placeholder="Item" value={it.item_nome} onChange={e => setFI(i, { item_nome: e.target.value })} />
+                  <Input className="h-8 text-xs flex-1" placeholder="Item" list="membros-aba-itens-list" value={it.item_nome} onChange={e => setFI(i, { item_nome: e.target.value })} />
                   <Input className="h-8 text-xs w-24" placeholder="Meta" type="number" min="0" value={it.quantidade_meta} onChange={e => setFI(i, { quantidade_meta: e.target.value })} />
                   <Select value={it.tipo_dinheiro || 'none'} onValueChange={v => setFI(i, { tipo_dinheiro: v === 'none' ? '' : v as 'limpo' | 'sujo' })}>
                     <SelectTrigger className="h-8 text-xs w-28"><SelectValue /></SelectTrigger>

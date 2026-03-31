@@ -104,9 +104,10 @@ interface Props {
   contas: ContaMembro[]
   podeEditar: boolean; podeLancar: boolean
   catalogoItens: { id: string; nome: string }[]
+  ultimaMetaItens: { item_nome: string; quantidade: number; tipo_dinheiro: 'limpo' | 'sujo' | null }[]
 }
 
-export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualInicial, metasHistorico: histInicial, contas, podeEditar, podeLancar, catalogoItens }: Props) {
+export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualInicial, metasHistorico: histInicial, contas, podeEditar, podeLancar, catalogoItens, ultimaMetaItens }: Props) {
   const sb: SbClient = useCallback(() => createClient(), [])
 
   const [aba, setAba]             = useState<Aba>('visao')
@@ -135,6 +136,15 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
     const td: 'limpo' | 'sujo' | '' = nome === 'Dinheiro Limpo' ? 'limpo' : nome === 'Dinheiro Sujo' ? 'sujo' : ''
     const item_nome = (nome === 'Dinheiro Limpo' || nome === 'Dinheiro Sujo') ? 'Dinheiro' : nome
     setItensMeta(prev => [...prev.filter(it => it.item_nome !== ''), { item_nome, quantidade: '', tipo_dinheiro: td }])
+  }
+
+  function adicionarHistorico(it: { item_nome: string; quantidade: number; tipo_dinheiro: 'limpo' | 'sujo' | null }) {
+    setItensMeta(prev => {
+      const semVazios = prev.filter(x => x.item_nome !== '')
+      const jaExiste = semVazios.find(x => x.item_nome === it.item_nome && (x.tipo_dinheiro || '') === (it.tipo_dinheiro || ''))
+      if (jaExiste) return prev
+      return [...semVazios, { item_nome: it.item_nome, quantidade: String(it.quantidade), tipo_dinheiro: it.tipo_dinheiro ?? '' }]
+    })
   }
 
   function abrirNovaMeta() {
@@ -282,8 +292,8 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
 
       {/* ── Conteúdo ── */}
       <div className="flex-1 overflow-hidden">
-        {aba === 'visao'     && <VisaoGeralAba metaAtual={metaAtual} membros={membros} contas={contas} sb={sb} userId={userId} userNome={userNome} setMetaAtual={setMetaAtual} podeEditar={podeEditar} podeLancar={podeLancar} onAbrirNovaMeta={abrirNovaMeta} />}
-        {aba === 'membros'   && <MembrosAba   metaAtual={metaAtual} membros={membros} contas={contas} sb={sb} userId={userId} userNome={userNome} setMetaAtual={setMetaAtual} podeEditar={podeEditar} podeLancar={podeLancar} />}
+        {aba === 'visao'     && <VisaoGeralAba metaAtual={metaAtual} membros={membros} contas={contas} sb={sb} userId={userId} userNome={userNome} setMetaAtual={setMetaAtual} podeEditar={podeEditar} podeLancar={podeLancar} onAbrirNovaMeta={abrirNovaMeta} catalogoItens={catalogoItens} />}
+        {aba === 'membros'   && <MembrosAba   metaAtual={metaAtual} membros={membros} contas={contas} sb={sb} userId={userId} userNome={userNome} setMetaAtual={setMetaAtual} podeEditar={podeEditar} podeLancar={podeLancar} catalogoItens={catalogoItens} />}
         {aba === 'historico' && <HistoricoAba historico={historico} membros={membros} sb={sb} setHistorico={setHistorico} setMetaAtual={setMetaAtual} podeEditar={podeEditar} />}
       </div>
 
@@ -314,7 +324,22 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
               </div>
             </div>
 
-            {/* Sugestões rápidas */}
+            {/* Sugestões da última meta */}
+            {ultimaMetaItens.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-muted-foreground font-medium">Última meta</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ultimaMetaItens.map((it, i) => (
+                    <button key={i} onClick={() => adicionarHistorico(it)}
+                      className="px-2.5 py-1 text-[11px] rounded-full border border-border hover:border-primary/50 hover:text-primary transition-colors text-muted-foreground">
+                      + {it.item_nome}{it.tipo_dinheiro ? ` (${it.tipo_dinheiro})` : ''} <span className="opacity-60">× {it.quantidade}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sugestões do catálogo de ingredientes */}
             <div className="space-y-2">
               <Label className="text-xs">Itens da Meta</Label>
               {catalogoItens.length > 0 && (
@@ -330,10 +355,13 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
             </div>
 
             {/* Lista de itens */}
+            <datalist id="metas-itens-list">
+              {catalogoItens.map(item => <option key={item.id} value={item.nome} />)}
+            </datalist>
             <div className="space-y-2">
               {itensMeta.map((it, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <Input className="h-8 text-xs flex-1" placeholder="Nome do item"
+                  <Input className="h-8 text-xs flex-1" placeholder="Nome do item" list="metas-itens-list"
                     value={it.item_nome} onChange={e => setItem(i, { item_nome: e.target.value })} />
                   <Input className="h-8 text-xs w-24" placeholder="Qtd" type="number" min="0"
                     value={it.quantidade} onChange={e => setItem(i, { quantidade: e.target.value })} />
