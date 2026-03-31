@@ -41,8 +41,8 @@ export default async function MetasPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
-  const podeEditar  = perms == null ? true : (perms.find((p: any) => p.modulo === 'metas_editar')?.pode_editar  ?? false)
-  const podeLancar  = perms == null ? true : (perms.find((p: any) => p.modulo === 'metas_lancar')?.pode_editar  ?? false)
+  const podeEditar  = perms == null ? true : (perms.find((p: any) => p.modulo === 'metas')?.pode_editar  ?? false)
+  const podeLancar  = perms == null ? true : (perms.find((p: any) => p.modulo === 'metas')?.pode_editar  ?? false)
 
   return (
     <>
