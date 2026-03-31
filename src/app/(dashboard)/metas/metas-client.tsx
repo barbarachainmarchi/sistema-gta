@@ -89,8 +89,6 @@ function getSundayOfWeek(d = new Date()): string {
   return mon.toISOString().split('T')[0]
 }
 
-const ITENS_SUGERIDOS = ['Ferro', 'Plástico', 'Nitrato', 'Dinheiro Limpo', 'Dinheiro Sujo', 'Outro']
-
 type FormItem = { item_nome: string; quantidade: string; tipo_dinheiro: 'limpo' | 'sujo' | '' }
 const ITEM_VAZIO: FormItem = { item_nome: '', quantidade: '', tipo_dinheiro: '' }
 
@@ -105,9 +103,10 @@ interface Props {
   metasHistorico: MetaHistorico[]
   contas: ContaMembro[]
   podeEditar: boolean; podeLancar: boolean
+  catalogoItens: { id: string; nome: string }[]
 }
 
-export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualInicial, metasHistorico: histInicial, contas, podeEditar, podeLancar }: Props) {
+export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualInicial, metasHistorico: histInicial, contas, podeEditar, podeLancar, catalogoItens }: Props) {
   const sb: SbClient = useCallback(() => createClient(), [])
 
   const [aba, setAba]             = useState<Aba>('visao')
@@ -304,14 +303,16 @@ export function MetasClient({ userId, userNome, membros, metaAtual: metaAtualIni
             {/* Sugestões rápidas */}
             <div className="space-y-2">
               <Label className="text-xs">Itens da Meta</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {ITENS_SUGERIDOS.map(s => (
-                  <button key={s} onClick={() => adicionarSugerido(s)}
-                    className="px-2.5 py-1 text-[11px] rounded-full border border-border hover:border-primary/50 hover:text-primary transition-colors text-muted-foreground">
-                    + {s}
-                  </button>
-                ))}
-              </div>
+              {catalogoItens.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {catalogoItens.map(item => (
+                    <button key={item.id} onClick={() => adicionarSugerido(item.nome)}
+                      className="px-2.5 py-1 text-[11px] rounded-full border border-border hover:border-primary/50 hover:text-primary transition-colors text-muted-foreground">
+                      + {item.nome}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Lista de itens */}

@@ -36,6 +36,7 @@ export type Lancamento = {
   responsavel_nome: string | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cotacoes?: any
+  vendas?: { cliente_nome: string | null; faccoes: { nome: string } | null } | null
 }
 
 export type Lavagem = {

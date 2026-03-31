@@ -402,7 +402,12 @@ export function ExtratoAba({
                           <p className="text-[10px] text-muted-foreground truncate">{l.origem}</p>
                         )}
                         {isTrans && destNome && <p className="text-[10px] text-muted-foreground">→ {destNome}</p>}
-                        {isVenda && <p className="text-[10px] text-blue-400">venda</p>}
+                        {isVenda && (
+                          <p className="text-[10px] text-blue-400">
+                            venda{l.vendas?.faccoes?.nome ? ` · ${l.vendas.faccoes.nome}` : ''}
+                            {l.vendas?.cliente_nome ? ` · ${l.vendas.cliente_nome}` : ''}
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{l.categoria ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtNum(l.quantidade)}</td>

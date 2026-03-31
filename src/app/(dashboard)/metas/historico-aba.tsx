@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { ChevronRight, RotateCcw } from 'lucide-react'
+import { ChevronRight, RotateCcw, Trash2 } from 'lucide-react'
 import type { MetaHistorico, MetaSemanal, Membro, SbClient } from './metas-client'
 import { fmtSemana } from './metas-client'
 
@@ -43,6 +43,8 @@ export function HistoricoAba({ historico, membros, sb, setHistorico, setMetaAtua
   const [detalhe, setDetalhe]       = useState<MetaSemanal | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [reativando, setReativando] = useState<string | null>(null)
+  const [deletando, setDeletando]   = useState<string | null>(null)
+  const [confirmarDelete, setConfirmarDelete] = useState<MetaHistorico | null>(null)
 
   const membroMap = Object.fromEntries(membros.map(m => [m.id, m]))
 
@@ -77,6 +79,19 @@ export function HistoricoAba({ historico, membros, sb, setHistorico, setMetaAtua
       setHistorico(prev => prev.filter(h => h.id !== meta.id))
       toast.success('Meta reativada!')
     } finally { setReativando(null) }
+  }
+
+  async function handleDeletar(meta: MetaHistorico) {
+    setDeletando(meta.id)
+    setConfirmarDelete(null)
+    try {
+      // Child tables (metas_itens_template, metas_membros, metas_membros_itens, metas_entregas)
+      // all have ON DELETE CASCADE from metas_semanais — one delete is enough.
+      const { error } = await sb().from('metas_semanais').delete().eq('id', meta.id)
+      if (error) { toast.error(error.message); return }
+      setHistorico(prev => prev.filter(h => h.id !== meta.id))
+      toast.success('Meta excluída!')
+    } finally { setDeletando(null) }
   }
 
   if (!historico.length) {
@@ -120,10 +135,16 @@ export function HistoricoAba({ historico, membros, sb, setHistorico, setMetaAtua
                 </div>
 
                 {podeEditar && meta.status === 'encerrada' && (
-                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-muted-foreground"
-                    onClick={() => handleReativar(meta)} disabled={reativando === meta.id}>
-                    <RotateCcw className="h-3 w-3" /> Reativar
-                  </Button>
+                  <>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-muted-foreground"
+                      onClick={() => handleReativar(meta)} disabled={reativando === meta.id}>
+                      <RotateCcw className="h-3 w-3" /> Reativar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-red-400/70 hover:text-red-400"
+                      onClick={() => setConfirmarDelete(meta)} disabled={deletando === meta.id}>
+                      <Trash2 className="h-3 w-3" /> Excluir
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -223,6 +244,29 @@ export function HistoricoAba({ historico, membros, sb, setHistorico, setMetaAtua
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirmar exclusão ── */}
+      <Dialog open={!!confirmarDelete} onOpenChange={o => { if (!o) setConfirmarDelete(null) }}>
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Excluir semana?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Isso vai apagar permanentemente a meta{' '}
+            <span className="font-medium text-foreground">
+              {confirmarDelete?.titulo || (confirmarDelete ? `Semana ${fmtSemana(confirmarDelete.semana_inicio, confirmarDelete.semana_fim)}` : '')}
+            </span>{' '}
+            e todos os registros associados. Essa ação não pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmarDelete(null)}>Cancelar</Button>
+            <Button variant="destructive" size="sm" onClick={() => confirmarDelete && handleDeletar(confirmarDelete)}
+              disabled={!!deletando}>
+              Excluir
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

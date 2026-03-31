@@ -15,6 +15,7 @@ export default async function MetasPage() {
     { data: contasData },
     { data: permRow },
     { data: userRow },
+    { data: itensData },
   ] = await Promise.all([
     supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').eq('membro_proprio', true).order('nome'),
     supabase
@@ -37,6 +38,7 @@ export default async function MetasPage() {
       .eq('status', 'ativo'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
+    supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,6 +58,7 @@ export default async function MetasPage() {
         contas={contasData ?? []}
         podeEditar={podeEditar}
         podeLancar={podeLancar}
+        catalogoItens={itensData ?? []}
       />
     </>
   )

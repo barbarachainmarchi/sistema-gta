@@ -20,7 +20,7 @@ export default async function FinanceiroPage() {
   ] = await Promise.all([
     supabase.from('financeiro_contas').select('*').order('nome'),
     supabase.from('financeiro_lancamentos')
-      .select('*, cotacoes(titulo, fornecedor_nome)')
+      .select('*, cotacoes(titulo, fornecedor_nome), vendas(cliente_nome, faccoes(nome))')
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('financeiro_lavagem').select('*').order('created_at', { ascending: false }).limit(200),
