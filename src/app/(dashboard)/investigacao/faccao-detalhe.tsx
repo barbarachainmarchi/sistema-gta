@@ -163,6 +163,13 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   async function handleSalvarMembro() {
     if (!membroForm.nome.trim()) { toast.error('Nome obrigatório'); return }
+    const tel = membroForm.telefone.trim()
+    if (tel) {
+      let query = sb().from('membros').select('id, nome').eq('telefone', tel).neq('status', 'inativo')
+      if (membroDialog?.membro) query = query.neq('id', membroDialog.membro.id)
+      const { data: dup } = await query.maybeSingle()
+      if (dup) toast.warning(`Telefone já cadastrado para "${dup.nome}"`)
+    }
     setMembroSaving(true)
     const payload = {
       nome: membroForm.nome.trim(),

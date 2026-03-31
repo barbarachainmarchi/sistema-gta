@@ -411,6 +411,8 @@ function OrderDialog({
   const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
+  const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
+  const [vinculandoCivil, setVinculandoCivil] = useState(false)
 
   const cartMap = useMemo(() => Object.fromEntries(cart.map(c => [c.item_id, c])), [cart])
   const descontoPct = parseFloat(form.desconto_pct) || 0
@@ -534,7 +536,10 @@ function OrderDialog({
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta || !membroNome.trim()) return []
     const q = membroNome.toLowerCase()
-    const pool = form.faccao_id ? membros.filter(m => m.faccao_id === form.faccao_id) : membros
+    // Com facção: mostra membros da facção + membros sem facção (civil)
+    const pool = form.faccao_id
+      ? membros.filter(m => m.faccao_id === form.faccao_id || m.faccao_id === null)
+      : membros
     return pool.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)).slice(0, 8)
   }, [membros, membroNome, membroAberta, form.faccao_id])
 
@@ -542,6 +547,21 @@ function OrderDialog({
     setMembroNome(m.nome)
     setForm(prev => ({ ...prev, cliente_nome: m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
     setMembroAberta(false)
+    // Se membro civil e há facção selecionada, perguntar se pertence
+    if (m.faccao_id === null && form.faccao_id) {
+      setMembroCivilParaVincular(m)
+    }
+  }
+
+  async function handleVincularCivil() {
+    if (!membroCivilParaVincular || !form.faccao_id) return
+    setVinculandoCivil(true)
+    const { error } = await sb().from('membros').update({ faccao_id: form.faccao_id }).eq('id', membroCivilParaVincular.id)
+    setVinculandoCivil(false)
+    if (error) { toast.error(error.message); return }
+    onMembroCreated({ ...membroCivilParaVincular, faccao_id: form.faccao_id })
+    toast.success('Membro vinculado à facção!')
+    setMembroCivilParaVincular(null)
   }
 
   async function handleCadastrarMembro() {
@@ -639,6 +659,7 @@ function OrderDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}
         className="max-w-[1400px] w-[95vw] h-[92vh] flex flex-col p-0 gap-0 overflow-hidden">
@@ -704,6 +725,7 @@ function OrderDialog({
                         className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
                         <span className="font-medium">{m.nome}</span>
                         {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
+                        {m.faccao_id === null && <span className="text-[10px] text-muted-foreground/50 italic">civil</span>}
                         {m.telefone && <span className="ml-auto text-muted-foreground text-[10px]">{m.telefone}</span>}
                       </button>
                     ))}
@@ -1019,6 +1041,28 @@ function OrderDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Dialog: membro civil → vincular à facção */}
+    {membroCivilParaVincular && (
+      <Dialog open onOpenChange={() => setMembroCivilParaVincular(null)}>
+        <DialogContent className="max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Vincular à facção?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{membroCivilParaVincular.nome}</span> não tem facção registrada.
+            Pertence à facção selecionada nesta venda?
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setMembroCivilParaVincular(null)}>Não, manter civil</Button>
+            <Button size="sm" onClick={handleVincularCivil} disabled={vinculandoCivil}>
+              {vinculandoCivil ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Sim, vincular'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+    </>
   )
 }
 

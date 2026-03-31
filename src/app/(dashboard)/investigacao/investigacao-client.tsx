@@ -149,6 +149,13 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   async function handleSalvarMembro() {
     if (!membroForm.nome) { toast.error('Nome obrigatório'); return }
+    const tel = membroForm.telefone.trim()
+    if (tel) {
+      let query = sb().from('membros').select('id, nome').eq('telefone', tel).neq('status', 'inativo')
+      if (membroEditId) query = query.neq('id', membroEditId)
+      const { data: dup } = await query.maybeSingle()
+      if (dup) toast.warning(`Telefone já cadastrado para "${dup.nome}"`)
+    }
     setMembroSaving(true)
     const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, instagram: membroForm.instagram || null, deep: membroForm.deep || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, cargo_faccao: membroForm.cargo_faccao || null, status: membroForm.status, observacoes: membroForm.observacoes || null, membro_proprio: membroForm.membro_proprio, data_entrada: membroForm.data_entrada || null }
     if (membroEditId) {

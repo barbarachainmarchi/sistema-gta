@@ -16,7 +16,7 @@ export default async function MetasPage() {
     { data: permRow },
     { data: userRow },
   ] = await Promise.all([
-    supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').order('nome'),
+    supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').eq('membro_proprio', true).order('nome'),
     supabase
       .from('metas_semanais')
       .select('*, metas_itens_template(*), metas_membros(*, metas_membros_itens(*))')
