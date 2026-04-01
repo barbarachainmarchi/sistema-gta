@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, memo } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Key } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -53,6 +53,9 @@ function fmt(v: number) {
 function fmtKg(kg: number) {
   if (kg === 0) return '—'
   return `${kg % 1 === 0 ? kg : kg.toFixed(2)} kg`
+}
+function fmtNum(v: number) {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
 // ── Item com botão + ──────────────────────────────────────────────────────────
@@ -117,6 +120,38 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, prec
   )
 })
 
+// ── Geração de imagem canvas ──────────────────────────────────────────────────
+
+function gerarCanvas(linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[]): HTMLCanvasElement {
+  const W = 540
+  const PAD = 24
+  const LINE_H = 22
+  const H = PAD * 2 + linhas.length * LINE_H + 10
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  // Fundo
+  ctx.fillStyle = '#0d0d14'
+  ctx.fillRect(0, 0, W, H)
+
+  // Barra lateral primária
+  ctx.fillStyle = '#6366f1'
+  ctx.fillRect(0, 0, 3, H)
+
+  // Texto
+  linhas.forEach((linha, i) => {
+    const y = PAD + i * LINE_H + LINE_H * 0.72
+    const x = PAD + (linha.indent ? 16 : 0)
+    ctx.font = linha.bold ? 'bold 13px ui-monospace, monospace' : '13px ui-monospace, monospace'
+    ctx.fillStyle = linha.color ?? (linha.dim ? '#64748b' : '#e2e8f0')
+    ctx.fillText(linha.text, x, y)
+  })
+
+  return canvas
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function CalculadoraClient({
@@ -130,9 +165,21 @@ export function CalculadoraClient({
   const [aba, setAba] = useState<Aba>('todos')
   const [batch, setBatch] = useState<BatchEntry[]>([])
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
+  const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
   const [modoSujo, setModoSujo] = useState(false)
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
+  const [imgbbLoading, setImgbbLoading] = useState(false)
+  const [imgbbKey, setImgbbKey] = useState('')
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const [imgbbKeyInput, setImgbbKeyInput] = useState('')
+
+  // Carrega chave imgbb do localStorage
+  useEffect(() => {
+    const k = localStorage.getItem('imgbb_key') ?? ''
+    setImgbbKey(k)
+    setImgbbKeyInput(k)
+  }, [])
 
   const favoritosRef = useRef(favoritos)
   favoritosRef.current = favoritos
@@ -142,7 +189,6 @@ export function CalculadoraClient({
   const itemMap = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const lojaMap = useMemo(() => Object.fromEntries(lojas.map(l => [l.id, l])), [lojas])
 
-  // Preços padrão: prioridade loja/facção do usuário; fallback = item_preco_vigente
   const meuPrecoMap = useMemo(() => {
     const map: Record<string, { preco_limpo: number | null; preco_sujo: number | null }> = {}
     precosVigentes.forEach(p => { map[p.item_id] = { preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo } })
@@ -167,7 +213,6 @@ export function CalculadoraClient({
     return ids
   }, [meuPrecoMap, items, userId])
 
-  // Lojas disponíveis por item
   const lojaPrecoPorItem = useMemo(() => {
     const map: Record<string, LojaPreco[]> = {}
     lojaPrecos.forEach(lp => {
@@ -177,7 +222,7 @@ export function CalculadoraClient({
     return map
   }, [lojaPrecos])
 
-  // Lista de itens filtrada — TODOS os ativos (não só tem_craft)
+  // Lista filtrada — TODOS os itens ativos
   const itensFiltrados = useMemo(() => {
     let lista = items
     if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
@@ -211,21 +256,18 @@ export function CalculadoraClient({
   const addToBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.some(b => b.item_id === itemId) ? prev : [...prev, { item_id: itemId, quantidade: 1, loja_id: '' }])
   }, [])
-
   const removeFromBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.filter(b => b.item_id !== itemId))
   }, [])
-
   const setQtd = useCallback((itemId: string, qtd: number) => {
     if (qtd <= 0) { setBatch(prev => prev.filter(b => b.item_id !== itemId)); return }
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, quantidade: qtd } : b))
   }, [])
-
   const setLoja = useCallback((itemId: string, lojaId: string) => {
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, loja_id: lojaId === 'sem' ? '' : lojaId } : b))
   }, [])
 
-  // Preço efetivo de um item do batch
+  // Preço efetivo por item do batch
   const getPrecoItem = useCallback((entry: BatchEntry): number | null => {
     if (entry.loja_id) {
       const lp = lojaPrecos.find(l => l.loja_id === entry.loja_id && l.item_id === entry.item_id)
@@ -239,7 +281,12 @@ export function CalculadoraClient({
   // ── Ingredientes agregados ────────────────────────────────────────────────
 
   const ingredientesAgregados = useMemo(() => {
-    const map: Record<string, { ingrediente: Item | null; totalQty: number; totalPeso: number }> = {}
+    const map: Record<string, {
+      ingrediente: Item | null
+      totalQty: number
+      totalPeso: number
+      lojasDisponiveis: LojaPreco[]
+    }> = {}
     for (const { item_id, quantidade } of batch) {
       const item = itemMap[item_id]
       if (!item?.item_receita?.length) continue
@@ -249,6 +296,7 @@ export function CalculadoraClient({
           map[r.ingrediente_id] = {
             ingrediente: itemMap[r.ingrediente_id] ?? null,
             totalQty: 0, totalPeso: 0,
+            lojasDisponiveis: lojaPrecoPorItem[r.ingrediente_id] ?? [],
           }
         }
         map[r.ingrediente_id].totalQty += qtd
@@ -258,51 +306,126 @@ export function CalculadoraClient({
     return Object.entries(map)
       .map(([id, v]) => ({ ingrediente_id: id, ...v }))
       .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? ''))
-  }, [batch, itemMap])
+  }, [batch, itemMap, lojaPrecoPorItem])
 
   // ── Totais ────────────────────────────────────────────────────────────────
 
   const totais = useMemo(() => {
-    let custoTotal = 0, pesoProdutos = 0
-    let custoCompleto = batch.length > 0
+    let custoItens = 0, pesoProdutos = 0, custoItensCompleto = batch.length > 0
     for (const entry of batch) {
       const preco = getPrecoItem(entry)
-      if (preco == null) custoCompleto = false
-      else custoTotal += preco * entry.quantidade
+      if (preco == null) custoItensCompleto = false
+      else custoItens += preco * entry.quantidade
       pesoProdutos += (itemMap[entry.item_id]?.peso ?? 0) * entry.quantidade
     }
-    return { custoTotal, pesoProdutos, custoCompleto }
-  }, [batch, getPrecoItem, itemMap])
 
-  // ── Copiar resumo ─────────────────────────────────────────────────────────
+    let custoIng = 0, custoIngCompleto = ingredientesAgregados.length > 0
+    for (const ing of ingredientesAgregados) {
+      const lojaId = lojasPorIng[ing.ingrediente_id]
+      const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+      const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+      if (precoUnit == null) custoIngCompleto = false
+      else custoIng += precoUnit * ing.totalQty
+    }
 
-  const copiarResumo = useCallback(() => {
-    const linhas: string[] = ['=== CALCULADORA ===', '']
+    return { custoItens, pesoProdutos, custoItensCompleto, custoIng, custoIngCompleto }
+  }, [batch, getPrecoItem, itemMap, ingredientesAgregados, lojasPorIng, modoSujo])
+
+  // ── Copiar texto ──────────────────────────────────────────────────────────
+
+  const gerarLinhasResumo = useCallback(() => {
+    const linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[] = []
+    linhas.push({ text: 'CALCULADORA', bold: true })
+    linhas.push({ text: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), dim: true })
+    linhas.push({ text: '' })
+
     for (const entry of batch) {
       const item = itemMap[entry.item_id]
       if (!item) continue
       const lojaNome = entry.loja_id ? (lojaMap[entry.loja_id]?.nome ?? '') : ''
       const preco = getPrecoItem(entry)
       const total = preco != null ? fmt(preco * entry.quantidade) : '—'
-      const lojaPrefix = lojaNome ? `[${lojaNome}] ` : ''
-      linhas.push(`${lojaPrefix}${item.nome} × ${entry.quantidade} = ${total}`)
+      const prefix = lojaNome ? `[${lojaNome}] ` : ''
+      linhas.push({ text: `${prefix}${item.nome}  ×${entry.quantidade}  ${total}` })
     }
-    linhas.push('')
-    if (totais.custoTotal > 0) linhas.push(`TOTAL: ${fmt(totais.custoTotal)}`)
-    if (totais.pesoProdutos > 0) linhas.push(`PESO: ${fmtKg(totais.pesoProdutos)}`)
+
+    linhas.push({ text: '' })
+    if (totais.custoItens > 0) {
+      linhas.push({ text: `TOTAL: ${fmt(totais.custoItens)}`, bold: true })
+    }
+    if (totais.pesoProdutos > 0) {
+      linhas.push({ text: `Peso: ${fmtKg(totais.pesoProdutos)}`, dim: true })
+    }
+
     if (modo === 'producao' && ingredientesAgregados.length > 0) {
-      linhas.push('', '--- Ingredientes ---')
+      linhas.push({ text: '' })
+      linhas.push({ text: '─── Ingredientes ───', dim: true })
       for (const ing of ingredientesAgregados) {
-        const nome = ing.ingrediente?.nome ?? ing.ingrediente_id
+        const lojaId = lojasPorIng[ing.ingrediente_id]
+        const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+        const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+        const custo = precoUnit != null ? `  ${fmt(precoUnit * ing.totalQty)}` : ''
         const peso = ing.totalPeso > 0 ? ` (${fmtKg(ing.totalPeso)})` : ''
-        linhas.push(`${nome}: ${ing.totalQty}×${peso}`)
+        linhas.push({
+          text: `${ing.ingrediente?.nome ?? ing.ingrediente_id}: ${fmtNum(ing.totalQty)}×${peso}${custo}`,
+          indent: true,
+        })
+      }
+      if (totais.custoIng > 0) {
+        linhas.push({ text: '' })
+        linhas.push({ text: `Custo ingredientes: ${fmt(totais.custoIng)}`, bold: true })
       }
     }
-    navigator.clipboard.writeText(linhas.join('\n')).then(() => {
+
+    return linhas
+  }, [batch, itemMap, lojaMap, getPrecoItem, totais, modo, ingredientesAgregados, lojasPorIng, modoSujo])
+
+  const copiarTexto = useCallback(() => {
+    const linhas = gerarLinhasResumo()
+    const texto = linhas.map(l => l.text).join('\n')
+    navigator.clipboard.writeText(texto).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
-  }, [batch, itemMap, lojaMap, getPrecoItem, totais, modo, ingredientesAgregados])
+  }, [gerarLinhasResumo])
+
+  // ── Enviar para imgbb ─────────────────────────────────────────────────────
+
+  const salvarChaveImgbb = useCallback(() => {
+    const k = imgbbKeyInput.trim()
+    localStorage.setItem('imgbb_key', k)
+    setImgbbKey(k)
+    setShowKeyInput(false)
+    if (k) toast.success('Chave salva')
+  }, [imgbbKeyInput])
+
+  const enviarImgbb = useCallback(async () => {
+    if (!imgbbKey) { setShowKeyInput(true); return }
+    if (batch.length === 0) return
+
+    setImgbbLoading(true)
+    try {
+      const linhas = gerarLinhasResumo()
+      const canvas = gerarCanvas(linhas)
+      const base64 = canvas.toDataURL('image/png').split(',')[1]
+      const form = new FormData()
+      form.append('image', base64)
+
+      const res = await fetch(`https://api.imgbb.com/1/upload?key=${imgbbKey}`, { method: 'POST', body: form })
+      const json = await res.json()
+
+      if (json.success) {
+        await navigator.clipboard.writeText(json.data.display_url)
+        toast.success('URL copiada!', { description: json.data.display_url })
+      } else {
+        toast.error('Erro no upload', { description: json.error?.message ?? 'Verifique a chave imgbb' })
+      }
+    } catch {
+      toast.error('Erro ao enviar imagem')
+    } finally {
+      setImgbbLoading(false)
+    }
+  }, [imgbbKey, batch.length, gerarLinhasResumo])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -314,12 +437,8 @@ export function CalculadoraClient({
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Buscar item..."
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              className="pl-8 h-8 text-sm"
-            />
+            <Input placeholder="Buscar item..." value={busca} onChange={e => setBusca(e.target.value)}
+              className="pl-8 h-8 text-sm" />
           </div>
         </div>
         <div className="flex border-b border-border shrink-0">
@@ -357,7 +476,7 @@ export function CalculadoraClient({
             Selecionados{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
           </h3>
           {batch.length > 0 && (
-            <button onClick={() => setBatch([])}
+            <button onClick={() => { setBatch([]); setLojasPorIng({}) }}
               className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
               <X className="h-3 w-3" /> Limpar
             </button>
@@ -381,7 +500,6 @@ export function CalculadoraClient({
 
                 return (
                   <div key={entry.item_id} className="px-3 py-2.5 space-y-1.5">
-                    {/* Linha 1: loja + nome + remover */}
                     <div className="flex items-center gap-1.5">
                       {lojasItem.length > 0 && (
                         <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
@@ -404,7 +522,6 @@ export function CalculadoraClient({
                         <X className="h-3 w-3" />
                       </button>
                     </div>
-                    {/* Linha 2: controles qtd + total */}
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-0.5">
                         <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
@@ -437,16 +554,13 @@ export function CalculadoraClient({
               })}
             </div>
 
-            {/* Total rápido */}
             <div className="px-3 py-3 border-t border-border/60 bg-muted/[0.04] shrink-0 space-y-1">
-              {totais.custoTotal > 0 ? (
+              {totais.custoItens > 0 ? (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total</span>
                   <span className={cn('font-bold tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                    {fmt(totais.custoTotal)}
-                    {!totais.custoCompleto && (
-                      <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>
-                    )}
+                    {fmt(totais.custoItens)}
+                    {!totais.custoItensCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
                   </span>
                 </div>
               ) : (
@@ -467,43 +581,74 @@ export function CalculadoraClient({
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
-          {/* Toggle simples / produção */}
           <div className="flex bg-muted/40 rounded-md p-0.5 gap-0.5">
             {(['simples', 'producao'] as Modo[]).map(m => (
               <button key={m} onClick={() => setModo(m)}
                 className={cn(
                   'px-3 py-1 rounded text-xs font-medium transition-colors',
-                  modo === m
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                  modo === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 )}>
                 {m === 'simples' ? 'Simples' : 'Produção'}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <Label className="text-[11px] text-muted-foreground">Sujo</Label>
               <Switch checked={modoSujo} onCheckedChange={setModoSujo} />
             </div>
+
             {batch.length > 0 && (
-              <button onClick={copiarResumo}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                {copied
-                  ? <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  : <Copy className="h-3.5 w-3.5" />}
-                <span>{copied ? 'Copiado!' : 'Copiar'}</span>
-              </button>
+              <>
+                <button onClick={copiarTexto}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]">
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+
+                <button
+                  onClick={enviarImgbb}
+                  disabled={imgbbLoading}
+                  title="Enviar para imgbb e copiar URL"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06] disabled:opacity-40">
+                  {imgbbLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
+                </button>
+              </>
             )}
+
+            <button
+              onClick={() => { setShowKeyInput(v => !v); setImgbbKeyInput(imgbbKey) }}
+              title={imgbbKey ? 'Chave imgbb configurada' : 'Configurar chave imgbb'}
+              className={cn(
+                'flex items-center gap-1 text-xs transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]',
+                imgbbKey ? 'text-primary/60 hover:text-primary' : 'text-muted-foreground/40 hover:text-muted-foreground'
+              )}>
+              <Key className="h-3 w-3" />
+            </button>
           </div>
         </div>
 
+        {/* Input chave imgbb */}
+        {showKeyInput && (
+          <div className="px-4 py-2 border-b border-border/60 bg-muted/20 flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground shrink-0">Chave imgbb</span>
+            <Input
+              value={imgbbKeyInput}
+              onChange={e => setImgbbKeyInput(e.target.value)}
+              placeholder="Cole sua API key do imgbb"
+              className="h-7 text-xs flex-1"
+              onKeyDown={e => e.key === 'Enter' && salvarChaveImgbb()}
+            />
+            <button onClick={salvarChaveImgbb}
+              className="shrink-0 text-xs text-primary hover:text-primary/80 transition-colors">
+              Salvar
+            </button>
+          </div>
+        )}
+
         {batch.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-xs text-muted-foreground text-center px-4">
-              Adicione itens para ver o resumo
-            </p>
+            <p className="text-xs text-muted-foreground text-center px-4">Adicione itens para ver o resumo</p>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-4 space-y-5">
@@ -548,16 +693,14 @@ export function CalculadoraClient({
               </div>
             </div>
 
-            {/* Totais */}
+            {/* Totais itens */}
             <div className="pt-3 border-t border-border/60 space-y-1.5">
-              {totais.custoTotal > 0 && (
+              {totais.custoItens > 0 && (
                 <div className="flex justify-between text-sm font-semibold">
                   <span className="text-muted-foreground">Total</span>
                   <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                    {fmt(totais.custoTotal)}
-                    {!totais.custoCompleto && (
-                      <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>
-                    )}
+                    {fmt(totais.custoItens)}
+                    {!totais.custoItensCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
                   </span>
                 </div>
               )}
@@ -576,26 +719,71 @@ export function CalculadoraClient({
                   Ingredientes necessários
                 </p>
                 <div className="space-y-1.5">
-                  {ingredientesAgregados.map(ing => (
-                    <div key={ing.ingrediente_id} className="flex items-center justify-between text-xs">
-                      <span className="text-foreground/80">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                      <div className="flex items-center gap-2 text-muted-foreground shrink-0">
-                        {ing.totalPeso > 0 && (
-                          <span className="tabular-nums">{fmtKg(ing.totalPeso)}</span>
+                  {ingredientesAgregados.map(ing => {
+                    const lojaId = lojasPorIng[ing.ingrediente_id]
+                    const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+                    const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+                    const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
+
+                    return (
+                      <div key={ing.ingrediente_id}>
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                            <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
+                            {ing.totalPeso > 0 && (
+                              <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
+                            )}
+                          </div>
+                          <span className={cn('tabular-nums shrink-0 ml-2', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
+                            {subtotal != null ? fmt(subtotal) : '—'}
+                          </span>
+                        </div>
+                        {/* Seletor de loja — discreto */}
+                        {ing.lojasDisponiveis.length > 0 && (
+                          <div className="mt-0.5 ml-0.5">
+                            <Select
+                              value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
+                              onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
+                            >
+                              <SelectTrigger className="h-5 text-[10px] text-muted-foreground/60 border-0 shadow-none px-0 w-auto gap-1 hover:text-muted-foreground bg-transparent">
+                                <SelectValue placeholder="— loja —" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sem">— sem loja —</SelectItem>
+                                {ing.lojasDisponiveis.map(l => {
+                                  const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
+                                  return (
+                                    <SelectItem key={l.loja_id} value={l.loja_id}>
+                                      {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
+                                    </SelectItem>
+                                  )
+                                })}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         )}
-                        <span className="tabular-nums font-medium text-foreground/70">{ing.totalQty}×</span>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
+
+                {/* Total ingredientes */}
+                {totais.custoIng > 0 && (
+                  <div className="mt-3 pt-2 border-t border-border/40 flex justify-between text-xs font-semibold">
+                    <span className="text-muted-foreground">Custo ingredientes</span>
+                    <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                      {fmt(totais.custoIng)}
+                      {!totais.custoIngCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
             {modo === 'producao' && ingredientesAgregados.length === 0 && (
               <div className="pt-3 border-t border-border/60">
-                <p className="text-xs text-muted-foreground">
-                  Nenhum item selecionado tem receita cadastrada.
-                </p>
+                <p className="text-xs text-muted-foreground">Nenhum item selecionado tem receita cadastrada.</p>
               </div>
             )}
           </div>

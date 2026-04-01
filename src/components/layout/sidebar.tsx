@@ -9,7 +9,7 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload, Home
+  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package
 } from 'lucide-react'
 
 const navGroups = [
@@ -68,6 +68,7 @@ const navGroups = [
     label: 'Gestão',
     items: [
       { href: '/metas',             label: 'Metas',        icon: Target,       perm: 'metas' },
+      { href: '/estoque',           label: 'Estoque',      icon: Package,      perm: 'estoque' },
       { href: '/acao',              label: 'Ação',         icon: Zap,          perm: 'acao' },
     ],
   },
