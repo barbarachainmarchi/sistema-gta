@@ -4,8 +4,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Plus, Minus, RefreshCw, Package, Settings, ArrowUpCircle, ArrowDownCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { Search, Plus, Minus, RefreshCw, Package, Settings, ChevronDown, ArrowUp, ArrowDown, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -18,46 +17,27 @@ type Item = {
   categorias_item: { nome: string } | null
 }
 
-type Controlado = { item_id: string; created_at: string }
+type Controlado = { item_id: string; created_at: string; quantidade_esperada: number | null }
 
 type Atualizacao = {
-  id: string
-  item_id: string
-  quantidade: number
-  criado_por: string | null
-  criado_por_nome: string
-  nota: string | null
-  created_at: string
+  id: string; item_id: string; quantidade: number
+  criado_por: string | null; criado_por_nome: string; nota: string | null; created_at: string
 }
-
 type Movimento = {
-  id: string
-  item_id: string
-  tipo: 'entrada' | 'saida'
-  quantidade: number
-  motivo: string | null
-  usuario_nome: string
-  created_at: string
+  id: string; item_id: string; tipo: 'entrada' | 'saida'; quantidade: number
+  motivo: string | null; usuario_nome: string; created_at: string
 }
+type VendaItem = { venda_id: string; item_id: string; quantidade: number; entregue_em: string }
+type MetaItem  = { membro_meta_id: string; item_nome: string; quantidade_meta: number; quantidade_entregue: number }
 
-type VendaItem = {
-  venda_id: string
-  item_id: string
-  quantidade: number
-  entregue_em: string
-}
-
-type MetaItem = {
-  membro_meta_id: string
-  item_nome: string
-  quantidade_meta: number
-  quantidade_entregue: number
+type LogEntry = {
+  tipo: 'atualizacao' | 'entrada' | 'saida' | 'venda'
+  quantidade: number; data: string
+  usuario: string | null; motivo: string | null
 }
 
 interface Props {
-  userId: string
-  usuarioNome: string
-  podeEditar: boolean
+  userId: string; usuarioNome: string; podeEditar: boolean
   itens: Item[]
   controlados: Controlado[]
   atualizacoes: Atualizacao[]
@@ -68,258 +48,105 @@ interface Props {
 }
 
 type Aba = 'saldos' | 'configurar'
-type DialogTipo = 'atualizar' | 'entrada' | 'saida' | null
+type ActiveForm = { itemId: string; tipo: 'entrada' | 'saida' | 'atualizar'; qty: string; motivo: string } | null
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtData(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
-
 function fmtDataCurta(iso: string) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 
-// ── Cálculo de saldo por item ─────────────────────────────────────────────────
+// ── Cálculo de saldo ──────────────────────────────────────────────────────────
 
 interface SaldoCalc {
   ultimaAtualizacao: Atualizacao | null
-  base: number
-  entradas: number
-  saidas: number
-  vendas: number
-  saldo: number | null
+  base: number; entradas: number; saidas: number; vendas: number; saldo: number | null
   metasPendentes: number
 }
 
 function calcSaldo(
-  itemId: string,
-  itemNome: string,
-  atualizacoes: Atualizacao[],
-  movimentos: Movimento[],
-  vendaItens: VendaItem[],
-  metasItens: MetaItem[],
+  itemId: string, itemNome: string,
+  atualizacoes: Atualizacao[], movimentos: Movimento[],
+  vendaItens: VendaItem[], metasItens: MetaItem[],
   membroMetaToMetaCreatedAt: Record<string, string>,
 ): SaldoCalc {
-  const minhas = atualizacoes.filter(a => a.item_id === itemId)
-  const ultima = minhas[0] ?? null // já vem ordenado desc
-
-  if (!ultima) {
-    return { ultimaAtualizacao: null, base: 0, entradas: 0, saidas: 0, vendas: 0, saldo: null, metasPendentes: 0 }
-  }
+  const ultima = atualizacoes.find(a => a.item_id === itemId) ?? null
+  if (!ultima) return { ultimaAtualizacao: null, base: 0, entradas: 0, saidas: 0, vendas: 0, saldo: null, metasPendentes: 0 }
 
   const updateDate = new Date(ultima.created_at)
-
   const movsSince = movimentos.filter(m => m.item_id === itemId && new Date(m.created_at) > updateDate)
   const entradas = movsSince.filter(m => m.tipo === 'entrada').reduce((s, m) => s + m.quantidade, 0)
-  const saidas = movsSince.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.quantidade, 0)
-  const vendas = vendaItens
-    .filter(v => v.item_id === itemId && new Date(v.entregue_em) > updateDate)
-    .reduce((s, v) => s + v.quantidade, 0)
+  const saidas   = movsSince.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.quantidade, 0)
+  const vendas   = vendaItens.filter(v => v.item_id === itemId && new Date(v.entregue_em) > updateDate).reduce((s, v) => s + v.quantidade, 0)
 
-  const saldo = ultima.quantidade + entradas - saidas - vendas
-
-  // Metas ativas criadas APÓS a última atualização
   const nomeNorm = itemNome.toLowerCase()
   const metasPendentes = metasItens
     .filter(mi => {
       if (mi.item_nome.toLowerCase() !== nomeNorm) return false
-      const metaCreatedAt = membroMetaToMetaCreatedAt[mi.membro_meta_id]
-      if (!metaCreatedAt) return false
-      return new Date(metaCreatedAt) > updateDate
+      const d = membroMetaToMetaCreatedAt[mi.membro_meta_id]
+      return d ? new Date(d) > updateDate : false
     })
     .reduce((s, mi) => s + Math.max(0, mi.quantidade_meta - mi.quantidade_entregue), 0)
 
-  return { ultimaAtualizacao: ultima, base: ultima.quantidade, entradas, saidas, vendas, saldo, metasPendentes }
+  return { ultimaAtualizacao: ultima, base: ultima.quantidade, entradas, saidas, vendas, saldo: ultima.quantidade + entradas - saidas - vendas, metasPendentes }
 }
 
-// ── Modal de ação ─────────────────────────────────────────────────────────────
+// ── Log combinado por item ────────────────────────────────────────────────────
 
-function ActionDialog({ tipo, itemNome, onClose, onConfirm }: {
-  tipo: DialogTipo
-  itemNome: string
-  onClose: () => void
-  onConfirm: (valor: number, texto: string) => Promise<void>
-}) {
-  const [valor, setValor] = useState('')
-  const [texto, setTexto] = useState('')
-  const [loading, setLoading] = useState(false)
+function buildLog(
+  itemId: string,
+  atualizacoes: Atualizacao[], movimentos: Movimento[], vendaItens: VendaItem[],
+): LogEntry[] {
+  const entries: LogEntry[] = []
+  const ultima = atualizacoes.find(a => a.item_id === itemId)
 
-  if (!tipo) return null
-
-  const labels = {
-    atualizar: { title: 'Atualizar Saldo', label: 'Quantidade atual em estoque', btn: 'Salvar' },
-    entrada:   { title: 'Registrar Entrada', label: 'Quantidade que entrou', btn: 'Registrar' },
-    saida:     { title: 'Registrar Saída', label: 'Quantidade que saiu', btn: 'Registrar' },
-  }
-
-  async function handleSubmit() {
-    const n = parseFloat(valor)
-    if (isNaN(n) || n < 0) { toast.error('Quantidade inválida'); return }
-    if (tipo !== 'atualizar' && n <= 0) { toast.error('Quantidade deve ser maior que zero'); return }
-    setLoading(true)
-    await onConfirm(n, texto)
-    setLoading(false)
-  }
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="text-base">{labels[tipo].title}</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground -mt-2">{itemNome}</p>
-        <div className="space-y-3 mt-1">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{labels[tipo].label}</label>
-            <Input
-              type="number"
-              min="0"
-              value={valor}
-              onChange={e => setValor(e.target.value)}
-              placeholder="0"
-              autoFocus
-              className="h-9"
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
-              {tipo === 'atualizar' ? 'Nota (opcional)' : 'Motivo (opcional)'}
-            </label>
-            <Input
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              placeholder={tipo === 'atualizar' ? 'Ex: contagem física' : tipo === 'entrada' ? 'Ex: compra, produção...' : 'Ex: uso, perda...'}
-              className="h-9"
-            />
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button onClick={onClose}
-              className="flex-1 h-9 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Cancelar
-            </button>
-            <button onClick={handleSubmit} disabled={loading}
-              className={cn(
-                'flex-1 h-9 rounded-md text-sm font-medium transition-colors',
-                tipo === 'saida'
-                  ? 'bg-destructive/80 hover:bg-destructive text-destructive-foreground'
-                  : tipo === 'entrada'
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                  : 'bg-primary hover:bg-primary/80 text-primary-foreground',
-                loading && 'opacity-50 cursor-not-allowed'
-              )}>
-              {loading ? '...' : labels[tipo].btn}
-            </button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+  atualizacoes.filter(a => a.item_id === itemId).forEach(a =>
+    entries.push({ tipo: 'atualizacao', quantidade: a.quantidade, data: a.created_at, usuario: a.criado_por_nome || null, motivo: a.nota })
   )
+  movimentos.filter(m => m.item_id === itemId).forEach(m =>
+    entries.push({ tipo: m.tipo, quantidade: m.quantidade, data: m.created_at, usuario: m.usuario_nome || null, motivo: m.motivo })
+  )
+  if (ultima) {
+    const d = new Date(ultima.created_at)
+    vendaItens.filter(v => v.item_id === itemId && new Date(v.entregue_em) > d).forEach(v =>
+      entries.push({ tipo: 'venda', quantidade: v.quantidade, data: v.entregue_em, usuario: null, motivo: null })
+    )
+  }
+
+  return entries.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
 }
 
-// ── Card de item no saldos ────────────────────────────────────────────────────
+// ── Log row ───────────────────────────────────────────────────────────────────
 
-function ItemSaldoCard({ item, calc, podeEditar, onAction }: {
-  item: Item
-  calc: SaldoCalc
-  podeEditar: boolean
-  onAction: (tipo: DialogTipo) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const temDetalhe = calc.ultimaAtualizacao != null
-
-  const saldoColor = calc.saldo == null
-    ? 'text-muted-foreground'
-    : calc.saldo <= 0
-    ? 'text-red-400'
-    : calc.saldo <= 5
-    ? 'text-orange-400'
-    : 'text-foreground'
+function LogRow({ entry }: { entry: LogEntry }) {
+  const config = {
+    atualizacao: { label: 'Atualização',  color: 'text-primary',      sign: '→', bg: 'bg-primary/10' },
+    entrada:     { label: 'Entrada',      color: 'text-emerald-400',  sign: '+', bg: 'bg-emerald-400/10' },
+    saida:       { label: 'Saída',        color: 'text-red-400',      sign: '−', bg: 'bg-red-400/10' },
+    venda:       { label: 'Venda (auto)', color: 'text-orange-400',   sign: '−', bg: 'bg-orange-400/10' },
+  }[entry.tipo]
 
   return (
-    <div className="border-b border-border/40 last:border-0">
-      <div className="flex items-center gap-3 px-4 py-3">
-        {/* Nome + toggle */}
-        <button
-          onClick={() => temDetalhe && setExpanded(e => !e)}
-          disabled={!temDetalhe}
-          className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-          {temDetalhe
-            ? (expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />)
-            : <span className="w-3.5" />
-          }
-          <div className="min-w-0">
-            <span className="text-sm font-medium truncate block">{item.nome}</span>
-            {item.categorias_item?.nome && (
-              <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>
-            )}
-          </div>
-        </button>
-
-        {/* Saldo + metas */}
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="text-right">
-            <div className={cn('text-lg font-bold tabular-nums leading-tight', saldoColor)}>
-              {calc.saldo == null ? '—' : calc.saldo}
-            </div>
-            {calc.ultimaAtualizacao && (
-              <div className="text-[10px] text-muted-foreground whitespace-nowrap">
-                {fmtDataCurta(calc.ultimaAtualizacao.created_at)} · {calc.ultimaAtualizacao.criado_por_nome}
-              </div>
-            )}
-          </div>
-          {calc.metasPendentes > 0 && (
-            <div className="text-right">
-              <div className="text-sm font-semibold tabular-nums text-amber-400">{calc.metasPendentes}</div>
-              <div className="text-[10px] text-muted-foreground">meta</div>
-            </div>
-          )}
+    <div className="flex items-start gap-3 px-4 py-2.5 border-b border-border/30 last:border-0 hover:bg-muted/[0.03] transition-colors">
+      <span className={cn('text-[11px] font-bold w-4 text-center mt-0.5 shrink-0', config.color)}>
+        {config.sign}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={cn('text-sm font-semibold tabular-nums', config.color)}>
+            {entry.tipo === 'atualizacao' ? entry.quantidade : entry.quantidade}
+          </span>
+          <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', config.bg, config.color)}>
+            {config.label}
+          </span>
+          {entry.usuario && <span className="text-xs text-muted-foreground">{entry.usuario}</span>}
+          {entry.motivo && <span className="text-xs text-muted-foreground italic">"{entry.motivo}"</span>}
         </div>
-
-        {/* Ações */}
-        {podeEditar && (
-          <div className="flex items-center gap-1 shrink-0">
-            <button onClick={() => onAction('atualizar')} title="Atualizar saldo"
-              className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => onAction('entrada')} title="Registrar entrada"
-              className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-emerald-400 hover:bg-emerald-400/10 transition-colors">
-              <ArrowUpCircle className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => onAction('saida')} title="Registrar saída"
-              className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors">
-              <ArrowDownCircle className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
       </div>
-
-      {/* Detalhes expandidos */}
-      {expanded && calc.ultimaAtualizacao && (
-        <div className="px-4 pb-3 ml-5">
-          <div className="flex items-center gap-4 text-xs text-muted-foreground bg-muted/20 rounded-md px-3 py-2 flex-wrap">
-            <span>base <span className="font-medium text-foreground">{calc.base}</span></span>
-            {calc.entradas > 0 && <span>+entrada <span className="font-medium text-emerald-400">{calc.entradas}</span></span>}
-            {calc.saidas > 0 && <span>-saída <span className="font-medium text-red-400">{calc.saidas}</span></span>}
-            {calc.vendas > 0 && <span>-vendas <span className="font-medium text-orange-400">{calc.vendas}</span></span>}
-            <span className="ml-auto">= <span className={cn('font-bold', saldoColor)}>{calc.saldo}</span></span>
-          </div>
-          {calc.ultimaAtualizacao.nota && (
-            <p className="text-[11px] text-muted-foreground mt-1.5 ml-3">"{calc.ultimaAtualizacao.nota}"</p>
-          )}
-        </div>
-      )}
-
-      {!calc.ultimaAtualizacao && podeEditar && (
-        <div className="px-4 pb-3 ml-5">
-          <button onClick={() => onAction('atualizar')}
-            className="text-xs text-primary/70 hover:text-primary transition-colors">
-            Fazer primeira contagem →
-          </button>
-        </div>
-      )}
+      <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{fmtData(entry.data)}</span>
     </div>
   )
 }
@@ -337,27 +164,34 @@ export function EstoqueClient({
   const [aba, setAba] = useState<Aba>('saldos')
   const [busca, setBusca] = useState('')
   const [buscaConfig, setBuscaConfig] = useState('')
-  const [dialogItemId, setDialogItemId] = useState<string | null>(null)
-  const [dialogTipo, setDialogTipo] = useState<DialogTipo>(null)
+  const [activeForm, setActiveForm] = useState<ActiveForm>(null)
+  const [expandedLog, setExpandedLog] = useState<Set<string>>(new Set())
+  const [editEsperado, setEditEsperado] = useState<{ itemId: string; value: string } | null>(null)
+  const [esperadoLocal, setEsperadoLocal] = useState<Record<string, number | null>>({})
+  const [saving, setSaving] = useState<string | null>(null)
   const [loadingConfig, setLoadingConfig] = useState<string | null>(null)
 
-  // Maps
   const itemMap = useMemo(() => Object.fromEntries(itens.map(i => [i.id, i])), [itens])
+  const controladosMap = useMemo(() => Object.fromEntries(controlados.map(c => [c.item_id, c])), [controlados])
   const controladosSet = useMemo(() => new Set(controlados.map(c => c.item_id)), [controlados])
 
-  // Itens controlados com saldo calculado
-  const itensControlados = useMemo(() => {
-    return controlados
+  // ── Itens controlados com cálculo ─────────────────────────────────────────
+
+  const itensControlados = useMemo(() =>
+    controlados
       .map(c => {
         const item = itemMap[c.item_id]
         if (!item) return null
         const calc = calcSaldo(c.item_id, item.nome, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt)
-        return { item, calc }
+        const esperado = esperadoLocal[c.item_id] !== undefined ? esperadoLocal[c.item_id] : c.quantidade_esperada
+        const log = buildLog(c.item_id, atualizacoes, movimentos, vendaItens)
+        return { item, calc, esperado, log }
       })
-      .filter(Boolean) as { item: Item; calc: SaldoCalc }[]
-  }, [controlados, itemMap, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt])
+      .filter(Boolean) as { item: Item; calc: SaldoCalc; esperado: number | null; log: LogEntry[] }[],
+    [controlados, itemMap, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt, esperadoLocal]
+  )
 
-  const itensSaldoFiltrados = useMemo(() => {
+  const itensFiltrados = useMemo(() => {
     if (!busca.trim()) return itensControlados
     const q = busca.toLowerCase()
     return itensControlados.filter(({ item }) => item.nome.toLowerCase().includes(q))
@@ -369,71 +203,96 @@ export function EstoqueClient({
     return itens.filter(i => i.nome.toLowerCase().includes(q))
   }, [itens, buscaConfig])
 
-  // ── Ação: dialog ────────────────────────────────────────────────────────────
+  // ── Helpers de UI ──────────────────────────────────────────────────────────
 
-  function abrirDialog(itemId: string, tipo: DialogTipo) {
-    setDialogItemId(itemId)
-    setDialogTipo(tipo)
+  function toggleForm(itemId: string, tipo: 'entrada' | 'saida' | 'atualizar') {
+    setActiveForm(prev =>
+      prev?.itemId === itemId && prev.tipo === tipo ? null : { itemId, tipo, qty: '', motivo: '' }
+    )
   }
 
-  function fecharDialog() {
-    setDialogItemId(null)
-    setDialogTipo(null)
+  function toggleLog(itemId: string) {
+    setExpandedLog(prev => {
+      const n = new Set(prev)
+      n.has(itemId) ? n.delete(itemId) : n.add(itemId)
+      return n
+    })
   }
 
-  const confirmarAcao = useCallback(async (valor: number, texto: string) => {
-    if (!dialogItemId || !dialogTipo) return
+  // ── Salvar ação ───────────────────────────────────────────────────────────
+
+  const confirmarAcao = useCallback(async () => {
+    if (!activeForm) return
+    const { itemId, tipo, qty, motivo } = activeForm
+    const n = parseFloat(qty)
+    if (isNaN(n) || n < 0) { toast.error('Quantidade inválida'); return }
+    if (tipo !== 'atualizar' && n <= 0) { toast.error('Quantidade deve ser maior que zero'); return }
+
+    setSaving(itemId)
     const client = sb()
 
-    if (dialogTipo === 'atualizar') {
+    if (tipo === 'atualizar') {
       const { error } = await client.from('estoque_atualizacoes').insert({
-        item_id: dialogItemId,
-        quantidade: valor,
-        criado_por: userId,
-        criado_por_nome: usuarioNome,
-        nota: texto || null,
+        item_id: itemId, quantidade: n,
+        criado_por: userId, criado_por_nome: usuarioNome,
+        nota: motivo || null,
       })
-      if (error) { toast.error('Erro ao atualizar saldo'); return }
+      if (error) { toast.error('Erro ao atualizar saldo'); setSaving(null); return }
       toast.success('Saldo atualizado')
     } else {
       const { error } = await client.from('estoque_movimentos').insert({
-        item_id: dialogItemId,
-        tipo: dialogTipo,
-        quantidade: valor,
-        motivo: texto || null,
-        usuario_id: userId,
-        usuario_nome: usuarioNome,
+        item_id: itemId, tipo,
+        quantidade: n, motivo: motivo || null,
+        usuario_id: userId, usuario_nome: usuarioNome,
       })
-      if (error) { toast.error('Erro ao registrar movimento'); return }
-      toast.success(dialogTipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada')
+      if (error) { toast.error('Erro ao registrar'); setSaving(null); return }
+      toast.success(tipo === 'entrada' ? 'Entrada registrada' : 'Saída registrada')
     }
 
-    fecharDialog()
+    setActiveForm(null)
+    setSaving(null)
+    // Abre o log automaticamente para o item após registrar
+    setExpandedLog(prev => new Set([...prev, itemId]))
     router.refresh()
-  }, [dialogItemId, dialogTipo, userId, usuarioNome, sb, router])
+  }, [activeForm, userId, usuarioNome, sb, router])
 
-  // ── Configurar: toggle item no controle ─────────────────────────────────────
+  // ── Salvar esperado ───────────────────────────────────────────────────────
+
+  const salvarEsperado = useCallback(async () => {
+    if (!editEsperado) return
+    const { itemId, value } = editEsperado
+    const n = value.trim() === '' ? null : parseFloat(value)
+    if (n !== null && isNaN(n)) { toast.error('Valor inválido'); return }
+
+    setEsperadoLocal(prev => ({ ...prev, [itemId]: n }))
+    setEditEsperado(null)
+
+    const { error } = await sb().from('estoque_itens_controlados')
+      .update({ quantidade_esperada: n })
+      .eq('item_id', itemId)
+    if (error) {
+      toast.error('Erro ao salvar esperado')
+      setEsperadoLocal(prev => { const r = { ...prev }; delete r[itemId]; return r })
+    }
+  }, [editEsperado, sb])
+
+  // ── Toggle controle ───────────────────────────────────────────────────────
 
   const toggleControle = useCallback(async (itemId: string) => {
     setLoadingConfig(itemId)
     const client = sb()
     if (controladosSet.has(itemId)) {
       const { error } = await client.from('estoque_itens_controlados').delete().eq('item_id', itemId)
-      if (error) { toast.error('Erro ao remover item'); setLoadingConfig(null); return }
+      if (error) { toast.error('Erro ao remover'); setLoadingConfig(null); return }
       toast.success('Item removido do controle')
     } else {
-      const { error } = await client.from('estoque_itens_controlados').insert({
-        item_id: itemId,
-        criado_por_nome: usuarioNome,
-      })
-      if (error) { toast.error('Erro ao adicionar item'); setLoadingConfig(null); return }
+      const { error } = await client.from('estoque_itens_controlados').insert({ item_id: itemId, criado_por_nome: usuarioNome })
+      if (error) { toast.error('Erro ao adicionar'); setLoadingConfig(null); return }
       toast.success('Item adicionado ao controle')
     }
     setLoadingConfig(null)
     router.refresh()
   }, [controladosSet, usuarioNome, sb, router])
-
-  const dialogItem = dialogItemId ? itemMap[dialogItemId] : null
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -441,19 +300,17 @@ export function EstoqueClient({
     <div className="h-[calc(100vh-3rem)] flex flex-col overflow-hidden">
 
       {/* Tabs */}
-      <div className="flex items-center gap-0 border-b border-border px-4 shrink-0">
+      <div className="flex items-center border-b border-border px-4 shrink-0">
         {([['saldos', 'Saldos', Package], ['configurar', 'Configurar', Settings]] as [Aba, string, React.ElementType][]).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setAba(key)}
             className={cn(
               'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-              aba === key
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              aba === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
             )}>
             <Icon className="h-4 w-4" />
             {label}
             {key === 'saldos' && controladosSet.size > 0 && (
-              <span className="text-[10px] text-muted-foreground">({controladosSet.size})</span>
+              <span className="text-[10px] text-muted-foreground ml-0.5">({controladosSet.size})</span>
             )}
           </button>
         ))}
@@ -462,45 +319,226 @@ export function EstoqueClient({
       {/* ── Aba Saldos ── */}
       {aba === 'saldos' && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-border shrink-0">
+          <div className="px-4 py-2.5 border-b border-border shrink-0">
             <div className="relative max-w-sm">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="Buscar item..." value={busca} onChange={e => setBusca(e.target.value)}
-                className="pl-8 h-8 text-sm" />
+              <Input placeholder="Buscar item..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-8 h-8 text-sm" />
             </div>
           </div>
 
           {controladosSet.size === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <Package className="h-10 w-10 text-muted-foreground/20" />
-              <p className="text-sm text-muted-foreground">Nenhum item no controle de estoque.</p>
-              <button onClick={() => setAba('configurar')}
-                className="text-sm text-primary hover:underline">
-                Ir para Configurar →
-              </button>
-            </div>
-          ) : itensSaldoFiltrados.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-sm text-muted-foreground">Nenhum item encontrado.</p>
+              <p className="text-sm text-muted-foreground">Nenhum item no controle.</p>
+              <button onClick={() => setAba('configurar')} className="text-sm text-primary hover:underline">Ir para Configurar →</button>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              {/* Legenda colunas */}
-              <div className="flex items-center gap-3 px-4 py-2 border-b border-border/40 bg-muted/20">
-                <span className="flex-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Item</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground w-16 text-right">Saldo</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground w-12 text-right">Meta</span>
-                {podeEditar && <span className="w-24" />}
-              </div>
-              {itensSaldoFiltrados.map(({ item, calc }) => (
-                <ItemSaldoCard
-                  key={item.id}
-                  item={item}
-                  calc={calc}
-                  podeEditar={podeEditar}
-                  onAction={(tipo) => abrirDialog(item.id, tipo)}
-                />
-              ))}
+              {itensFiltrados.map(({ item, calc, esperado, log }) => {
+                const diff = (calc.saldo != null && esperado != null) ? calc.saldo - esperado : null
+                const logExpanded = expandedLog.has(item.id)
+                const isFormActive = activeForm?.itemId === item.id
+                const isSaving = saving === item.id
+
+                const saldoColor = calc.saldo == null
+                  ? 'text-muted-foreground'
+                  : calc.saldo <= 0 ? 'text-red-400'
+                  : (esperado != null && calc.saldo < esperado) ? 'text-amber-400'
+                  : 'text-emerald-400'
+
+                return (
+                  <div key={item.id} className="border-b border-border/50 last:border-0">
+
+                    {/* ── Cabeçalho do item ── */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-muted/[0.02]">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">{item.nome}</span>
+                          {item.categorias_item?.nome && (
+                            <span className="text-[10px] text-muted-foreground bg-muted/40 px-1.5 py-0.5 rounded">
+                              {item.categorias_item.nome}
+                            </span>
+                          )}
+                          {calc.metasPendentes > 0 && (
+                            <span className="text-[10px] text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
+                              meta: {calc.metasPendentes}
+                            </span>
+                          )}
+                        </div>
+                        {calc.ultimaAtualizacao && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Contado em {fmtDataCurta(calc.ultimaAtualizacao.created_at)} por {calc.ultimaAtualizacao.criado_por_nome}
+                            {calc.ultimaAtualizacao.nota && ` · "${calc.ultimaAtualizacao.nota}"`}
+                          </p>
+                        )}
+                      </div>
+                      {/* Esperado editável */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] text-muted-foreground">Esperado:</span>
+                        {editEsperado?.itemId === item.id ? (
+                          <Input
+                            type="number" min="0"
+                            value={editEsperado.value}
+                            onChange={e => setEditEsperado(prev => prev ? { ...prev, value: e.target.value } : null)}
+                            onKeyDown={e => { if (e.key === 'Enter') salvarEsperado(); if (e.key === 'Escape') setEditEsperado(null) }}
+                            onBlur={salvarEsperado}
+                            autoFocus
+                            className="h-6 w-16 text-center text-xs px-1"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => setEditEsperado({ itemId: item.id, value: esperado?.toString() ?? '' })}
+                            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b border-dashed border-border/60 hover:border-foreground/40 min-w-[2rem] text-center">
+                            {esperado ?? '—'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Stats: Real vs Esperado ── */}
+                    <div className="flex items-center gap-0 px-4 py-3">
+                      {/* Real */}
+                      <div className="text-center min-w-[80px]">
+                        <div className={cn('text-3xl font-bold tabular-nums leading-none', saldoColor)}>
+                          {calc.saldo ?? '—'}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wide">Real</div>
+                      </div>
+
+                      {/* Breakdown */}
+                      {calc.ultimaAtualizacao && (
+                        <div className="flex-1 px-4">
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                            <span className="font-medium text-foreground/60">base: {calc.base}</span>
+                            {calc.entradas > 0 && <span className="text-emerald-400">+{calc.entradas} entrada</span>}
+                            {calc.saidas > 0 && <span className="text-red-400">−{calc.saidas} saída</span>}
+                            {calc.vendas > 0 && <span className="text-orange-400">−{calc.vendas} venda</span>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Diff vs Esperado */}
+                      {diff !== null && (
+                        <div className="text-center min-w-[80px]">
+                          <div className={cn('text-2xl font-bold tabular-nums leading-none', diff >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                            {diff >= 0 ? '+' : ''}{diff}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wide">
+                            {diff >= 0 ? 'sobra' : 'falta'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Esperado (display) */}
+                      {esperado != null && (
+                        <div className="text-center min-w-[80px]">
+                          <div className="text-2xl font-semibold tabular-nums leading-none text-muted-foreground/60">{esperado}</div>
+                          <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wide">Esperado</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Botões de ação ── */}
+                    {podeEditar && (
+                      <div className="flex items-center gap-2 px-4 pb-3">
+                        {(['entrada', 'saida', 'atualizar'] as const).map(tipo => {
+                          const isActive = isFormActive && activeForm?.tipo === tipo
+                          const icons = { entrada: ArrowUp, saida: ArrowDown, atualizar: RefreshCw }
+                          const labels = { entrada: 'Entrada', saida: 'Saída', atualizar: 'Atualizar saldo' }
+                          const colors = {
+                            entrada:   isActive ? 'bg-emerald-600 text-white border-emerald-600' : 'border-border text-muted-foreground hover:border-emerald-500/50 hover:text-emerald-400',
+                            saida:     isActive ? 'bg-red-600 text-white border-red-600'     : 'border-border text-muted-foreground hover:border-red-500/50 hover:text-red-400',
+                            atualizar: isActive ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary',
+                          }
+                          const Icon = icons[tipo]
+                          return (
+                            <button key={tipo}
+                              onClick={() => toggleForm(item.id, tipo)}
+                              className={cn('flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors', colors[tipo])}>
+                              <Icon className="h-3 w-3" />
+                              {labels[tipo]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* ── Formulário inline ── */}
+                    {isFormActive && activeForm && (
+                      <div className="mx-4 mb-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-1 flex-1 min-w-0">
+                            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                              {activeForm.tipo === 'atualizar' ? 'Quantidade atual em estoque' : activeForm.tipo === 'entrada' ? 'Quantidade que entrou' : 'Quantidade que saiu'}
+                            </label>
+                            <Input
+                              type="number" min="0" placeholder="0"
+                              value={activeForm.qty}
+                              onChange={e => setActiveForm(prev => prev ? { ...prev, qty: e.target.value } : null)}
+                              onKeyDown={e => e.key === 'Enter' && confirmarAcao()}
+                              autoFocus
+                              className="h-8 w-28 text-sm"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1 flex-1 min-w-0">
+                            <label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                              {activeForm.tipo === 'atualizar' ? 'Nota (opcional)' : 'Motivo (opcional)'}
+                            </label>
+                            <Input
+                              placeholder={activeForm.tipo === 'entrada' ? 'Ex: produção, compra...' : activeForm.tipo === 'saida' ? 'Ex: uso, perda...' : 'Ex: contagem física...'}
+                              value={activeForm.motivo}
+                              onChange={e => setActiveForm(prev => prev ? { ...prev, motivo: e.target.value } : null)}
+                              onKeyDown={e => e.key === 'Enter' && confirmarAcao()}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div className="flex items-end gap-1.5 pb-0.5 shrink-0">
+                            <button
+                              onClick={confirmarAcao}
+                              disabled={isSaving}
+                              className={cn(
+                                'h-8 px-4 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5',
+                                activeForm.tipo === 'saida' ? 'bg-red-600 hover:bg-red-500 text-white' :
+                                activeForm.tipo === 'entrada' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' :
+                                'bg-primary hover:bg-primary/80 text-primary-foreground',
+                                isSaving && 'opacity-50 cursor-not-allowed'
+                              )}>
+                              {isSaving ? '...' : <><CheckCircle2 className="h-3.5 w-3.5" /> Registrar</>}
+                            </button>
+                            <button onClick={() => setActiveForm(null)}
+                              className="h-8 px-3 rounded-md text-sm border border-border text-muted-foreground hover:text-foreground transition-colors">
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Log ── */}
+                    <div className="border-t border-border/40">
+                      <button
+                        onClick={() => toggleLog(item.id)}
+                        className="w-full flex items-center justify-between px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/[0.04] transition-colors">
+                        <span>
+                          Histórico
+                          {log.length > 0 && <span className="ml-1 text-muted-foreground/60">({log.length})</span>}
+                        </span>
+                        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', logExpanded && 'rotate-180')} />
+                      </button>
+                      {logExpanded && (
+                        <div>
+                          {log.length === 0 ? (
+                            <p className="text-xs text-muted-foreground text-center py-4">Nenhum registro ainda.</p>
+                          ) : (
+                            log.map((entry, i) => <LogRow key={i} entry={entry} />)
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -512,17 +550,15 @@ export function EstoqueClient({
           <div className="p-3 border-b border-border shrink-0 space-y-1">
             <div className="relative max-w-sm">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="Buscar item..." value={buscaConfig} onChange={e => setBuscaConfig(e.target.value)}
-                className="pl-8 h-8 text-sm" />
+              <Input placeholder="Buscar item..." value={buscaConfig} onChange={e => setBuscaConfig(e.target.value)} className="pl-8 h-8 text-sm" />
             </div>
-            <p className="text-[11px] text-muted-foreground px-0.5">
-              Selecione quais itens serão controlados no estoque.
-            </p>
+            <p className="text-[11px] text-muted-foreground">Selecione quais itens serão controlados no estoque.</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             {itensConfigFiltrados.map(item => {
               const ativo = controladosSet.has(item.id)
               const carregando = loadingConfig === item.id
+              const controlado = controladosMap[item.id]
               return (
                 <div key={item.id}
                   className="flex items-center gap-3 px-4 py-2.5 border-b border-border/30 hover:bg-muted/[0.04] transition-colors">
@@ -530,6 +566,9 @@ export function EstoqueClient({
                     <span className="text-sm font-medium">{item.nome}</span>
                     {item.categorias_item?.nome && (
                       <span className="text-[10px] text-muted-foreground ml-2">{item.categorias_item.nome}</span>
+                    )}
+                    {ativo && controlado?.quantidade_esperada != null && (
+                      <span className="text-[10px] text-muted-foreground ml-2">· esperado: {controlado.quantidade_esperada}</span>
                     )}
                   </div>
                   <button
@@ -542,29 +581,13 @@ export function EstoqueClient({
                         : 'border-border text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/[0.04]',
                       (carregando || !podeEditar) && 'opacity-40 cursor-not-allowed'
                     )}>
-                    {carregando ? (
-                      <span>...</span>
-                    ) : ativo ? (
-                      <><Minus className="h-3 w-3" /> Remover</>
-                    ) : (
-                      <><Plus className="h-3 w-3" /> Adicionar</>
-                    )}
+                    {carregando ? '...' : ativo ? <><Minus className="h-3 w-3" /> Remover</> : <><Plus className="h-3 w-3" /> Adicionar</>}
                   </button>
                 </div>
               )
             })}
           </div>
         </div>
-      )}
-
-      {/* Dialog de ação */}
-      {dialogTipo && dialogItem && (
-        <ActionDialog
-          tipo={dialogTipo}
-          itemNome={dialogItem.nome}
-          onClose={fecharDialog}
-          onConfirm={confirmarAcao}
-        />
       )}
     </div>
   )

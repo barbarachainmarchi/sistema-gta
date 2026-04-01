@@ -28,7 +28,7 @@ export default async function EstoquePage() {
     { data: metasAtivasData },
   ] = await Promise.all([
     supabase.from('items').select('id, nome, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
-    supabase.from('estoque_itens_controlados').select('item_id, created_at'),
+    supabase.from('estoque_itens_controlados').select('item_id, created_at, quantidade_esperada'),
     supabase.from('estoque_atualizacoes').select('*').order('created_at', { ascending: false }),
     supabase.from('estoque_movimentos').select('*').order('created_at', { ascending: false }),
     supabase.from('metas_semanais').select('id, created_at').eq('status', 'ativa'),
