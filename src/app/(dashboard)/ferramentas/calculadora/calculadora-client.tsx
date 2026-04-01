@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react'
+import { useState, useMemo, useCallback, useRef, memo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Key } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image } from 'lucide-react'
+import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -170,16 +171,6 @@ export function CalculadoraClient({
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
-  const [imgbbKey, setImgbbKey] = useState('')
-  const [showKeyInput, setShowKeyInput] = useState(false)
-  const [imgbbKeyInput, setImgbbKeyInput] = useState('')
-
-  // Carrega chave imgbb do localStorage
-  useEffect(() => {
-    const k = localStorage.getItem('imgbb_key') ?? ''
-    setImgbbKey(k)
-    setImgbbKeyInput(k)
-  }, [])
 
   const favoritosRef = useRef(favoritos)
   favoritosRef.current = favoritos
@@ -391,41 +382,24 @@ export function CalculadoraClient({
 
   // ── Enviar para imgbb ─────────────────────────────────────────────────────
 
-  const salvarChaveImgbb = useCallback(() => {
-    const k = imgbbKeyInput.trim()
-    localStorage.setItem('imgbb_key', k)
-    setImgbbKey(k)
-    setShowKeyInput(false)
-    if (k) toast.success('Chave salva')
-  }, [imgbbKeyInput])
-
   const enviarImgbb = useCallback(async () => {
-    if (!imgbbKey) { setShowKeyInput(true); return }
     if (batch.length === 0) return
-
     setImgbbLoading(true)
     try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada', { description: 'Acesse Admin → Integrações para configurar.' }); return }
       const linhas = gerarLinhasResumo()
       const canvas = gerarCanvas(linhas)
       const base64 = canvas.toDataURL('image/png').split(',')[1]
-      const form = new FormData()
-      form.append('image', base64)
-
-      const res = await fetch(`https://api.imgbb.com/1/upload?key=${imgbbKey}`, { method: 'POST', body: form })
-      const json = await res.json()
-
-      if (json.success) {
-        await navigator.clipboard.writeText(json.data.display_url)
-        toast.success('URL copiada!', { description: json.data.display_url })
-      } else {
-        toast.error('Erro no upload', { description: json.error?.message ?? 'Verifique a chave imgbb' })
-      }
-    } catch {
-      toast.error('Erro ao enviar imagem')
+      const url = await uploadImgbb(base64, key, 'calculadora')
+      await navigator.clipboard.writeText(url)
+      toast.success('URL copiada!')
+    } catch (e: unknown) {
+      toast.error('Erro ao enviar imagem', { description: e instanceof Error ? e.message : undefined })
     } finally {
       setImgbbLoading(false)
     }
-  }, [imgbbKey, batch.length, gerarLinhasResumo])
+  }, [batch.length, gerarLinhasResumo])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -470,7 +444,7 @@ export function CalculadoraClient({
       </aside>
 
       {/* ── Col 2: Itens selecionados ── */}
-      <div className="w-80 shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-hidden">
+      <div className="w-[460px] shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Selecionados{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
@@ -499,56 +473,57 @@ export function CalculadoraClient({
                 const peso = item?.peso != null ? item.peso * entry.quantidade : null
 
                 return (
-                  <div key={entry.item_id} className="px-3 py-2.5 space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      {lojasItem.length > 0 && (
-                        <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
-                          <SelectTrigger className="h-6 text-[10px] border-border/60 px-2 w-auto max-w-[96px] shrink-0">
-                            <SelectValue placeholder="— loja —" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="sem">— sem —</SelectItem>
-                            {lojasItem.map(l => (
-                              <SelectItem key={l.loja_id} value={l.loja_id}>
-                                {lojaMap[l.loja_id]?.nome ?? l.loja_id}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <span className="flex-1 text-sm font-medium truncate min-w-0">{item?.nome ?? '—'}</span>
-                      <button onClick={() => removeFromBatch(entry.item_id)}
-                        className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive transition-colors">
-                        <X className="h-3 w-3" />
+                  <div key={entry.item_id} className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
+                    {/* Loja */}
+                    {lojasItem.length > 0 && (
+                      <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
+                        <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
+                          <SelectValue placeholder="— loja —" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sem">— sem —</SelectItem>
+                          {lojasItem.map(l => (
+                            <SelectItem key={l.loja_id} value={l.loja_id}>
+                              {lojaMap[l.loja_id]?.nome ?? l.loja_id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {/* Nome */}
+                    <span className="flex-1 min-w-0 text-sm font-medium truncate">{item?.nome ?? '—'}</span>
+                    {/* Qtd */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
+                        className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                        <Minus className="h-2.5 w-2.5" />
+                      </button>
+                      <Input type="number" value={entry.quantidade}
+                        onChange={e => setQtd(entry.item_id, Math.max(1, parseInt(e.target.value) || 1))}
+                        className="h-6 w-10 text-center text-xs px-0.5" />
+                      <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
+                        className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                        <Plus className="h-2.5 w-2.5" />
                       </button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-0.5">
-                        <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
-                          className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <Input type="number" value={entry.quantidade}
-                          onChange={e => setQtd(entry.item_id, Math.max(1, parseInt(e.target.value) || 1))}
-                          className="h-6 w-12 text-center text-xs px-1" />
-                        <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
-                          className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2 ml-auto text-xs">
-                        {peso != null && peso > 0 && (
-                          <span className="text-[10px] text-muted-foreground/60 tabular-nums">{fmtKg(peso)}</span>
-                        )}
-                        {total != null ? (
-                          <span className={cn('tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                            {fmt(total)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground/30">—</span>
-                        )}
-                      </div>
+                    {/* Preço total */}
+                    <div className="flex items-center gap-1.5 shrink-0 min-w-[100px] justify-end">
+                      {peso != null && peso > 0 && (
+                        <span className="text-[10px] text-muted-foreground/50 tabular-nums">{fmtKg(peso)}</span>
+                      )}
+                      {total != null ? (
+                        <span className={cn('tabular-nums font-semibold text-sm', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                          {fmt(total)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/30 text-sm">—</span>
+                      )}
                     </div>
+                    {/* Remover */}
+                    <button onClick={() => removeFromBatch(entry.item_id)}
+                      className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
                 )
               })}
@@ -609,42 +584,15 @@ export function CalculadoraClient({
                 <button
                   onClick={enviarImgbb}
                   disabled={imgbbLoading}
-                  title="Enviar para imgbb e copiar URL"
+                  title="Gerar imagem e enviar para imgbb (copia URL)"
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06] disabled:opacity-40">
                   {imgbbLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
                 </button>
               </>
             )}
-
-            <button
-              onClick={() => { setShowKeyInput(v => !v); setImgbbKeyInput(imgbbKey) }}
-              title={imgbbKey ? 'Chave imgbb configurada' : 'Configurar chave imgbb'}
-              className={cn(
-                'flex items-center gap-1 text-xs transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]',
-                imgbbKey ? 'text-primary/60 hover:text-primary' : 'text-muted-foreground/40 hover:text-muted-foreground'
-              )}>
-              <Key className="h-3 w-3" />
-            </button>
           </div>
         </div>
 
-        {/* Input chave imgbb */}
-        {showKeyInput && (
-          <div className="px-4 py-2 border-b border-border/60 bg-muted/20 flex items-center gap-2">
-            <span className="text-[11px] text-muted-foreground shrink-0">Chave imgbb</span>
-            <Input
-              value={imgbbKeyInput}
-              onChange={e => setImgbbKeyInput(e.target.value)}
-              placeholder="Cole sua API key do imgbb"
-              className="h-7 text-xs flex-1"
-              onKeyDown={e => e.key === 'Enter' && salvarChaveImgbb()}
-            />
-            <button onClick={salvarChaveImgbb}
-              className="shrink-0 text-xs text-primary hover:text-primary/80 transition-colors">
-              Salvar
-            </button>
-          </div>
-        )}
 
         {batch.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">

@@ -34,6 +34,7 @@ const MODULOS = [
   { key: 'calculadora',       label: 'Calculadora',  grupo: 'Ferramentas' },
   { key: 'cotacao',           label: 'Cotação',      grupo: 'Ferramentas' },
   { key: 'metas',             label: 'Metas',        grupo: 'Interno' },
+  { key: 'estoque',           label: 'Estoque',      grupo: 'Interno' },
   { key: 'acao',              label: 'Ação',         grupo: 'Interno' },
   { key: 'financeiro',        label: 'Financeiro',   grupo: 'Interno' },
 ]
@@ -73,7 +74,7 @@ type MembroInvestigacao = {
   faccoes: { nome: string; cor_tag: string } | null
 }
 
-type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean }
+type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean; pode_excluir: boolean }
 
 type Perfil = {
   id: string
@@ -356,7 +357,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [perfilOpen, setPerfilOpen] = useState(false)
   const [editPerfil, setEditPerfil] = useState<Perfil | null>(null)
   const [perfilForm, setPerfilForm] = useState({ nome: '', descricao: '' })
-  const [perfilPerms, setPerfilPerms] = useState<Record<string, { ver: boolean; editar: boolean }>>({})
+  const [perfilPerms, setPerfilPerms] = useState<Record<string, { ver: boolean; editar: boolean; excluir: boolean }>>({})
   const [perfilSaving, setPerfilSaving] = useState(false)
   const [confirmRemoverPerfil, setConfirmRemoverPerfil] = useState<Perfil | null>(null)
   const [removendoPerfil, setRemovendoPerfil] = useState(false)
@@ -364,7 +365,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   function buildPermsMap(permissoes: Permissao[]) {
     return Object.fromEntries(MODULOS.map(m => {
       const p = permissoes.find(pm => pm.modulo === m.key)
-      return [m.key, { ver: p?.pode_ver ?? false, editar: p?.pode_editar ?? false }]
+      return [m.key, { ver: p?.pode_ver ?? false, editar: p?.pode_editar ?? false, excluir: p?.pode_excluir ?? false }]
     }))
   }
 
@@ -382,15 +383,18 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setPerfilOpen(true)
   }
 
-  function togglePerm(modulo: string, campo: 'ver' | 'editar') {
+  function togglePerm(modulo: string, campo: 'ver' | 'editar' | 'excluir') {
     setPerfilPerms(prev => {
       const curr = prev[modulo]
       if (campo === 'ver') {
-        const novoVer = !curr.ver
-        return { ...prev, [modulo]: { ver: novoVer, editar: novoVer ? curr.editar : false } }
+        const v = !curr.ver
+        return { ...prev, [modulo]: { ver: v, editar: v ? curr.editar : false, excluir: v ? curr.excluir : false } }
+      } else if (campo === 'editar') {
+        const e = !curr.editar
+        return { ...prev, [modulo]: { ver: e ? true : curr.ver, editar: e, excluir: e ? curr.excluir : false } }
       } else {
-        const novoEditar = !curr.editar
-        return { ...prev, [modulo]: { ver: novoEditar ? true : curr.ver, editar: novoEditar } }
+        const x = !curr.excluir
+        return { ...prev, [modulo]: { ver: x ? true : curr.ver, editar: x ? true : curr.editar, excluir: x } }
       }
     })
   }
@@ -403,6 +407,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       modulo: m.key,
       pode_ver: perfilPerms[m.key]?.ver ?? false,
       pode_editar: perfilPerms[m.key]?.editar ?? false,
+      pode_excluir: perfilPerms[m.key]?.excluir ?? false,
     }))
 
     const res = await fetch('/api/admin/perfis', {
@@ -419,7 +424,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setPerfilSaving(false)
     if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar perfil'); return }
 
-    const permsEstado = permissoes.map(p => ({ modulo: p.modulo, pode_ver: p.pode_ver, pode_editar: p.pode_editar }))
+    const permsEstado = permissoes.map(p => ({ modulo: p.modulo, pode_ver: p.pode_ver, pode_editar: p.pode_editar, pode_excluir: p.pode_excluir }))
     if (editPerfil) {
       setPerfis(prev => prev.map(p => p.id === editPerfil.id
         ? { ...p, nome: perfilForm.nome, descricao: perfilForm.descricao || null, permissoes: permsEstado }
@@ -645,6 +650,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 {perfis.map(p => {
                   const totalVer = p.permissoes.filter(pm => pm.pode_ver).length
                   const totalEditar = p.permissoes.filter(pm => pm.pode_editar).length
+                  const totalExcluir = p.permissoes.filter(pm => pm.pode_excluir).length
                   return (
                     <div key={p.id} className="rounded-lg border border-border bg-card p-4 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
@@ -655,7 +661,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                           <p className="text-sm font-medium">{p.nome}</p>
                           {p.descricao && <p className="text-xs text-muted-foreground">{p.descricao}</p>}
                           <p className="text-[11px] text-muted-foreground mt-0.5">
-                            {totalVer} módulo{totalVer !== 1 ? 's' : ''} visível{totalVer !== 1 ? 'is' : ''} · {totalEditar} com edição
+                            {totalVer} visível{totalVer !== 1 ? 'is' : ''} · {totalEditar} com edição · {totalExcluir} com exclusão
                           </p>
                         </div>
                       </div>
@@ -996,6 +1002,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <div className="flex gap-4 text-[11px] text-muted-foreground pr-2">
                   <span className="w-12 text-center">Ver</span>
                   <span className="w-12 text-center">Editar</span>
+                  <span className="w-12 text-center">Excluir</span>
                 </div>
               </div>
               {GRUPOS.map(grupo => (
@@ -1006,7 +1013,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                       <div key={m.key} className={cn('flex items-center justify-between px-3 py-2 hover:bg-white/[0.02]', idx < arr.length - 1 && 'border-b border-border/60')}>
                         <span className="text-sm">{m.label}</span>
                         <div className="flex gap-4">
-                          {(['ver', 'editar'] as const).map(campo => (
+                          {(['ver', 'editar', 'excluir'] as const).map(campo => (
                             <div key={campo} className="w-12 flex justify-center">
                               <button
                                 onClick={() => togglePerm(m.key, campo)}

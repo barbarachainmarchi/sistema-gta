@@ -8,7 +8,7 @@ async function getAuthUser() {
   return user
 }
 
-type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean }
+type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean; pode_excluir: boolean }
 
 // POST → criar perfil
 export async function POST(req: NextRequest) {
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
         modulo: p.modulo,
         pode_ver: p.pode_ver,
         pode_editar: p.pode_editar,
+        pode_excluir: p.pode_excluir ?? false,
       }))
     )
     if (permError) return NextResponse.json({ error: permError.message }, { status: 500 })
@@ -70,6 +71,7 @@ export async function PATCH(req: NextRequest) {
         modulo: p.modulo,
         pode_ver: p.pode_ver,
         pode_editar: p.pode_editar,
+        pode_excluir: p.pode_excluir ?? false,
       }))
     )
     if (permError) return NextResponse.json({ error: permError.message }, { status: 500 })
