@@ -1288,29 +1288,28 @@ export function VendasClient({
 
   async function handleDescontarEstoque(venda: Venda) {
     if (venda.estoque_descontado) { toast.info('Estoque já foi descontado'); return }
-    const deducoes: Record<string, { tipo: 'materia_prima' | 'produto_final'; qtd: number }> = {}
+
+    const saidas: Record<string, number> = {}
     for (const it of venda.itens) {
       if (!it.item_id) continue
       if (it.origem === 'estoque') {
-        if (!deducoes[it.item_id]) deducoes[it.item_id] = { tipo: 'produto_final', qtd: 0 }
-        deducoes[it.item_id].qtd += it.quantidade
+        saidas[it.item_id] = (saidas[it.item_id] ?? 0) + it.quantidade
       } else {
         for (const r of receitaMap[it.item_id] ?? []) {
-          if (!deducoes[r.ingrediente_id]) deducoes[r.ingrediente_id] = { tipo: 'materia_prima', qtd: 0 }
-          deducoes[r.ingrediente_id].qtd += r.quantidade * it.quantidade
+          saidas[r.ingrediente_id] = (saidas[r.ingrediente_id] ?? 0) + r.quantidade * it.quantidade
         }
       }
     }
-    for (const [item_id, { tipo, qtd }] of Object.entries(deducoes)) {
-      const atual = estoqueMap[item_id]?.[tipo] ?? 0
-      const nova = Math.max(0, atual - qtd)
-      await sb().from('estoque').upsert({ item_id, tipo, quantidade: nova }, { onConflict: 'item_id,tipo' })
-      setEstoqueState(prev => {
-        const exists = prev.find(e => e.item_id === item_id && e.tipo === tipo)
-        if (exists) return prev.map(e => e.item_id === item_id && e.tipo === tipo ? { ...e, quantidade: nova } : e)
-        return [...prev, { item_id, tipo, quantidade: nova }]
+
+    const motivo = `Venda: ${venda.cliente_nome}`
+    for (const [item_id, quantidade] of Object.entries(saidas)) {
+      await sb().from('estoque_movimentos').insert({
+        item_id, tipo: 'saida', quantidade,
+        motivo, usuario_id: userId, usuario_nome: userNome ?? '',
+        referencia: venda.id,
       })
     }
+
     await sb().from('vendas').update({ estoque_descontado: true }).eq('id', venda.id)
     setVendas(prev => prev.map(v => v.id === venda.id ? { ...v, estoque_descontado: true } : v))
     toast.success('Estoque descontado!')

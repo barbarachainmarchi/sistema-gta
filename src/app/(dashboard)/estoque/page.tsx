@@ -34,26 +34,6 @@ export default async function EstoquePage() {
     supabase.from('metas_semanais').select('id, created_at').eq('status', 'ativa'),
   ])
 
-  // Vendas entregues com itens dos últimos 120 dias
-  const controladosIds = (controladosData ?? []).map(c => c.item_id)
-  const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString()
-
-  const { data: vendasData } = await supabase
-    .from('vendas')
-    .select('id, entregue_em')
-    .eq('status', 'entregue')
-    .not('entregue_em', 'is', null)
-    .gte('entregue_em', since)
-
-  const vendaIds = (vendasData ?? []).map(v => v.id)
-  const { data: vendaItensData } = vendaIds.length > 0 && controladosIds.length > 0
-    ? await supabase
-        .from('venda_itens')
-        .select('venda_id, item_id, quantidade')
-        .in('venda_id', vendaIds)
-        .in('item_id', controladosIds)
-    : { data: [] }
-
   // Itens de metas ativas
   const metaAtivaIds = (metasAtivasData ?? []).map(m => m.id)
   const { data: metasMembrosData } = metaAtivaIds.length > 0
@@ -67,13 +47,6 @@ export default async function EstoquePage() {
         .select('membro_meta_id, item_nome, quantidade_meta, quantidade_entregue')
         .in('membro_meta_id', membroMetaIds)
     : { data: [] }
-
-  // Enriquecer venda_itens com entregue_em
-  const vendaMap = Object.fromEntries((vendasData ?? []).map(v => [v.id, v.entregue_em]))
-  const vendaItensEnriquecidos = (vendaItensData ?? []).map(vi => ({
-    ...vi,
-    entregue_em: vendaMap[vi.venda_id] as string,
-  }))
 
   // Lookup: membro_meta_id → meta_created_at
   const metaIdToCreatedAt = Object.fromEntries((metasAtivasData ?? []).map(m => [m.id, m.created_at]))
@@ -98,7 +71,6 @@ export default async function EstoquePage() {
         controlados={controladosData ?? []}
         atualizacoes={atualizacoesData ?? []}
         movimentos={movimentosData ?? []}
-        vendaItens={vendaItensEnriquecidos}
         metasItens={metasItensData ?? []}
         membroMetaToMetaCreatedAt={membroMetaToMetaCreatedAt}
       />

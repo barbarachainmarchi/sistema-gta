@@ -47,7 +47,7 @@ interface Props {
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMetaAtual, podeEditar, podeLancar, onAbrirNovaMeta, catalogoItens }: Props) {
+export function VisaoGeralAba({ metaAtual, membros, contas, sb, userId, userNome, setMetaAtual, podeEditar, podeLancar, onAbrirNovaMeta, catalogoItens }: Props) {
   const membroMap = useMemo(() => Object.fromEntries(membros.map(m => [m.id, m])), [membros])
   const contaMap  = useMemo(() => {
     const m: Record<string, ContaMembro> = {}
@@ -139,6 +139,18 @@ export function VisaoGeralAba({ metaAtual, membros, contas, sb, userNome, setMet
       const { error: errI } = await sb().from('metas_membros_itens')
         .update({ quantidade_entregue: novaQtd }).eq('id', it.id)
       if (errI) { toast.error(errI.message); return }
+
+      // Registrar entrada no estoque
+      const itemCatalogo = catalogoItens.find(c => c.nome.toLowerCase() === it.item_nome.toLowerCase())
+      if (itemCatalogo) {
+        const membroNome = membros.find(m => m.id === lancandoMm.membro_id)?.nome ?? lancandoMm.membro_id
+        await sb().from('estoque_movimentos').insert({
+          item_id: itemCatalogo.id, tipo: 'entrada', quantidade: qtd,
+          motivo: `Meta: ${membroNome}`,
+          usuario_id: userId, usuario_nome: userNome ?? '',
+          referencia: lancandoMm.id,
+        })
+      }
 
       // Verificar se todos os itens foram concluídos → auto-completo
       const itensAtualizados = lancandoMm.metas_membros_itens.map(x =>

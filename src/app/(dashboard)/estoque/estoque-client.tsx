@@ -27,11 +27,10 @@ type Movimento = {
   id: string; item_id: string; tipo: 'entrada' | 'saida'; quantidade: number
   motivo: string | null; usuario_nome: string; created_at: string
 }
-type VendaItem = { venda_id: string; item_id: string; quantidade: number; entregue_em: string }
 type MetaItem  = { membro_meta_id: string; item_nome: string; quantidade_meta: number; quantidade_entregue: number }
 
 type LogEntry = {
-  tipo: 'atualizacao' | 'entrada' | 'saida' | 'venda'
+  tipo: 'atualizacao' | 'entrada' | 'saida'
   quantidade: number; data: string
   usuario: string | null; motivo: string | null
 }
@@ -42,7 +41,6 @@ interface Props {
   controlados: Controlado[]
   atualizacoes: Atualizacao[]
   movimentos: Movimento[]
-  vendaItens: VendaItem[]
   metasItens: MetaItem[]
   membroMetaToMetaCreatedAt: Record<string, string>
 }
@@ -63,24 +61,23 @@ function fmtDataCurta(iso: string) {
 
 interface SaldoCalc {
   ultimaAtualizacao: Atualizacao | null
-  base: number; entradas: number; saidas: number; vendas: number; saldo: number | null
+  base: number; entradas: number; saidas: number; saldo: number | null
   metasPendentes: number
 }
 
 function calcSaldo(
   itemId: string, itemNome: string,
   atualizacoes: Atualizacao[], movimentos: Movimento[],
-  vendaItens: VendaItem[], metasItens: MetaItem[],
+  metasItens: MetaItem[],
   membroMetaToMetaCreatedAt: Record<string, string>,
 ): SaldoCalc {
   const ultima = atualizacoes.find(a => a.item_id === itemId) ?? null
-  if (!ultima) return { ultimaAtualizacao: null, base: 0, entradas: 0, saidas: 0, vendas: 0, saldo: null, metasPendentes: 0 }
+  if (!ultima) return { ultimaAtualizacao: null, base: 0, entradas: 0, saidas: 0, saldo: null, metasPendentes: 0 }
 
   const updateDate = new Date(ultima.created_at)
   const movsSince = movimentos.filter(m => m.item_id === itemId && new Date(m.created_at) > updateDate)
   const entradas = movsSince.filter(m => m.tipo === 'entrada').reduce((s, m) => s + m.quantidade, 0)
   const saidas   = movsSince.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.quantidade, 0)
-  const vendas   = vendaItens.filter(v => v.item_id === itemId && new Date(v.entregue_em) > updateDate).reduce((s, v) => s + v.quantidade, 0)
 
   const nomeNorm = itemNome.toLowerCase()
   const metasPendentes = metasItens
@@ -91,17 +88,16 @@ function calcSaldo(
     })
     .reduce((s, mi) => s + Math.max(0, mi.quantidade_meta - mi.quantidade_entregue), 0)
 
-  return { ultimaAtualizacao: ultima, base: ultima.quantidade, entradas, saidas, vendas, saldo: ultima.quantidade + entradas - saidas - vendas, metasPendentes }
+  return { ultimaAtualizacao: ultima, base: ultima.quantidade, entradas, saidas, saldo: ultima.quantidade + entradas - saidas, metasPendentes }
 }
 
 // ── Log combinado por item ────────────────────────────────────────────────────
 
 function buildLog(
   itemId: string,
-  atualizacoes: Atualizacao[], movimentos: Movimento[], vendaItens: VendaItem[],
+  atualizacoes: Atualizacao[], movimentos: Movimento[],
 ): LogEntry[] {
   const entries: LogEntry[] = []
-  const ultima = atualizacoes.find(a => a.item_id === itemId)
 
   atualizacoes.filter(a => a.item_id === itemId).forEach(a =>
     entries.push({ tipo: 'atualizacao', quantidade: a.quantidade, data: a.created_at, usuario: a.criado_por_nome || null, motivo: a.nota })
@@ -109,12 +105,6 @@ function buildLog(
   movimentos.filter(m => m.item_id === itemId).forEach(m =>
     entries.push({ tipo: m.tipo, quantidade: m.quantidade, data: m.created_at, usuario: m.usuario_nome || null, motivo: m.motivo })
   )
-  if (ultima) {
-    const d = new Date(ultima.created_at)
-    vendaItens.filter(v => v.item_id === itemId && new Date(v.entregue_em) > d).forEach(v =>
-      entries.push({ tipo: 'venda', quantidade: v.quantidade, data: v.entregue_em, usuario: null, motivo: null })
-    )
-  }
 
   return entries.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
 }
@@ -123,10 +113,9 @@ function buildLog(
 
 function LogRow({ entry }: { entry: LogEntry }) {
   const config = {
-    atualizacao: { label: 'Atualização',  color: 'text-primary',      sign: '→', bg: 'bg-primary/10' },
-    entrada:     { label: 'Entrada',      color: 'text-emerald-400',  sign: '+', bg: 'bg-emerald-400/10' },
-    saida:       { label: 'Saída',        color: 'text-red-400',      sign: '−', bg: 'bg-red-400/10' },
-    venda:       { label: 'Venda (auto)', color: 'text-orange-400',   sign: '−', bg: 'bg-orange-400/10' },
+    atualizacao: { label: 'Atualização', color: 'text-primary',     sign: '→', bg: 'bg-primary/10' },
+    entrada:     { label: 'Entrada',     color: 'text-emerald-400', sign: '+', bg: 'bg-emerald-400/10' },
+    saida:       { label: 'Saída',       color: 'text-red-400',     sign: '−', bg: 'bg-red-400/10' },
   }[entry.tipo]
 
   return (
@@ -155,7 +144,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
 
 export function EstoqueClient({
   userId, usuarioNome, podeEditar,
-  itens, controlados, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt,
+  itens, controlados, atualizacoes, movimentos, metasItens, membroMetaToMetaCreatedAt,
 }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
@@ -182,13 +171,13 @@ export function EstoqueClient({
       .map(c => {
         const item = itemMap[c.item_id]
         if (!item) return null
-        const calc = calcSaldo(c.item_id, item.nome, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt)
+        const calc = calcSaldo(c.item_id, item.nome, atualizacoes, movimentos, metasItens, membroMetaToMetaCreatedAt)
         const esperado = esperadoLocal[c.item_id] !== undefined ? esperadoLocal[c.item_id] : c.quantidade_esperada
-        const log = buildLog(c.item_id, atualizacoes, movimentos, vendaItens)
+        const log = buildLog(c.item_id, atualizacoes, movimentos)
         return { item, calc, esperado, log }
       })
       .filter(Boolean) as { item: Item; calc: SaldoCalc; esperado: number | null; log: LogEntry[] }[],
-    [controlados, itemMap, atualizacoes, movimentos, vendaItens, metasItens, membroMetaToMetaCreatedAt, esperadoLocal]
+    [controlados, itemMap, atualizacoes, movimentos, metasItens, membroMetaToMetaCreatedAt, esperadoLocal]
   )
 
   const itensFiltrados = useMemo(() => {
@@ -412,7 +401,6 @@ export function EstoqueClient({
                             <span className="font-medium text-foreground/60">base: {calc.base}</span>
                             {calc.entradas > 0 && <span className="text-emerald-400">+{calc.entradas} entrada</span>}
                             {calc.saidas > 0 && <span className="text-red-400">−{calc.saidas} saída</span>}
-                            {calc.vendas > 0 && <span className="text-orange-400">−{calc.vendas} venda</span>}
                           </div>
                         </div>
                       )}
