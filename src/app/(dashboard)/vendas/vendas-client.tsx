@@ -40,7 +40,7 @@ type Loja   = { id: string; nome: string }
 type Membro = { id: string; nome: string; vulgo: string | null; telefone: string | null; faccao_id: string | null }
 type ItemSimples = { id: string; nome: string; tem_craft: boolean; peso: number | null; categorias_item: { nome: string } | null }
 type Receita = { item_id: string; ingrediente_id: string; quantidade: number }
-type EstoqueEntry = { item_id: string; tipo: 'materia_prima' | 'produto_final'; quantidade: number }
+type EstoqueEntry = { item_id: string; quantidade: number }
 
 type CartItem = {
   item_id: string; nome: string; quantidade: number
@@ -98,7 +98,7 @@ type WpItem = { item_id: string; nome: string; tem_craft: boolean; preco_limpo: 
 function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
   venda: Venda
   receitaMap: Record<string, Receita[]>
-  estoqueMap: Record<string, Record<string, number>>
+  estoqueMap: Record<string, number>
   itemMap: Record<string, ItemSimples>
 }) {
   const fabricarItens = venda.itens.filter(it => it.origem === 'fabricar' && it.item_id)
@@ -114,7 +114,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
     }
   }
   const ingredientes = Object.entries(ingredMap)
-    .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id]?.materia_prima ?? 0 }))
+    .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id] ?? 0 }))
     .sort((a, b) => a.nome.localeCompare(b.nome))
 
   if (!ingredientes.length)
@@ -149,7 +149,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
-  receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, Record<string, number>>; itemMap: Record<string, ItemSimples>
+  receitaMap: Record<string, Receita[]>; estoqueMap: Record<string, number>; itemMap: Record<string, ItemSimples>
   podeEditar: boolean; isOwner: boolean
   onStatusChange: (id: string, s: StatusVenda) => void; onEntregar: (v: Venda) => void
   onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void
@@ -385,7 +385,7 @@ function OrderDialog({
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
   onMembroCreated: (m: Membro) => void
   meuFaccao: { id: string; nome: string } | null; meuLoja: { id: string; nome: string } | null
-  estoqueMap: Record<string, Record<string, number>>
+  estoqueMap: Record<string, number>
   receitas: Receita[]; allItems: ItemSimples[]
   onSave: (form: FormState) => void; saving: boolean
 }) {
@@ -637,7 +637,7 @@ function OrderDialog({
       }
     }
     return Object.entries(ingredMap)
-      .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id]?.materia_prima ?? 0 }))
+      .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id] ?? 0 }))
       .sort((a, b) => a.nome.localeCompare(b.nome))
   }, [cart, receitas, allItems, estoqueMap])
 
@@ -840,7 +840,7 @@ function OrderDialog({
                 const inCart = !!c
                 const precoBase = form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
                 const precoEfetivo = c ? (c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))) : (precoBase ?? 0)
-                const estoqueDisp = estoqueMap[p.item_id]?.produto_final ?? 0
+                const estoqueDisp = estoqueMap[p.item_id] ?? 0
                 const qtd = c?.quantidade ?? 0
                 const efetivoPct = c?.desconto_item_pct ?? descontoPct
                 const subtotalItem = qtd * precoEfetivo * (1 - efetivoPct / 100)
@@ -1092,8 +1092,8 @@ export function VendasClient({
     return map
   }, [receitas])
   const estoqueMap = useMemo(() => {
-    const map: Record<string, Record<string, number>> = {}
-    estoqueState.forEach(e => { if (!map[e.item_id]) map[e.item_id] = {}; map[e.item_id][e.tipo] = e.quantidade })
+    const map: Record<string, number> = {}
+    estoqueState.forEach(e => { map[e.item_id] = e.quantidade })
     return map
   }, [estoqueState])
 

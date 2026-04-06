@@ -14,7 +14,8 @@ export default async function VendasPage() {
     { data: faccoesData },
     { data: itemsData },
     { data: receitasData },
-    { data: estoqueData },
+    { data: estoqueMov },
+    { data: estoqueAtual },
     { data: membrosData },
     { data: lojasData },
     { data: permRow },
@@ -26,13 +27,37 @@ export default async function VendasPage() {
     supabase.from('faccoes').select('id, nome, sigla, telefone, desconto_padrao_pct').eq('status', 'ativo').order('nome'),
     supabase.from('items').select('id, nome, tem_craft, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
-    supabase.from('estoque').select('item_id, tipo, quantidade'),
+    supabase.from('estoque_movimentos').select('item_id, tipo, quantidade, created_at'),
+    supabase.from('estoque_atualizacoes').select('item_id, quantidade, created_at').order('created_at', { ascending: false }),
     supabase.from('membros').select('id, nome, vulgo, telefone, faccao_id').eq('status', 'ativo').order('nome'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
   ])
+
+  // Calcular saldo de estoque por item a partir das movimentações
+  const ultimaAtualizacao: Record<string, { quantidade: number; created_at: string }> = {}
+  for (const a of estoqueAtual ?? []) {
+    const prev = ultimaAtualizacao[a.item_id]
+    if (!prev || new Date(a.created_at) > new Date(prev.created_at)) {
+      ultimaAtualizacao[a.item_id] = a
+    }
+  }
+  const allMovItemIds = new Set([
+    ...Object.keys(ultimaAtualizacao),
+    ...(estoqueMov ?? []).map(m => m.item_id),
+  ])
+  const estoqueCalculado: { item_id: string; quantidade: number }[] = []
+  for (const itemId of allMovItemIds) {
+    const base = ultimaAtualizacao[itemId]
+    const cutoff = base ? new Date(base.created_at) : null
+    const movs = (estoqueMov ?? []).filter(m => m.item_id === itemId && (!cutoff || new Date(m.created_at) > cutoff))
+    const entradas = movs.filter(m => m.tipo === 'entrada').reduce((s, m) => s + m.quantidade, 0)
+    const saidas   = movs.filter(m => m.tipo === 'saida').reduce((s, m) => s + m.quantidade, 0)
+    const saldo = (base?.quantidade ?? 0) + entradas - saidas
+    estoqueCalculado.push({ item_id: itemId, quantidade: Math.max(0, saldo) })
+  }
 
   const meuLojaId   = usuarioRow?.local_trabalho_loja_id ?? null
   const meuFaccaoId = usuarioRow?.local_trabalho_faccao_id ?? null
@@ -72,7 +97,7 @@ export default async function VendasPage() {
         faccoes={faccoesData ?? []}
         allItems={items}
         receitas={receitasData ?? []}
-        estoque={estoqueData ?? []}
+        estoque={estoqueCalculado}
         lojas={lojasData ?? []}
         membros={membrosData ?? []}
         meuLoja={meuLoja ? { id: meuLoja.id, nome: meuLoja.nome } : null}
