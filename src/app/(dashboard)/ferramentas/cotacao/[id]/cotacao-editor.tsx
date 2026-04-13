@@ -33,6 +33,7 @@ type FaccaoPreco = { faccao_id: string; item_id: string; preco_sujo: number | nu
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LojaPreco   = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null; items: any }
 type SimpleItem  = { id: string; nome: string; peso: number | null }
+type FaixaPreco  = { faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 
 interface Props {
   userId: string
@@ -43,6 +44,7 @@ interface Props {
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
   faccaoPrecos: FaccaoPreco[]; lojaPrecos: LojaPreco[]
   allItems: SimpleItem[]
+  faixasPrecos: FaixaPreco[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,7 +142,7 @@ function gerarImagemCotacao(params: {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pessoasIniciais, itensIniciais, faccoes, lojas, membros, faccaoPrecos, lojaPrecos, allItems }: Props) {
+export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pessoasIniciais, itensIniciais, faccoes, lojas, membros, faccaoPrecos, lojaPrecos, allItems, faixasPrecos }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -196,12 +198,34 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
   // ── Catálogo do fornecedor ────────────────────────────────────────────────
 
+  // Mapa: faccao_id+item_id → faixas ordenadas
+  const faixasMap = useMemo(() => {
+    const map: Record<string, FaixaPreco[]> = {}
+    for (const f of faixasPrecos) {
+      const key = `${f.faccao_id}:${f.item_id}`
+      if (!map[key]) map[key] = []
+      map[key].push(f)
+    }
+    return map
+  }, [faixasPrecos])
+
+  function resolverPrecoComFaixas(fp: FaccaoPreco, quantidade: number): number {
+    const key = `${fp.faccao_id}:${fp.item_id}`
+    const faixas = (faixasMap[key] ?? []).sort((a, b) => b.quantidade_min - a.quantidade_min)
+    const faixa = faixas.find(f => quantidade >= f.quantidade_min)
+    if (faixa) {
+      return cotacao.modo_preco === 'sujo' ? (faixa.preco_sujo ?? faixa.preco_limpo ?? 0) : (faixa.preco_limpo ?? 0)
+    }
+    return cotacao.modo_preco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0)
+  }
+
   const catalogo = useMemo(() => {
     if (cotacao.fornecedor_tipo === 'faccao' && cotacao.fornecedor_id) {
       return faccaoPrecos.filter(fp => fp.faccao_id === cotacao.fornecedor_id).map(fp => ({
         item_id: fp.item_id,
         nome: (fp.items as { nome: string } | null)?.nome ?? fp.item_id,
         preco: cotacao.modo_preco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0),
+        fp, // referência para resolução de faixa
       }))
     }
     if (cotacao.fornecedor_tipo === 'loja' && cotacao.fornecedor_id) {
@@ -209,9 +233,11 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
         item_id: lp.item_id,
         nome: (lp.items as { nome: string } | null)?.nome ?? lp.item_id,
         preco: cotacao.modo_preco === 'sujo' ? (lp.preco_sujo ?? lp.preco) : lp.preco,
+        fp: null,
       }))
     }
     return []
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cotacao, faccaoPrecos, lojaPrecos])
 
   const catalogoFiltrado = useMemo(() => {
@@ -285,10 +311,12 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     for (const [item_id, qty] of toAdd) {
       const cat = catalogo.find(c => c.item_id === item_id)
       if (!cat) continue
+      // Resolve preço considerando faixas por quantidade
+      const preco_unit = cat.fp ? resolverPrecoComFaixas(cat.fp as FaccaoPreco, qty) : cat.preco
       const { data, error } = await sb().from('cotacao_itens').insert({
         cotacao_id: cotacao.id, pessoa_id: addItemPessoa,
         item_nome: cat.nome, item_id,
-        quantidade: qty, preco_unit: cat.preco,
+        quantidade: qty, preco_unit,
         adicionado_por: userId, adicionado_por_nome: userNome,
       }).select().single()
       if (error) { toast.error('Erro ao adicionar: ' + error.message); setSalvandoItem(false); return }

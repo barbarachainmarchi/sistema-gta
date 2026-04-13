@@ -14,6 +14,7 @@ import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers,
 } from 'lucide-react'
+import { resolverPrecoFaixas, type PrecoFaixa } from '@/lib/precoFaixas'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 
@@ -436,6 +437,7 @@ function OrderDialog({
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
+  const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
 
@@ -450,19 +452,24 @@ function OrderDialog({
     if (!faccaoId && !lojaId) { setMeusProdutos([]); return }
     setLoadingProd(true)
     if (faccaoId) {
-      sb().from('faccao_item_precos')
-        .select('item_id, preco_limpo, preco_sujo, items(id, nome, tem_craft)')
-        .eq('faccao_id', faccaoId)
+      Promise.all([
+        sb().from('faccao_item_precos').select('item_id, preco_limpo, preco_sujo, items(id, nome, tem_craft)').eq('faccao_id', faccaoId),
+        sb().from('faccao_item_preco_faixas').select('item_id, quantidade_min, preco_sujo, preco_limpo').eq('faccao_id', faccaoId),
+      ]).then(([prodRes, faixasRes]) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .then(({ data }) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          setMeusProdutos((data ?? []).map((r: any) => ({
-            item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
-            tem_craft: r.items?.tem_craft ?? false,
-            preco_limpo: r.preco_limpo, preco_sujo: r.preco_sujo,
-          })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
-          setLoadingProd(false)
-        })
+        setMeusProdutos((prodRes.data ?? []).map((r: any) => ({
+          item_id: r.item_id, nome: r.items?.nome ?? r.item_id,
+          tem_craft: r.items?.tem_craft ?? false,
+          preco_limpo: r.preco_limpo, preco_sujo: r.preco_sujo,
+        })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
+        const fmap: Record<string, PrecoFaixa[]> = {}
+        for (const f of (faixasRes.data ?? [])) {
+          if (!fmap[f.item_id]) fmap[f.item_id] = []
+          fmap[f.item_id].push({ quantidade_min: f.quantidade_min, preco_sujo: f.preco_sujo, preco_limpo: f.preco_limpo })
+        }
+        setFaixasMap(fmap)
+        setLoadingProd(false)
+      })
     } else {
       sb().from('loja_item_precos')
         .select('item_id, preco, preco_sujo, items(id, nome, tem_craft)')
@@ -475,6 +482,7 @@ function OrderDialog({
             tem_craft: r.items?.tem_craft ?? false,
             preco_limpo: r.preco ?? null, preco_sujo: r.preco_sujo ?? null,
           })).sort((a: WpItem, b: WpItem) => a.nome.localeCompare(b.nome)))
+          setFaixasMap({})
           setLoadingProd(false)
         })
     }
@@ -521,6 +529,7 @@ function OrderDialog({
       setDraftOrigem({})
       setDraftPreco({})
       setEditandoPreco(new Set())
+      if (!open) setFaixasMap({})
     }
   }
 
@@ -613,7 +622,11 @@ function OrderDialog({
   // Cart helpers
   function getPrecoEfetivo(c: CartItem): number {
     if (c.preco_override != null) return c.preco_override
-    return form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0)
+    const faixas = faixasMap[c.item_id] ?? []
+    return resolverPrecoFaixas(
+      { preco_sujo: c.preco_sujo, preco_limpo: c.preco_limpo },
+      faixas, c.quantidade, form.tipo_dinheiro
+    )
   }
 
   function setCartQtd(item_id: string, qtd: number) {

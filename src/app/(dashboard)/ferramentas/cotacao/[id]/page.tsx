@@ -20,6 +20,7 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
     { data: lojaPrecos },
     { data: allItems },
     { data: userRow },
+    { data: faixasData },
   ] = await Promise.all([
     supabase.from('cotacoes').select('*').eq('id', id).single(),
     supabase.from('cotacao_pessoas').select('*').eq('cotacao_id', id).order('criado_at'),
@@ -31,6 +32,7 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo, items(nome, peso)'),
     supabase.from('items').select('id, nome, peso').eq('status', 'ativo'),
     supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
+    supabase.from('faccao_item_preco_faixas').select('faccao_id, item_id, quantidade_min, preco_sujo, preco_limpo'),
   ])
 
   if (!cotacao) notFound()
@@ -50,6 +52,7 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
         faccaoPrecos={faccaoPrecos ?? []}
         lojaPrecos={lojaPrecos ?? []}
         allItems={allItems ?? []}
+        faixasPrecos={faixasData ?? []}
       />
     </>
   )
