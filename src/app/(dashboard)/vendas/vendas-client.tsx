@@ -435,6 +435,7 @@ function OrderDialog({
   const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
+  const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
 
@@ -519,6 +520,7 @@ function OrderDialog({
       setMembroAberta(false)
       setDraftOrigem({})
       setDraftPreco({})
+      setEditandoPreco(new Set())
     }
   }
 
@@ -880,22 +882,24 @@ function OrderDialog({
           <div className="flex-1 flex flex-col min-w-0 border-r border-border">
 
             {/* Search + filtros */}
-            <div className="px-3 py-2 shrink-0 border-b border-border space-y-1.5">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input placeholder="Filtrar produtos e combos..." value={buscaProd}
-                  onChange={e => setBuscaProd(e.target.value)}
-                  className="h-8 text-xs pl-7" />
+            <div className="px-3 py-2 shrink-0 border-b border-border">
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input placeholder="Filtrar produtos e combos..." value={buscaProd}
+                    onChange={e => setBuscaProd(e.target.value)}
+                    className="h-8 text-xs pl-7" />
+                </div>
+                {categoriasDisponiveis.length > 0 && (
+                  <Select value={filterCategoria || '_todas'} onValueChange={v => setFilterCategoria(v === '_todas' ? '' : v)}>
+                    <SelectTrigger className="h-8 text-xs border-border/50 w-40 shrink-0"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_todas">Todas as categorias</SelectItem>
+                      {categoriasDisponiveis.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
-              {categoriasDisponiveis.length > 0 && (
-                <Select value={filterCategoria || '_todas'} onValueChange={v => setFilterCategoria(v === '_todas' ? '' : v)}>
-                  <SelectTrigger className="h-7 text-xs border-border/50"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_todas">Todas as categorias</SelectItem>
-                    {categoriasDisponiveis.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
             </div>
 
             {/* Serviços / Combos */}
@@ -940,7 +944,7 @@ function OrderDialog({
             })()}
 
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_56px_68px_80px_72px_32px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+            <div className="grid grid-cols-[1fr_52px_64px_88px_72px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
               <span>Produto</span>
               <span className="text-right">Estoque</span>
               <span className="text-right">Qtd</span>
@@ -973,7 +977,7 @@ function OrderDialog({
 
                 return (
                   <div key={p.item_id}
-                    className={cn('grid grid-cols-[1fr_56px_68px_80px_72px_32px] gap-x-2 items-center px-3 py-2 transition-colors',
+                    className={cn('grid grid-cols-[1fr_52px_64px_88px_72px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
                       inCart ? 'bg-primary/[0.04]' : 'hover:bg-white/[0.02]'
                     )}>
                     {/* Nome + badges */}
@@ -1032,24 +1036,30 @@ function OrderDialog({
                         )} />
                     </div>
 
-                    {/* Preço unit (sempre editável) */}
-                    <div className="flex justify-end">
-                      <Input
-                        type="number" min="0" step="0.01"
-                        value={inCart
-                          ? (c.preco_override != null ? c.preco_override : (precoBase ?? 0))
-                          : (draftPreco[p.item_id] != null ? draftPreco[p.item_id]! : (precoBase ?? 0))}
-                        onChange={e => {
-                          const v = parseFloat(e.target.value)
-                          if (inCart) {
-                            setCartPreco(p.item_id, isNaN(v) ? null : v)
-                          } else {
-                            setDraftPreco(prev => ({ ...prev, [p.item_id]: isNaN(v) ? null : v }))
-                          }
-                        }}
-                        className={cn('h-7 text-xs text-right w-full tabular-nums',
-                          inCart && 'border-primary/40 bg-primary/[0.04]'
-                        )} />
+                    {/* Preço unit — leitura por padrão, edição manual via botão */}
+                    <div className="flex items-center justify-end gap-1">
+                      {inCart && editandoPreco.has(p.item_id) ? (
+                        <Input
+                          type="number" min="0" step="0.01" autoFocus
+                          value={c.preco_override != null ? c.preco_override : (precoBase ?? 0)}
+                          onChange={e => { const v = parseFloat(e.target.value); setCartPreco(p.item_id, isNaN(v) ? null : v) }}
+                          onBlur={() => setEditandoPreco(prev => { const n = new Set(prev); n.delete(p.item_id); return n })}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditandoPreco(prev => { const n = new Set(prev); n.delete(p.item_id); return n }) }}
+                          className="h-7 text-xs text-right w-full tabular-nums border-primary/40 bg-primary/[0.04]" />
+                      ) : (
+                        <>
+                          <span className={cn('text-xs tabular-nums', inCart ? (c.preco_override != null ? 'text-yellow-400' : '') : 'text-muted-foreground/50')}>
+                            {fmt(precoEfetivo)}
+                          </span>
+                          {inCart && (
+                            <button onClick={() => setEditandoPreco(prev => new Set([...prev, p.item_id]))}
+                              title="Editar preço"
+                              className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground transition-colors">
+                              <Edit2 className="h-2.5 w-2.5" />
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
 
                     {/* Subtotal */}
@@ -1077,7 +1087,7 @@ function OrderDialog({
           </div>
 
           {/* ── Coluna 3: Ingredientes + Resumo ── */}
-          <div className="w-72 shrink-0 flex flex-col overflow-y-auto">
+          <div className="w-[340px] shrink-0 flex flex-col overflow-y-auto">
 
             {/* Resumo */}
             <div className="p-4 border-b border-border shrink-0 space-y-2">
@@ -1165,7 +1175,13 @@ function OrderDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border shrink-0">
+        <div className="flex items-center gap-2 px-5 py-3 border-t border-border shrink-0">
+          {cart.length > 0 && (
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive gap-1.5 mr-auto"
+              onClick={() => { setCart([]); setEditandoPreco(new Set()); setDraftOrigem({}); setDraftPreco({}) }}>
+              <Trash2 className="h-3.5 w-3.5" />Limpar tudo
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button size="sm"
             onClick={() => onSave({ ...form, itens: buildItens() })}
