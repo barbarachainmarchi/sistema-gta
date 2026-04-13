@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -28,6 +28,8 @@ type Loja = { id: string; nome: string }
 type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
 type FaccaoPreco = { faccao_id: string; item_id: string; preco_limpo: number | null; preco_sujo: number | null }
 type PrecoVigente = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
+type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
+type ServicoItemCalc = { servico_id: string; item_id: string; quantidade: number; item_nome: string }
 
 interface Props {
   userId: string
@@ -40,6 +42,8 @@ interface Props {
   meuFaccaoId: string | null
   favoritosIniciais: string[]
   podeEditar?: boolean
+  servicos: Servico[]
+  servicoItens: ServicoItemCalc[]
 }
 
 type BatchEntry = { item_id: string; quantidade: number; loja_id: string }
@@ -158,12 +162,14 @@ function gerarCanvas(linhas: { text: string; indent?: boolean; bold?: boolean; d
 export function CalculadoraClient({
   userId, items, precosVigentes, lojas, lojaPrecos, faccaoPrecos,
   meuLojaId, meuFaccaoId, favoritosIniciais, podeEditar = true,
+  servicos, servicoItens,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [busca, setBusca] = useState('')
   const [aba, setAba] = useState<Aba>('todos')
+  const [filterCategoria, setFilterCategoria] = useState('')
   const [batch, setBatch] = useState<BatchEntry[]>([])
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
@@ -198,11 +204,18 @@ export function CalculadoraClient({
     return map
   }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
 
+  // "Meus" = itens do local de trabalho atual; sem local = itens marcados como meu produto
   const meusItemIds = useMemo(() => {
-    const ids = new Set(Object.keys(meuPrecoMap))
-    items.forEach(i => { if (i.meu_produto_usuario_id === userId) ids.add(i.id) })
+    const ids = new Set<string>()
+    if (meuLojaId) {
+      lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => ids.add(lp.item_id))
+    } else if (meuFaccaoId) {
+      faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => ids.add(fp.item_id))
+    } else {
+      items.forEach(i => { if (i.eh_meu_produto || i.meu_produto_usuario_id === userId) ids.add(i.id) })
+    }
     return ids
-  }, [meuPrecoMap, items, userId])
+  }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, items, userId])
 
   const lojaPrecoPorItem = useMemo(() => {
     const map: Record<string, LojaPreco[]> = {}
@@ -213,19 +226,34 @@ export function CalculadoraClient({
     return map
   }, [lojaPrecos])
 
-  // Lista filtrada — TODOS os itens ativos
+  const categoriasCalc = useMemo(() => {
+    const cats = new Set<string>()
+    items.forEach(i => { if (i.categorias_item?.nome) cats.add(i.categorias_item.nome) })
+    return Array.from(cats).sort()
+  }, [items])
+
+  // Lista filtrada — TODOS os itens ativos, favoritos primeiro
   const itensFiltrados = useMemo(() => {
     let lista = items
     if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
     if (aba === 'meus') lista = lista.filter(i => meusItemIds.has(i.id))
+    if (filterCategoria) lista = lista.filter(i => i.categorias_item?.nome === filterCategoria)
     if (busca.trim()) {
       const q = busca.toLowerCase()
       lista = lista.filter(i =>
         i.nome.toLowerCase().includes(q) || i.categorias_item?.nome.toLowerCase().includes(q)
       )
     }
+    if (aba !== 'favoritos') {
+      lista = [...lista].sort((a, b) => {
+        const af = favoritos.has(a.id) ? 0 : 1
+        const bf = favoritos.has(b.id) ? 0 : 1
+        if (af !== bf) return af - bf
+        return a.nome.localeCompare(b.nome)
+      })
+    }
     return lista
-  }, [items, aba, favoritos, busca, meusItemIds])
+  }, [items, aba, favoritos, busca, meusItemIds, filterCategoria])
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
 
@@ -268,6 +296,30 @@ export function CalculadoraClient({
     if (!p) return null
     return modoSujo ? (p.preco_sujo ?? p.preco_limpo) : (p.preco_limpo ?? p.preco_sujo)
   }, [lojaPrecos, meuPrecoMap, modoSujo])
+
+  const addServico = useCallback((servico: Servico) => {
+    const itens = servicoItens.filter(si => si.servico_id === servico.id)
+    if (itens.length === 0) { toast.info('Serviço sem itens configurados'); return }
+    setBatch(prev => {
+      let next = [...prev]
+      for (const si of itens) {
+        const exists = next.find(b => b.item_id === si.item_id)
+        if (exists) {
+          next = next.map(b => b.item_id === si.item_id ? { ...b, quantidade: b.quantidade + si.quantidade } : b)
+        } else {
+          next.push({ item_id: si.item_id, quantidade: si.quantidade, loja_id: '' })
+        }
+      }
+      return next
+    })
+    toast.success(`${itens.length} iten${itens.length !== 1 ? 's' : ''} do kit "${servico.nome}" adicionados`)
+  }, [servicoItens])
+
+  const servicosFiltrados = useMemo(() => {
+    if (!busca.trim()) return servicos
+    const q = busca.toLowerCase()
+    return servicos.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+  }, [servicos, busca])
 
   // ── Ingredientes agregados ────────────────────────────────────────────────
 
@@ -408,12 +460,21 @@ export function CalculadoraClient({
 
       {/* ── Col 1: Lista de itens ── */}
       <aside className="w-72 shrink-0 flex flex-col border-r border-border">
-        <div className="p-3 border-b border-border">
+        <div className="p-3 border-b border-border space-y-1.5">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input placeholder="Buscar item..." value={busca} onChange={e => setBusca(e.target.value)}
               className="pl-8 h-8 text-sm" />
           </div>
+          {categoriasCalc.length > 0 && (
+            <Select value={filterCategoria || '_todas'} onValueChange={v => setFilterCategoria(v === '_todas' ? '' : v)}>
+              <SelectTrigger className="h-7 text-xs border-border/50"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_todas">Todas as categorias</SelectItem>
+                {categoriasCalc.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="flex border-b border-border shrink-0">
           {([['favoritos', '★'], ['meus', 'Meus'], ['todos', 'Todos']] as [Aba, string][]).map(([key, label]) => (
@@ -424,6 +485,39 @@ export function CalculadoraClient({
           ))}
         </div>
         <div className="flex-1 overflow-y-auto">
+          {/* Seção de serviços/kits */}
+          {servicosFiltrados.length > 0 && (aba === 'todos' || aba === 'meus') && (
+            <div className="border-b border-border">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-white/[0.01]">
+                <Layers className="h-3 w-3" />Kits / Serviços
+              </div>
+              {servicosFiltrados.map(s => {
+                const preco = modoSujo ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
+                const itensCount = servicoItens.filter(si => si.servico_id === s.id).length
+                return (
+                  <div key={s.id} className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border/30 hover:bg-white/[0.02] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium leading-tight truncate">{s.nome}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-muted-foreground">{itensCount} item{itensCount !== 1 ? 's' : ''}</span>
+                        {s.desconto_pct > 0 && <span className="text-[10px] text-green-400">-{s.desconto_pct}%</span>}
+                        {preco != null && <span className={cn('text-[10px] tabular-nums', modoSujo ? 'text-orange-400/70' : 'text-emerald-400/70')}>{fmt(preco)}</span>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => addServico(s)}
+                      className="shrink-0 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Adicionar kit ${s.nome}`}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Itens */}
           {itensFiltrados.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8 px-4">
               {aba === 'favoritos' ? 'Nenhum favorito' : aba === 'meus' ? 'Nenhum item seu' : 'Nenhum item encontrado'}
@@ -666,7 +760,7 @@ export function CalculadoraClient({
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">
                   Ingredientes necessários
                 </p>
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   {ingredientesAgregados.map(ing => {
                     const lojaId = lojasPorIng[ing.ingrediente_id]
                     const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
@@ -674,43 +768,41 @@ export function CalculadoraClient({
                     const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
 
                     return (
-                      <div key={ing.ingrediente_id}>
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                            <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
-                            {ing.totalPeso > 0 && (
-                              <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
-                            )}
-                          </div>
-                          <span className={cn('tabular-nums shrink-0 ml-2', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
-                            {subtotal != null ? fmt(subtotal) : '—'}
-                          </span>
-                        </div>
-                        {/* Seletor de loja — discreto */}
+                      <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
+                        {/* Loja inline — na frente */}
                         {ing.lojasDisponiveis.length > 0 && (
-                          <div className="mt-0.5 ml-0.5">
-                            <Select
-                              value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
-                              onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
-                            >
-                              <SelectTrigger className="h-5 text-[10px] text-muted-foreground/60 border-0 shadow-none px-0 w-auto gap-1 hover:text-muted-foreground bg-transparent">
-                                <SelectValue placeholder="— loja —" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="sem">— sem loja —</SelectItem>
-                                {ing.lojasDisponiveis.map(l => {
-                                  const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
-                                  return (
-                                    <SelectItem key={l.loja_id} value={l.loja_id}>
-                                      {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
-                                    </SelectItem>
-                                  )
-                                })}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                          <Select
+                            value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
+                            onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
+                          >
+                            <SelectTrigger className="h-6 text-[10px] border-border/50 px-1.5 shrink-0 w-[72px]">
+                              <SelectValue placeholder="loja" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sem">— sem —</SelectItem>
+                              {ing.lojasDisponiveis.map(l => {
+                                const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
+                                return (
+                                  <SelectItem key={l.loja_id} value={l.loja_id}>
+                                    {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
+                                  </SelectItem>
+                                )
+                              })}
+                            </SelectContent>
+                          </Select>
                         )}
+                        {/* Nome + qtd + peso */}
+                        <div className="flex items-center gap-1 min-w-0 flex-1">
+                          <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                          <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
+                          {ing.totalPeso > 0 && (
+                            <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
+                          )}
+                        </div>
+                        {/* Custo */}
+                        <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
+                          {subtotal != null ? fmt(subtotal) : '—'}
+                        </span>
                       </div>
                     )
                   })}

@@ -68,11 +68,15 @@ interface Props {
   filtroInicial: 'todos' | 'encomenda' | 'entregue'; podeEditar: boolean
   podeExcluirConcluida: boolean; ocultarConcluidosDias: number
   servicos: Servico[]; servicoItens: ServicoItemVenda[]
+  favoritosIniciais: string[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` }
+function fmt(v: number) {
+  const hasCents = v % 1 !== 0
+  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 })}`
+}
 function fmtData(s: string) { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR') }
 function today() { return new Date().toISOString().split('T')[0] }
 
@@ -384,7 +388,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
 function OrderDialog({
   open, onOpenChange, editando, faccoes, lojas, membros, onMembroCreated,
   meuFaccao, meuLoja, estoqueMap, receitas, allItems, onSave, saving,
-  servicos, servicoItens,
+  servicos, servicoItens, userId, favoritosIniciais,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
@@ -394,9 +398,23 @@ function OrderDialog({
   receitas: Receita[]; allItems: ItemSimples[]
   onSave: (form: FormState) => void; saving: boolean
   servicos: Servico[]; servicoItens: ServicoItemVenda[]
+  userId: string; favoritosIniciais: string[]
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
+
+  const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
+  const [filterCategoria, setFilterCategoria] = useState('')
+
+  async function toggleFavorito(itemId: string) {
+    const tinha = favoritos.has(itemId)
+    setFavoritos(prev => { const n = new Set(prev); tinha ? n.delete(itemId) : n.add(itemId); return n })
+    if (tinha) {
+      await sb().from('usuario_favoritos').delete().eq('usuario_id', userId).eq('item_id', itemId)
+    } else {
+      await sb().from('usuario_favoritos').insert({ usuario_id: userId, item_id: itemId })
+    }
+  }
 
   const emptyForm = (): FormState => ({
     faccao_id: '', loja_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
@@ -653,12 +671,35 @@ function OrderDialog({
     toast.success(`${itensDoServico.length} iten${itensDoServico.length !== 1 ? 's' : ''} do combo "${servico.nome}" adicionados`)
   }
 
-  // Produtos filtrados (search)
+  // Mapa item_id → categoria (via allItems)
+  const itemCatMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    allItems.forEach(i => { if (i.categorias_item?.nome) m[i.id] = i.categorias_item.nome })
+    return m
+  }, [allItems])
+
+  // Categorias disponíveis nos produtos do local de trabalho
+  const categoriasDisponiveis = useMemo(() => {
+    const cats = new Set<string>()
+    meusProdutos.forEach(p => { const c = itemCatMap[p.item_id]; if (c) cats.add(c) })
+    return Array.from(cats).sort()
+  }, [meusProdutos, itemCatMap])
+
+  // Produtos filtrados (search + categoria), favoritos primeiro
   const produtosFiltrados = useMemo(() => {
-    if (!buscaProd.trim()) return meusProdutos
-    const q = buscaProd.toLowerCase()
-    return meusProdutos.filter(p => p.nome.toLowerCase().includes(q))
-  }, [meusProdutos, buscaProd])
+    let lista = meusProdutos
+    if (filterCategoria) lista = lista.filter(p => itemCatMap[p.item_id] === filterCategoria)
+    if (buscaProd.trim()) {
+      const q = buscaProd.toLowerCase()
+      lista = lista.filter(p => p.nome.toLowerCase().includes(q))
+    }
+    return [...lista].sort((a, b) => {
+      const af = favoritos.has(a.item_id) ? 0 : 1
+      const bf = favoritos.has(b.item_id) ? 0 : 1
+      if (af !== bf) return af - bf
+      return a.nome.localeCompare(b.nome)
+    })
+  }, [meusProdutos, buscaProd, filterCategoria, itemCatMap, favoritos])
 
   // Ingredients panel
   const ingredientes = useMemo(() => {
@@ -838,14 +879,23 @@ function OrderDialog({
           {/* ── Coluna 2: Produtos ── */}
           <div className="flex-1 flex flex-col min-w-0 border-r border-border">
 
-            {/* Search */}
-            <div className="px-3 py-2 shrink-0 border-b border-border">
+            {/* Search + filtros */}
+            <div className="px-3 py-2 shrink-0 border-b border-border space-y-1.5">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Filtrar produtos e combos..." value={buscaProd}
                   onChange={e => setBuscaProd(e.target.value)}
                   className="h-8 text-xs pl-7" />
               </div>
+              {categoriasDisponiveis.length > 0 && (
+                <Select value={filterCategoria || '_todas'} onValueChange={v => setFilterCategoria(v === '_todas' ? '' : v)}>
+                  <SelectTrigger className="h-7 text-xs border-border/50"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_todas">Todas as categorias</SelectItem>
+                    {categoriasDisponiveis.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             {/* Serviços / Combos */}
@@ -928,6 +978,14 @@ function OrderDialog({
                     )}>
                     {/* Nome + badges */}
                     <div className="flex items-center gap-1.5 min-w-0">
+                      <button onClick={() => toggleFavorito(p.item_id)}
+                        className={cn('shrink-0 p-0.5 rounded transition-colors',
+                          favoritos.has(p.item_id) ? 'text-yellow-400' : 'text-muted-foreground/30 hover:text-yellow-400'
+                        )}>
+                        <svg className="h-3 w-3" fill={favoritos.has(p.item_id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
                       {(() => {
                         const currentOrigem = inCart ? c?.origem : (draftOrigem[p.item_id] ?? (p.tem_craft ? 'fabricar' : 'estoque'))
                         return (
@@ -977,7 +1035,7 @@ function OrderDialog({
                     {/* Preço unit (sempre editável) */}
                     <div className="flex justify-end">
                       <Input
-                        type="number" min="0"
+                        type="number" min="0" step="0.01"
                         value={inCart
                           ? (c.preco_override != null ? c.preco_override : (precoBase ?? 0))
                           : (draftPreco[p.item_id] != null ? draftPreco[p.item_id]! : (precoBase ?? 0))}
@@ -1148,7 +1206,7 @@ export function VendasClient({
   userId, userNome, vendas: vendasIniciais, faccoes, lojas, allItems,
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
   meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
-  servicos, servicoItens,
+  servicos, servicoItens, favoritosIniciais,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1485,6 +1543,8 @@ export function VendasClient({
         onSave={handleSave} saving={saving}
         servicos={servicos}
         servicoItens={servicoItens}
+        userId={userId}
+        favoritosIniciais={favoritosIniciais}
       />
     </div>
   )

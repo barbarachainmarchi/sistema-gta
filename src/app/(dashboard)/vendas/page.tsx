@@ -23,6 +23,7 @@ export default async function VendasPage() {
     { data: configOcultar },
     { data: servicosData },
     { data: servicoItensData },
+    { data: favoritosData },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*'),
@@ -38,6 +39,7 @@ export default async function VendasPage() {
     supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
+    supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
   ])
 
   // Calcular saldo de estoque por item a partir das movimentações
@@ -121,6 +123,7 @@ export default async function VendasPage() {
         ocultarConcluidosDias={ocultarConcluidosDias}
         servicos={servicosData ?? []}
         servicoItens={servicoItensMapped}
+        favoritosIniciais={(favoritosData ?? []).map((f: { item_id: string }) => f.item_id)}
       />
     </>
   )

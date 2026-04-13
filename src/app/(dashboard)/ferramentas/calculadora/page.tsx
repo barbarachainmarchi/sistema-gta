@@ -17,6 +17,8 @@ export default async function CalculadoraPage() {
     { data: favoritosData },
     { data: permRow },
     { data: usuarioRow },
+    { data: servicosData },
+    { data: servicoItensData },
   ] = await Promise.all([
     supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, meu_produto_usuario_id, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
@@ -26,6 +28,8 @@ export default async function CalculadoraPage() {
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
+    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome)'),
   ])
 
   const meuLojaId    = usuarioRow?.local_trabalho_loja_id ?? null
@@ -55,6 +59,14 @@ export default async function CalculadoraPage() {
     item_receita: receitasPorItem[item.id] ?? [],
   }))
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const servicoItensMapped = (servicoItensData ?? []).map((si: any) => ({
+    servico_id: si.servico_id,
+    item_id: si.item_id,
+    quantidade: si.quantidade,
+    item_nome: Array.isArray(si.items) ? (si.items[0]?.nome ?? '') : (si.items?.nome ?? ''),
+  }))
+
   return (
     <>
       <Header title="Calculadora" />
@@ -69,6 +81,8 @@ export default async function CalculadoraPage() {
         meuFaccaoId={meuFaccaoId}
         favoritosIniciais={(favoritosData ?? []).map(f => f.item_id)}
         podeEditar={podeEditar}
+        servicos={servicosData ?? []}
+        servicoItens={servicoItensMapped}
       />
     </>
   )

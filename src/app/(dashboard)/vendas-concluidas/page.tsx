@@ -78,6 +78,7 @@ export default async function VendasConcluidasPage() {
         ocultarConcluidosDias={0}
         servicos={[]}
         servicoItens={[]}
+        favoritosIniciais={[]}
       />
     </>
   )

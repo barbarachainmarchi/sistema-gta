@@ -78,6 +78,7 @@ export default async function EncomendasPage() {
         ocultarConcluidosDias={0}
         servicos={[]}
         servicoItens={[]}
+        favoritosIniciais={[]}
       />
     </>
   )
