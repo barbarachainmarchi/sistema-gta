@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -20,10 +21,10 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; created_at: string; updated_at: string }
+export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; created_at: string; updated_at: string }
 export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo     = { id: string; placa: string | null; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
-export type FaccaoPreco = { id: string; faccao_id: string; item_id: string; tipo: 'percentual' | 'fixo'; percentual: number | null; preco_sujo: number | null; preco_limpo: number | null; observacoes: string | null }
+export type FaccaoPreco = { id: string; faccao_id: string; item_id: string; tipo: 'percentual' | 'fixo'; percentual: number | null; preco_sujo: number | null; preco_limpo: number | null; preco_sujo_parceria: number | null; preco_limpo_parceria: number | null; desconto_qtd_minima: number | null; desconto_qtd_pct: number | null; observacoes: string | null }
 export type Produto     = { id: string; nome: string }
 export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
 
@@ -57,11 +58,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
-  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '' })
+  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '' })
   const [geralSaving, setGeralSaving] = useState(false)
 
   function abrirEdicao() {
-    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '' })
+    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '' })
     setEditando(true)
   }
 
@@ -75,6 +76,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       cor_tag: geralForm.cor_tag, status: geralForm.status,
       desconto_padrao_pct: geralForm.desconto_padrao_pct ?? 0,
       telefone: geralForm.telefone.trim() || null,
+      observacoes: geralForm.observacoes.trim() || null,
     }).eq('id', faccao.id).select().single()
     setGeralSaving(false)
     if (error) { toast.error('Erro ao salvar'); return }
@@ -258,7 +260,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   // ── Preços / Produtos ──────────────────────────────────────────────────────
   const [editPreco, setEditPreco] = useState<Produto | null>(null)
-  const [precoForm, setPrecoForm] = useState({ tipo: 'fixo' as 'percentual' | 'fixo', percentual: '', preco_sujo: '', preco_limpo: '' })
+  const [precoForm, setPrecoForm] = useState({
+    tipo: 'fixo' as 'percentual' | 'fixo',
+    percentual: '', preco_sujo: '', preco_limpo: '',
+    preco_sujo_parceria: '', preco_limpo_parceria: '',
+    desconto_qtd_minima: '', desconto_qtd_pct: '',
+  })
   const [precoSaving, setPrecoSaving] = useState(false)
   const [addingPreco, setAddingPreco] = useState(false)
   const [newItemId, setNewItemId] = useState('')
@@ -322,7 +329,16 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
   function openEditPreco(produto: Produto) {
     const existing = faccaoPrecos.find(p => p.item_id === produto.id)
-    setPrecoForm({ tipo: existing?.tipo ?? 'fixo', percentual: existing?.percentual?.toString() ?? '', preco_sujo: existing?.preco_sujo?.toString() ?? '', preco_limpo: existing?.preco_limpo?.toString() ?? '' })
+    setPrecoForm({
+      tipo: existing?.tipo ?? 'fixo',
+      percentual: existing?.percentual?.toString() ?? '',
+      preco_sujo: existing?.preco_sujo?.toString() ?? '',
+      preco_limpo: existing?.preco_limpo?.toString() ?? '',
+      preco_sujo_parceria: existing?.preco_sujo_parceria?.toString() ?? '',
+      preco_limpo_parceria: existing?.preco_limpo_parceria?.toString() ?? '',
+      desconto_qtd_minima: existing?.desconto_qtd_minima?.toString() ?? '',
+      desconto_qtd_pct: existing?.desconto_qtd_pct?.toString() ?? '',
+    })
     setEditPreco(produto)
   }
 
@@ -342,6 +358,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       percentual: precoForm.tipo === 'percentual' && precoForm.percentual ? parseFloat(precoForm.percentual) : null,
       preco_sujo: precoForm.preco_sujo ? parseFloat(precoForm.preco_sujo) : null,
       preco_limpo: precoForm.preco_limpo ? parseFloat(precoForm.preco_limpo) : null,
+      preco_sujo_parceria: precoForm.preco_sujo_parceria ? parseFloat(precoForm.preco_sujo_parceria) : null,
+      preco_limpo_parceria: precoForm.preco_limpo_parceria ? parseFloat(precoForm.preco_limpo_parceria) : null,
+      desconto_qtd_minima: precoForm.desconto_qtd_minima ? parseInt(precoForm.desconto_qtd_minima) : null,
+      desconto_qtd_pct: precoForm.desconto_qtd_pct ? parseFloat(precoForm.desconto_qtd_pct) : null,
     }
     const { data, error } = await sb().from('faccao_item_precos').upsert(row, { onConflict: 'faccao_id,item_id' }).select().single()
     setPrecoSaving(false)
@@ -384,13 +404,14 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </Button>
             </div>
           </div>
-          {(faccao.territorio || faccao.descricao || faccao.deep || faccao.telefone || faccao.desconto_padrao_pct > 0) && (
+          {(faccao.territorio || faccao.descricao || faccao.deep || faccao.telefone || faccao.desconto_padrao_pct > 0 || faccao.observacoes) && (
             <div className="text-xs text-muted-foreground flex flex-wrap gap-3 pt-1 pl-8">
               {faccao.territorio && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{faccao.territorio}</span>}
               {faccao.descricao && <span>{faccao.descricao}</span>}
               {faccao.deep && <span className="font-mono text-[11px] bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/10">{faccao.deep}</span>}
               {faccao.telefone && <span className="font-mono">{faccao.telefone}</span>}
               {faccao.desconto_padrao_pct > 0 && <span className="text-emerald-400">{faccao.desconto_padrao_pct}% desconto</span>}
+              {faccao.observacoes && <span className="italic text-muted-foreground/70">{faccao.observacoes}</span>}
             </div>
           )}
         </DialogHeader>
@@ -436,6 +457,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                     onChange={e => setGeralForm(prev => ({ ...prev, desconto_padrao_pct: parseFloat(e.target.value) || 0 }))}
                     placeholder="0" className="h-8 text-sm" />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Observações internas</Label>
+                <Textarea value={geralForm.observacoes} onChange={e => setGeralForm(f => ({ ...f, observacoes: e.target.value }))} placeholder="Notas, histórico, informações relevantes..." rows={3} className="text-sm resize-none" />
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -558,23 +583,41 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_100px_100px_80px_44px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Produto</span><span className="text-right">Sujo</span><span className="text-right">Limpo</span><span>Tipo</span><span />
+                <div className="grid grid-cols-[1fr_100px_100px_44px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Produto</span><span className="text-right">Sujo</span><span className="text-right">Limpo</span><span />
                 </div>
                 {precosFiltrados.map((preco, idx) => {
                   const produto = todosProdutos.find(p => p.id === preco.item_id)
+                  const temParceria = preco.preco_sujo_parceria != null || preco.preco_limpo_parceria != null
+                  const temQtd = preco.desconto_qtd_minima != null && preco.desconto_qtd_pct != null
                   return (
-                    <div key={preco.item_id} className={cn('grid grid-cols-[1fr_100px_100px_80px_44px] gap-3 items-center px-4 py-2.5', idx < precosFiltrados.length - 1 && 'border-b border-border/40')}>
-                      <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
-                      <span className="text-sm text-right tabular-nums">{fmt(preco.preco_sujo)}</span>
-                      <span className="text-sm text-right tabular-nums">{fmt(preco.preco_limpo)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {preco.tipo === 'percentual' ? `${preco.percentual != null && preco.percentual > 0 ? '-' : '+'}${Math.abs(preco.percentual ?? 0)}%` : 'fixo'}
-                      </span>
-                      <div className="flex gap-0.5">
-                        <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
-                        <button onClick={() => handleRemoverPreco(preco.item_id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                    <div key={preco.item_id} className={cn('px-4 py-2.5', idx < precosFiltrados.length - 1 && 'border-b border-border/40')}>
+                      <div className="grid grid-cols-[1fr_100px_100px_44px] gap-3 items-center">
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-muted-foreground">
+                              {preco.tipo === 'percentual' ? `${preco.percentual != null && preco.percentual > 0 ? '-' : '+'}${Math.abs(preco.percentual ?? 0)}%` : 'fixo'}
+                            </span>
+                            {temParceria && <span className="text-[10px] text-sky-400/80">+ parceria</span>}
+                            {temQtd && <span className="text-[10px] text-emerald-400/80">+{preco.desconto_qtd_minima}un→-{preco.desconto_qtd_pct}%</span>}
+                          </div>
+                        </div>
+                        <span className="text-sm text-right tabular-nums">{fmt(preco.preco_sujo)}</span>
+                        <span className="text-sm text-right tabular-nums">{fmt(preco.preco_limpo)}</span>
+                        <div className="flex gap-0.5">
+                          <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                          <button onClick={() => handleRemoverPreco(preco.item_id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                        </div>
                       </div>
+                      {temParceria && (
+                        <div className="grid grid-cols-[1fr_100px_100px_44px] gap-3 mt-1 pl-0">
+                          <span className="text-[10px] text-sky-400/70">parceria</span>
+                          <span className="text-[10px] text-right tabular-nums text-sky-400/70">{fmt(preco.preco_sujo_parceria)}</span>
+                          <span className="text-[10px] text-right tabular-nums text-sky-400/70">{fmt(preco.preco_limpo_parceria)}</span>
+                          <span />
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -674,30 +717,65 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
 
       {/* Modal: Editar preço */}
       <Dialog open={!!editPreco} onOpenChange={v => !v && setEditPreco(null)}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-sm">
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md">
           <DialogHeader><DialogTitle className="text-sm">Preço — {editPreco?.nome}</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Tipo</Label>
-              <Select value={precoForm.tipo} onValueChange={v => setPrecoForm(f => ({ ...f, tipo: v as 'percentual' | 'fixo' }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixo">Valor fixo (sujo/limpo)</SelectItem>
-                  <SelectItem value="percentual">Percentual sobre referência</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {precoForm.tipo === 'percentual' ? (
+          <div className="space-y-4 py-1">
+
+            {/* Preço principal */}
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Preço principal</p>
               <div className="space-y-1.5">
-                <Label className="text-xs">% (positivo = desconto, negativo = acréscimo)</Label>
-                <Input type="number" placeholder="Ex: 10" value={precoForm.percentual} onChange={e => setPrecoForm(f => ({ ...f, percentual: e.target.value }))} className="h-8 text-sm" />
+                <Label className="text-xs">Tipo</Label>
+                <Select value={precoForm.tipo} onValueChange={v => setPrecoForm(f => ({ ...f, tipo: v as 'percentual' | 'fixo' }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fixo">Valor fixo (sujo / limpo)</SelectItem>
+                    <SelectItem value="percentual">Percentual sobre referência</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ) : (
+              {precoForm.tipo === 'percentual' ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">% sobre referência <span className="text-muted-foreground">(positivo = desconto, negativo = acréscimo)</span></Label>
+                  <Input type="number" placeholder="Ex: 10" value={precoForm.percentual} onChange={e => setPrecoForm(f => ({ ...f, percentual: e.target.value }))} className="h-8 text-sm" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><Label className="text-xs">Preço Sujo</Label><Input type="number" placeholder="0" value={precoForm.preco_sujo} onChange={e => setPrecoForm(f => ({ ...f, preco_sujo: e.target.value }))} className="h-8 text-sm" /></div>
+                  <div className="space-y-1.5"><Label className="text-xs">Preço Limpo</Label><Input type="number" placeholder="0" value={precoForm.preco_limpo} onChange={e => setPrecoForm(f => ({ ...f, preco_limpo: e.target.value }))} className="h-8 text-sm" /></div>
+                </div>
+              )}
+            </div>
+
+            {/* Preço parceria */}
+            <div className="space-y-3 pt-3 border-t border-border/50">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Valor parceria <span className="font-normal normal-case">(opcional)</span></p>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label className="text-xs">Preço Sujo</Label><Input type="number" placeholder="0" value={precoForm.preco_sujo} onChange={e => setPrecoForm(f => ({ ...f, preco_sujo: e.target.value }))} className="h-8 text-sm" /></div>
-                <div className="space-y-1.5"><Label className="text-xs">Preço Limpo</Label><Input type="number" placeholder="0" value={precoForm.preco_limpo} onChange={e => setPrecoForm(f => ({ ...f, preco_limpo: e.target.value }))} className="h-8 text-sm" /></div>
+                <div className="space-y-1.5"><Label className="text-xs">Sujo parceria</Label><Input type="number" placeholder="—" value={precoForm.preco_sujo_parceria} onChange={e => setPrecoForm(f => ({ ...f, preco_sujo_parceria: e.target.value }))} className="h-8 text-sm" /></div>
+                <div className="space-y-1.5"><Label className="text-xs">Limpo parceria</Label><Input type="number" placeholder="—" value={precoForm.preco_limpo_parceria} onChange={e => setPrecoForm(f => ({ ...f, preco_limpo_parceria: e.target.value }))} className="h-8 text-sm" /></div>
               </div>
-            )}
+            </div>
+
+            {/* Desconto por quantidade */}
+            <div className="space-y-3 pt-3 border-t border-border/50">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Desconto por quantidade <span className="font-normal normal-case">(opcional)</span></p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Acima de X unidades</Label>
+                  <Input type="number" min="1" placeholder="Ex: 10" value={precoForm.desconto_qtd_minima} onChange={e => setPrecoForm(f => ({ ...f, desconto_qtd_minima: e.target.value }))} className="h-8 text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Desconto (%)</Label>
+                  <Input type="number" min="0" max="100" placeholder="Ex: 15" value={precoForm.desconto_qtd_pct} onChange={e => setPrecoForm(f => ({ ...f, desconto_qtd_pct: e.target.value }))} className="h-8 text-sm" />
+                </div>
+              </div>
+              {precoForm.desconto_qtd_minima && precoForm.desconto_qtd_pct && (
+                <p className="text-[11px] text-muted-foreground">
+                  Acima de {precoForm.desconto_qtd_minima} un. → {precoForm.desconto_qtd_pct}% de desconto
+                </p>
+              )}
+            </div>
+
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditPreco(null)}>Cancelar</Button>

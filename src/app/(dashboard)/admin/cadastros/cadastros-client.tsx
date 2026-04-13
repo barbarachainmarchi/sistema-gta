@@ -23,6 +23,7 @@ type Item = {
   id: string
   nome: string
   descricao: string | null
+  apelidos: string | null
   categoria_id: string | null
   peso: number | null
   status: 'ativo' | 'inativo'
@@ -55,13 +56,13 @@ type PrecoHistorico = { id?: string; preco_sujo: number | null; preco_limpo: num
 type LojaPreco = { id?: string; loja_id: string; preco: number }
 
 type ItemForm = {
-  nome: string; descricao: string; categoria_id: string; peso: string
+  nome: string; descricao: string; apelidos: string; categoria_id: string; peso: string
   status: 'ativo' | 'inativo'; tem_craft: boolean; eh_meu_produto: boolean; eh_compravel: boolean; tem_reciclagem: boolean
   receita: ReceitaIngrediente[]; reciclagem: ReciclagemResultado[]; precos: PrecoHistorico[]; loja_precos: LojaPreco[]
 }
 
 const emptyItemForm: ItemForm = {
-  nome: '', descricao: '', categoria_id: '', peso: '', status: 'ativo',
+  nome: '', descricao: '', apelidos: '', categoria_id: '', peso: '', status: 'ativo',
   tem_craft: false, eh_meu_produto: false, eh_compravel: false, tem_reciclagem: false,
   receita: [], reciclagem: [], precos: [], loja_precos: [],
 }
@@ -443,7 +444,8 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
   }
 
   const [form, setForm] = useState<ItemForm>(item ? {
-    nome: item.nome, descricao: item.descricao || '', categoria_id: item.categoria_id || '',
+    nome: item.nome, descricao: item.descricao || '', apelidos: item.apelidos || '',
+    categoria_id: item.categoria_id || '',
     peso: item.peso != null ? String(item.peso) : '',
     status: item.status, tem_craft: item.tem_craft, eh_meu_produto: item.eh_meu_produto,
     eh_compravel: item.eh_compravel, tem_reciclagem: item.tem_reciclagem,
@@ -548,6 +550,7 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
     try {
       const payload = {
         nome: form.nome.trim(), descricao: form.descricao.trim() || null,
+        apelidos: form.apelidos.trim() || null,
         categoria_id: form.categoria_id || null, status: form.status,
         peso: form.peso !== '' ? parseFloat(form.peso) : null,
         tem_craft: form.tem_craft, eh_meu_produto: form.eh_meu_produto,
@@ -693,6 +696,11 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
                   <div className="col-span-2 space-y-1.5">
                     <Label className="text-xs">Descrição</Label>
                     <Textarea value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))} placeholder="Opcional" rows={2} className="text-sm resize-none" />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs">Apelidos / Códigos de busca</Label>
+                    <Input value={form.apelidos} onChange={e => setForm(p => ({ ...p, apelidos: e.target.value }))} placeholder="Ex: posição, stance, rebaixado" className="h-9 text-sm" />
+                    <p className="text-[11px] text-muted-foreground">Separados por vírgula — usados na busca da calculadora</p>
                   </div>
                 </div>
 
