@@ -20,7 +20,7 @@ export default async function InvestigacaoPage() {
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
     supabase.from('veiculos').select('*').order('placa'),
     supabase.from('lojas').select('*').order('nome'),
-    supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
+    supabase.from('items').select('id, nome, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('faccao_item_precos').select('*'),
     supabase.from('loja_membros').select('membro_id, loja_id'),
   ])
@@ -40,7 +40,11 @@ export default async function InvestigacaoPage() {
       initialMembros={membros ?? []}
       initialVeiculos={veiculos ?? []}
       initialLojas={lojas ?? []}
-      todosProdutos={todosProdutos ?? []}
+      todosProdutos={(todosProdutos ?? []).map((item: { id: string; nome: string; categorias_item: { nome: string } | { nome: string }[] | null }) => ({
+        id: item.id,
+        nome: item.nome,
+        categoria: Array.isArray(item.categorias_item) ? (item.categorias_item[0]?.nome ?? null) : (item.categorias_item?.nome ?? null),
+      }))}
       initialFaccaoPrecos={faccaoPrecos ?? []}
       lojaPorMembro={lojaPorMembro}
     />
