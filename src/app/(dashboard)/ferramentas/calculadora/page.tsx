@@ -15,17 +15,19 @@ export default async function CalculadoraPage() {
     { data: lojasData },
     { data: lojaPrecosData },
     { data: favoritosData },
+    { data: favoritosServicosData },
     { data: permRow },
     { data: usuarioRow },
     { data: servicosData },
     { data: servicoItensData },
   ] = await Promise.all([
-    supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, meu_produto_usuario_id, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
+    supabase.from('items').select('id, nome, tem_craft, eh_meu_produto, meu_produto_usuario_id, peso, apelidos, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
+    supabase.from('usuario_favoritos_servicos').select('servico_id').eq('usuario_id', user.id),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, eh_meu_servico').eq('status', 'ativo').order('nome'),
@@ -80,6 +82,7 @@ export default async function CalculadoraPage() {
         meuLojaId={meuLojaId}
         meuFaccaoId={meuFaccaoId}
         favoritosIniciais={(favoritosData ?? []).map(f => f.item_id)}
+        favoritosServicosIniciais={(favoritosServicosData ?? []).map(f => f.servico_id)}
         podeEditar={podeEditar}
         servicos={servicosData ?? []}
         servicoItens={servicoItensMapped}

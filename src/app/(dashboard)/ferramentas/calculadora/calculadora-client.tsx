@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, Pencil } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -20,6 +20,7 @@ type Item = {
   eh_meu_produto: boolean
   meu_produto_usuario_id: string | null
   peso: number | null
+  apelidos: string | null
   categorias_item: { nome: string } | null
   item_receita: { ingrediente_id: string; quantidade: number }[]
 }
@@ -41,6 +42,7 @@ interface Props {
   meuLojaId: string | null
   meuFaccaoId: string | null
   favoritosIniciais: string[]
+  favoritosServicosIniciais: string[]
   podeEditar?: boolean
   servicos: Servico[]
   servicoItens: ServicoItemCalc[]
@@ -63,63 +65,77 @@ function fmtNum(v: number) {
   return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 }
 
-// ── Item com botão + ──────────────────────────────────────────────────────────
+function matchBusca(texto: string, apelidos: string | null | undefined, q: string): boolean {
+  if (texto.toLowerCase().includes(q)) return true
+  if (apelidos) {
+    return apelidos.toLowerCase().split(',').some(a => a.trim().includes(q))
+  }
+  return false
+}
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, isMeu, precoLimpo, precoSujo, onAdd, onToggleFav, podeEditar }: {
+// ── Item compacto (linha única) ───────────────────────────────────────────────
+
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo, precoSujo, onAdd, onToggleFav, onEditarApelido, podeEditar }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
-  isMeu: boolean
   precoLimpo: number | null
   precoSujo: number | null
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
+  onEditarApelido: (item: Item) => void
   podeEditar: boolean
 }) {
+  const preco = precoLimpo ?? precoSujo
+  const isSujoOnly = precoLimpo == null && precoSujo != null
   return (
     <div className={cn(
-      'flex items-center gap-1.5 px-3 py-2.5 border-b border-border/30 transition-colors',
+      'group flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 transition-colors hover:bg-white/[0.015]',
       isInBatch && 'bg-primary/[0.06]'
     )}>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium leading-tight truncate">{item.nome}</div>
-        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-          {item.categorias_item?.nome && (
-            <span className="text-[10px] text-muted-foreground">{item.categorias_item.nome}</span>
-          )}
-          {isMeu && <span className="text-[10px] text-emerald-500/70">meu</span>}
-        </div>
-        {(precoLimpo != null || precoSujo != null) && (
-          <div className="flex items-center gap-2 mt-0.5">
-            {precoLimpo != null && (
-              <span className="text-[10px] text-emerald-400/70 tabular-nums">{fmt(precoLimpo)} L</span>
-            )}
-            {precoSujo != null && (
-              <span className="text-[10px] text-orange-400/60 tabular-nums">{fmt(precoSujo)} S</span>
-            )}
-          </div>
-        )}
-      </div>
       <button
         onMouseDown={e => e.preventDefault()}
         onClick={e => podeEditar && onToggleFav(item.id, e)}
         disabled={!podeEditar}
         className={cn('shrink-0 p-0.5 rounded transition-colors',
-          isFavorito ? 'text-yellow-400' : 'text-muted-foreground/40 hover:text-yellow-400',
-          !podeEditar && 'opacity-40 cursor-default'
+          isFavorito ? 'text-yellow-400' : 'text-muted-foreground/25 hover:text-yellow-400',
+          !podeEditar && 'opacity-0 pointer-events-none'
         )}>
-        <Star className="h-3.5 w-3.5" fill={isFavorito ? 'currentColor' : 'none'} />
+        <Star className="h-3 w-3" fill={isFavorito ? 'currentColor' : 'none'} />
       </button>
+
+      <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.nome}</span>
+
+      {item.apelidos && (
+        <span className="text-[9px] text-primary/30 shrink-0" title={`Apelidos: ${item.apelidos}`}>✦</span>
+      )}
+
+      {preco != null && (
+        <span className={cn('text-xs tabular-nums shrink-0',
+          isSujoOnly ? 'text-orange-400/70' : 'text-emerald-400/70'
+        )}>{fmt(preco)}</span>
+      )}
+
+      {podeEditar && (
+        <button
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => onEditarApelido(item)}
+          title="Editar apelidos de busca"
+          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground/70 transition-all">
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+
       <button
         onClick={() => onAdd(item.id)}
         disabled={isInBatch}
         className={cn(
-          'shrink-0 h-6 w-6 rounded flex items-center justify-center transition-colors',
+          'shrink-0 h-5 w-5 rounded flex items-center justify-center transition-colors',
           isInBatch
-            ? 'text-primary/40 cursor-default'
+            ? 'text-primary/30 cursor-default'
             : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
         )}>
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-3 w-3" />
       </button>
     </div>
   )
@@ -137,15 +153,11 @@ function gerarCanvas(linhas: { text: string; indent?: boolean; bold?: boolean; d
   canvas.height = H
   const ctx = canvas.getContext('2d')!
 
-  // Fundo
   ctx.fillStyle = '#0d0d14'
   ctx.fillRect(0, 0, W, H)
-
-  // Barra lateral primária
   ctx.fillStyle = '#6366f1'
   ctx.fillRect(0, 0, 3, H)
 
-  // Texto
   linhas.forEach((linha, i) => {
     const y = PAD + i * LINE_H + LINE_H * 0.72
     const x = PAD + (linha.indent ? 16 : 0)
@@ -161,8 +173,8 @@ function gerarCanvas(linhas: { text: string; indent?: boolean; bold?: boolean; d
 
 export function CalculadoraClient({
   userId, items, precosVigentes, lojas, lojaPrecos, faccaoPrecos,
-  meuLojaId, meuFaccaoId, favoritosIniciais, podeEditar = true,
-  servicos, servicoItens,
+  meuLojaId, meuFaccaoId, favoritosIniciais, favoritosServicosIniciais,
+  podeEditar = true, servicos, servicoItens,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -170,17 +182,23 @@ export function CalculadoraClient({
   const [busca, setBusca] = useState('')
   const [aba, setAba] = useState<Aba>('meus')
   const [filterCategoria, setFilterCategoria] = useState('')
+  const [filterLoja, setFilterLoja] = useState('')
   const [batch, setBatch] = useState<BatchEntry[]>([])
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
+  const [favoritosServicos, setFavoritosServicos] = useState<Set<string>>(new Set(favoritosServicosIniciais))
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
   const [servicosSelecionados, setServicosSelecionados] = useState<Servico[]>([])
   const [modoSujo, setModoSujo] = useState(false)
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
+  const [editandoApelido, setEditandoApelido] = useState<string | null>(null)
+  const [apelidoTemp, setApelidoTemp] = useState('')
 
   const favoritosRef = useRef(favoritos)
   favoritosRef.current = favoritos
+  const favoritosServicosRef = useRef(favoritosServicos)
+  favoritosServicosRef.current = favoritosServicos
 
   // ── Mapas ─────────────────────────────────────────────────────────────────
 
@@ -205,7 +223,6 @@ export function CalculadoraClient({
     return map
   }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
 
-  // "Meus" = itens do local de trabalho atual; sem local = itens marcados como meu produto
   const meusItemIds = useMemo(() => {
     const ids = new Set<string>()
     if (meuLojaId) {
@@ -227,23 +244,30 @@ export function CalculadoraClient({
     return map
   }, [lojaPrecos])
 
+  const lojasComPrecos = useMemo(() => {
+    const ids = new Set(lojaPrecos.map(lp => lp.loja_id))
+    return lojas.filter(l => ids.has(l.id))
+  }, [lojas, lojaPrecos])
+
   const categoriasCalc = useMemo(() => {
     const cats = new Set<string>()
     items.forEach(i => { if (i.categorias_item?.nome) cats.add(i.categorias_item.nome) })
     return Array.from(cats).sort()
   }, [items])
 
-  // Lista filtrada — TODOS os itens ativos, favoritos primeiro
   const itensFiltrados = useMemo(() => {
     let lista = items
     if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
     if (aba === 'meus') lista = lista.filter(i => meusItemIds.has(i.id))
     if (filterCategoria) lista = lista.filter(i => i.categorias_item?.nome === filterCategoria)
+    if (filterLoja === '_faccao') {
+      lista = lista.filter(i => faccaoPrecos.some(fp => fp.item_id === i.id))
+    } else if (filterLoja) {
+      lista = lista.filter(i => lojaPrecoPorItem[i.id]?.some(lp => lp.loja_id === filterLoja))
+    }
     if (busca.trim()) {
       const q = busca.toLowerCase()
-      lista = lista.filter(i =>
-        i.nome.toLowerCase().includes(q) || i.categorias_item?.nome.toLowerCase().includes(q)
-      )
+      lista = lista.filter(i => matchBusca(i.nome, i.apelidos, q))
     }
     if (aba !== 'favoritos') {
       lista = [...lista].sort((a, b) => {
@@ -254,9 +278,21 @@ export function CalculadoraClient({
       })
     }
     return lista
-  }, [items, aba, favoritos, busca, meusItemIds, filterCategoria])
+  }, [items, aba, favoritos, busca, meusItemIds, filterCategoria, filterLoja, lojaPrecoPorItem, faccaoPrecos])
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
+
+  const servicosFiltrados = useMemo(() => {
+    let lista = servicos
+    if (aba === 'favoritos') lista = lista.filter(s => favoritosServicos.has(s.id))
+    if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
+    if (filterLoja) return []  // serviços não têm loja; ocultar quando filtro de loja ativo
+    if (busca.trim()) {
+      const q = busca.toLowerCase()
+      lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+    }
+    return lista
+  }, [servicos, busca, aba, servicoItens, meusItemIds, favoritosServicos, filterLoja])
 
   // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -273,6 +309,38 @@ export function CalculadoraClient({
     }
   }, [userId, sb])
 
+  const toggleFavoritoServico = useCallback(async (servicoId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const tinha = favoritosServicosRef.current.has(servicoId)
+    setFavoritosServicos(prev => { const n = new Set(prev); tinha ? n.delete(servicoId) : n.add(servicoId); return n })
+    if (tinha) {
+      const { error } = await sb().from('usuario_favoritos_servicos').delete().eq('usuario_id', userId).eq('servico_id', servicoId)
+      if (error) { toast.error('Erro ao remover favorito'); setFavoritosServicos(prev => { const n = new Set(prev); n.add(servicoId); return n }) }
+    } else {
+      const { error } = await sb().from('usuario_favoritos_servicos').insert({ usuario_id: userId, servico_id: servicoId })
+      if (error) { toast.error('Erro ao favoritar'); setFavoritosServicos(prev => { const n = new Set(prev); n.delete(servicoId); return n }) }
+    }
+  }, [userId, sb])
+
+  const iniciarEdicaoApelido = useCallback((item: Item) => {
+    setApelidoTemp(item.apelidos ?? '')
+    setEditandoApelido(item.id)
+  }, [])
+
+  const salvarApelido = useCallback(async () => {
+    if (!editandoApelido) return
+    const valor = apelidoTemp.trim() || null
+    const { error } = await sb().from('items').update({ apelidos: valor }).eq('id', editandoApelido)
+    if (error) { toast.error('Erro ao salvar apelidos') }
+    else {
+      // Atualiza o item localmente sem recarregar a página
+      const item = itemMap[editandoApelido]
+      if (item) item.apelidos = valor
+      toast.success('Apelidos salvos')
+    }
+    setEditandoApelido(null)
+  }, [editandoApelido, apelidoTemp, sb, itemMap])
+
   const addToBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.some(b => b.item_id === itemId) ? prev : [...prev, { item_id: itemId, quantidade: 1, loja_id: '' }])
   }, [])
@@ -287,7 +355,6 @@ export function CalculadoraClient({
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, loja_id: lojaId === 'sem' ? '' : lojaId } : b))
   }, [])
 
-  // Preço efetivo por item do batch
   const getPrecoItem = useCallback((entry: BatchEntry): number | null => {
     if (entry.loja_id) {
       const lp = lojaPrecos.find(l => l.loja_id === entry.loja_id && l.item_id === entry.item_id)
@@ -320,16 +387,6 @@ export function CalculadoraClient({
       ? `${itens.length} iten${itens.length !== 1 ? 's' : ''} do kit "${servico.nome}" adicionados`
       : `Kit "${servico.nome}" adicionado`)
   }, [servicoItens])
-
-  const servicosFiltrados = useMemo(() => {
-    let lista = servicos
-    if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
-    if (busca.trim()) {
-      const q = busca.toLowerCase()
-      lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
-    }
-    return lista
-  }, [servicos, busca, aba, servicoItens, meusItemIds])
 
   // ── Ingredientes agregados ────────────────────────────────────────────────
 
@@ -384,7 +441,7 @@ export function CalculadoraClient({
     return { custoItens, pesoProdutos, custoItensCompleto, custoIng, custoIngCompleto }
   }, [batch, getPrecoItem, itemMap, ingredientesAgregados, lojasPorIng, modoSujo])
 
-  // ── Copiar texto ──────────────────────────────────────────────────────────
+  // ── Copiar / Imagem ───────────────────────────────────────────────────────
 
   const gerarLinhasResumo = useCallback(() => {
     const linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[] = []
@@ -442,8 +499,6 @@ export function CalculadoraClient({
     })
   }, [gerarLinhasResumo])
 
-  // ── Enviar para imgbb ─────────────────────────────────────────────────────
-
   const enviarImgbb = useCallback(async () => {
     if (batch.length === 0) return
     setImgbbLoading(true)
@@ -463,40 +518,83 @@ export function CalculadoraClient({
     }
   }, [batch.length, gerarLinhasResumo])
 
+  const temFiltroAtivo = filterCategoria !== '' || filterLoja !== ''
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="h-[calc(100vh-3rem)] flex overflow-hidden">
 
       {/* ── Col 1: Lista de itens ── */}
-      <aside className="w-72 shrink-0 flex flex-col border-r border-border">
-        <div className="p-3 border-b border-border space-y-1.5">
+      <aside className="w-[35%] shrink-0 flex flex-col border-r border-border">
+
+        {/* Filtros */}
+        <div className="p-2.5 border-b border-border space-y-2">
+          {/* Busca */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar item..." value={busca} onChange={e => setBusca(e.target.value)}
+            <Input placeholder="Buscar por nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)}
               className="pl-8 h-8 text-sm" />
           </div>
+
+          {/* Chips de categoria */}
           {categoriasCalc.length > 0 && (
-            <Select value={filterCategoria || '_todas'} onValueChange={v => setFilterCategoria(v === '_todas' ? '' : v)}>
-              <SelectTrigger className="h-7 text-xs border-border/50"><SelectValue /></SelectTrigger>
+            <div className="flex gap-1 overflow-x-auto scrollbar-none pb-0.5">
+              <button
+                onClick={() => setFilterCategoria('')}
+                className={cn('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                  filterCategoria === ''
+                    ? 'bg-primary/15 border-primary/40 text-primary'
+                    : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                )}>Todas</button>
+              {categoriasCalc.map(c => (
+                <button key={c}
+                  onClick={() => setFilterCategoria(c === filterCategoria ? '' : c)}
+                  className={cn('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                    filterCategoria === c
+                      ? 'bg-primary/15 border-primary/40 text-primary'
+                      : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                  )}>{c}</button>
+              ))}
+            </div>
+          )}
+
+          {/* Filtro loja / facção */}
+          <div className="flex items-center gap-1.5">
+            <Select value={filterLoja || '_todas'} onValueChange={v => setFilterLoja(v === '_todas' ? '' : v)}>
+              <SelectTrigger className="h-7 text-xs border-border/50 flex-1"><SelectValue placeholder="Loja / Facção" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_todas">Todas as categorias</SelectItem>
-                {categoriasCalc.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                <SelectItem value="_todas">Todas as origens</SelectItem>
+                {meuFaccaoId && <SelectItem value="_faccao">Minha facção</SelectItem>}
+                {lojasComPrecos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
               </SelectContent>
             </Select>
-          )}
+            {temFiltroAtivo && (
+              <button
+                onClick={() => { setFilterCategoria(''); setFilterLoja('') }}
+                title="Limpar filtros"
+                className="shrink-0 h-7 px-2 rounded border border-border/50 text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-colors flex items-center gap-0.5">
+                <X className="h-3 w-3" /> Limpar
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Abas */}
         <div className="flex border-b border-border shrink-0">
-          {([['favoritos', '★'], ['meus', 'Meus'], ['todos', 'Todos']] as [Aba, string][]).map(([key, label]) => (
+          {([['favoritos', '★ Favoritos'], ['meus', 'Meus'], ['todos', 'Todos']] as [Aba, string][]).map(([key, label]) => (
             <button key={key} onClick={() => setAba(key)}
-              className={cn('flex-1 py-2 text-[11px] font-medium transition-colors border-b-2',
+              className={cn('flex-1 py-1.5 text-[11px] font-medium transition-colors border-b-2',
                 aba === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
               )}>{label}</button>
           ))}
         </div>
+
+        {/* Lista */}
         <div className="flex-1 overflow-y-auto">
-          {/* Seção de serviços/kits */}
-          {servicosFiltrados.length > 0 && (aba === 'todos' || aba === 'meus') && (
+
+          {/* Serviços/kits */}
+          {servicosFiltrados.length > 0 && (aba === 'todos' || aba === 'meus' || aba === 'favoritos') && (
             <div className="border-b border-border">
               <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-white/[0.01]">
                 <Layers className="h-3 w-3" />Kits / Serviços
@@ -504,22 +602,32 @@ export function CalculadoraClient({
               {servicosFiltrados.map(s => {
                 const preco = modoSujo ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
                 const itensCount = servicoItens.filter(si => si.servico_id === s.id).length
+                const isFavServico = favoritosServicos.has(s.id)
                 return (
-                  <div key={s.id} className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border/30 hover:bg-white/[0.02] transition-colors">
+                  <div key={s.id} className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 hover:bg-white/[0.015] transition-colors">
+                    <button
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={e => podeEditar && toggleFavoritoServico(s.id, e)}
+                      disabled={!podeEditar}
+                      className={cn('shrink-0 p-0.5 rounded transition-colors',
+                        isFavServico ? 'text-yellow-400' : 'text-muted-foreground/25 hover:text-yellow-400',
+                        !podeEditar && 'opacity-0 pointer-events-none'
+                      )}>
+                      <Star className="h-3 w-3" fill={isFavServico ? 'currentColor' : 'none'} />
+                    </button>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium leading-tight truncate">{s.nome}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] text-muted-foreground">{itensCount} item{itensCount !== 1 ? 's' : ''}</span>
+                      <div className="flex items-center gap-1.5">
+                        {itensCount > 0 && <span className="text-[10px] text-muted-foreground">{itensCount} item{itensCount !== 1 ? 's' : ''}</span>}
                         {s.desconto_pct > 0 && <span className="text-[10px] text-green-400">-{s.desconto_pct}%</span>}
                         {preco != null && <span className={cn('text-[10px] tabular-nums', modoSujo ? 'text-orange-400/70' : 'text-emerald-400/70')}>{fmt(preco)}</span>}
                       </div>
                     </div>
                     <button
                       onClick={() => addServico(s)}
-                      className="shrink-0 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                      title={`Adicionar kit ${s.nome}`}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
+                      className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Adicionar kit ${s.nome}`}>
+                      <Plus className="h-3 w-3" />
                     </button>
                   </div>
                 )
@@ -528,27 +636,51 @@ export function CalculadoraClient({
           )}
 
           {/* Itens */}
-          {itensFiltrados.length === 0 ? (
+          {itensFiltrados.length === 0 && servicosFiltrados.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8 px-4">
               {aba === 'favoritos' ? 'Nenhum favorito' : aba === 'meus' ? 'Nenhum item seu' : 'Nenhum item encontrado'}
             </p>
-          ) : itensFiltrados.map(item => (
-            <ItemBtn
-              key={item.id} item={item}
-              isInBatch={batchIds.has(item.id)}
-              isFavorito={favoritos.has(item.id)}
-              isMeu={meusItemIds.has(item.id)}
-              precoLimpo={meuPrecoMap[item.id]?.preco_limpo ?? null}
-              precoSujo={meuPrecoMap[item.id]?.preco_sujo ?? null}
-              onAdd={addToBatch} onToggleFav={toggleFavorito}
-              podeEditar={podeEditar}
-            />
-          ))}
+          ) : itensFiltrados.length === 0 ? null : (
+            itensFiltrados.map(item => (
+              editandoApelido === item.id ? (
+                <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-muted/5">
+                  <span className="text-xs text-muted-foreground shrink-0 max-w-[110px] truncate">{item.nome}</span>
+                  <Input
+                    autoFocus
+                    value={apelidoTemp}
+                    onChange={e => setApelidoTemp(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') salvarApelido()
+                      if (e.key === 'Escape') setEditandoApelido(null)
+                    }}
+                    onBlur={salvarApelido}
+                    placeholder="apelidos: a, b, c..."
+                    className="h-6 text-xs flex-1"
+                  />
+                  <button onClick={() => setEditandoApelido(null)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <ItemBtn
+                  key={item.id} item={item}
+                  isInBatch={batchIds.has(item.id)}
+                  isFavorito={favoritos.has(item.id)}
+                  precoLimpo={meuPrecoMap[item.id]?.preco_limpo ?? null}
+                  precoSujo={meuPrecoMap[item.id]?.preco_sujo ?? null}
+                  onAdd={addToBatch}
+                  onToggleFav={toggleFavorito}
+                  onEditarApelido={iniciarEdicaoApelido}
+                  podeEditar={podeEditar}
+                />
+              )
+            ))
+          )}
         </div>
       </aside>
 
       {/* ── Col 2: Itens selecionados ── */}
-      <div className="w-[460px] shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-hidden">
+      <div className="w-[35%] shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Selecionados{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
@@ -578,7 +710,6 @@ export function CalculadoraClient({
 
                 return (
                   <div key={entry.item_id} className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
-                    {/* Loja */}
                     {lojasItem.length > 0 && (
                       <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
                         <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
@@ -594,9 +725,7 @@ export function CalculadoraClient({
                         </SelectContent>
                       </Select>
                     )}
-                    {/* Nome */}
                     <span className="flex-1 min-w-0 text-sm font-medium truncate">{item?.nome ?? '—'}</span>
-                    {/* Qtd */}
                     <div className="flex items-center gap-0.5 shrink-0">
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
                         className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
@@ -610,7 +739,6 @@ export function CalculadoraClient({
                         <Plus className="h-2.5 w-2.5" />
                       </button>
                     </div>
-                    {/* Preço total */}
                     <div className="flex items-center gap-1.5 shrink-0 min-w-[100px] justify-end">
                       {peso != null && peso > 0 && (
                         <span className="text-[10px] text-muted-foreground/50 tabular-nums">{fmtKg(peso)}</span>
@@ -623,7 +751,6 @@ export function CalculadoraClient({
                         <span className="text-muted-foreground/30 text-sm">—</span>
                       )}
                     </div>
-                    {/* Remover */}
                     <button onClick={() => removeFromBatch(entry.item_id)}
                       className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
                       <X className="h-3 w-3" />
@@ -658,7 +785,6 @@ export function CalculadoraClient({
 
       {/* ── Col 3: Resumo ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
           <div className="flex bg-muted/40 rounded-md p-0.5 gap-0.5">
             {(['simples', 'producao'] as Modo[]).map(m => (
@@ -696,7 +822,6 @@ export function CalculadoraClient({
             )}
           </div>
         </div>
-
 
         {batch.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
@@ -779,7 +904,6 @@ export function CalculadoraClient({
 
                     return (
                       <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
-                        {/* Nome + qtd + peso */}
                         <div className="flex items-center gap-1 min-w-0 flex-1">
                           <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
                           <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
@@ -787,7 +911,6 @@ export function CalculadoraClient({
                             <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
                           )}
                         </div>
-                        {/* Loja inline — depois do nome */}
                         {ing.lojasDisponiveis.length > 0 && (
                           <Select
                             value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
@@ -809,7 +932,6 @@ export function CalculadoraClient({
                             </SelectContent>
                           </Select>
                         )}
-                        {/* Custo */}
                         <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
                           {subtotal != null ? fmt(subtotal) : '—'}
                         </span>
@@ -818,7 +940,6 @@ export function CalculadoraClient({
                   })}
                 </div>
 
-                {/* Total ingredientes */}
                 {totais.custoIng > 0 && (
                   <div className="mt-3 pt-2 border-t border-border/40 flex justify-between text-xs font-semibold">
                     <span className="text-muted-foreground">Custo ingredientes</span>
@@ -837,7 +958,7 @@ export function CalculadoraClient({
               </div>
             )}
 
-            {/* Comparativo de kits */}
+            {/* Kits selecionados */}
             {servicosSelecionados.length > 0 && (
               <div className="pt-3 border-t border-border/60">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">Kits selecionados</p>
