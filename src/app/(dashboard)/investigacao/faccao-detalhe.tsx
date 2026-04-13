@@ -282,6 +282,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   const [precoSaving, setPrecoSaving] = useState(false)
   const [addingPreco, setAddingPreco] = useState(false)
   const [newItemId, setNewItemId] = useState('')
+  const [buscaNovoPreco, setBuscaNovoPreco] = useState('')
 
   const produtosDisponiveis = todosProdutos.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id))
 
@@ -742,15 +743,35 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       </Dialog>
 
       {/* Modal: Selecionar produto */}
-      <Dialog open={addingPreco} onOpenChange={v => { if (!v) { setAddingPreco(false); setNewItemId('') } }}>
+      <Dialog open={addingPreco} onOpenChange={v => { if (!v) { setAddingPreco(false); setNewItemId(''); setBuscaNovoPreco('') } }}>
         <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
           <DialogHeader><DialogTitle className="text-sm">Adicionar produto</DialogTitle></DialogHeader>
-          <Select value={newItemId} onValueChange={setNewItemId}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Selecionar produto..." /></SelectTrigger>
-            <SelectContent>{produtosDisponiveis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
-          </Select>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              autoFocus
+              placeholder="Buscar produto..."
+              value={buscaNovoPreco}
+              onChange={e => { setBuscaNovoPreco(e.target.value); setNewItemId('') }}
+              className={cn('h-9 text-sm pl-8', newItemId && 'border-primary')}
+            />
+            {buscaNovoPreco && !newItemId && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
+                {produtosDisponiveis.filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase())).length === 0
+                  ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
+                  : produtosDisponiveis
+                      .filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase()))
+                      .map(p => (
+                        <button key={p.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onClick={() => { setNewItemId(p.id); setBuscaNovoPreco(p.nome) }}>
+                          {p.nome}
+                        </button>
+                      ))
+                }
+              </div>
+            )}
+          </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setAddingPreco(false); setNewItemId('') }}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAddingPreco(false); setNewItemId(''); setBuscaNovoPreco('') }}>Cancelar</Button>
             <Button size="sm" onClick={handleAdicionarProduto} disabled={!newItemId}>Continuar</Button>
           </div>
         </DialogContent>

@@ -79,6 +79,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   // ── Itens ─────────────────────────────────────────────────────────────────
   const [addItem, setAddItem] = useState(false)
   const [newItemId, setNewItemId] = useState('')
+  const [buscaNovoItem, setBuscaNovoItem] = useState('')
   const [newItemPreco, setNewItemPreco] = useState('')
   const [newItemPrecoSujo, setNewItemPrecoSujo] = useState('')
   const [editItem, setEditItem] = useState<LojaItem | null>(null)
@@ -111,7 +112,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     if (error) { toast.error('Erro ao salvar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setItens(prev => [...prev.filter(i => i.item_id !== newItemId), data as any])
-    setAddItem(false); setNewItemId(''); setNewItemPreco(''); setNewItemPrecoSujo('')
+    setAddItem(false); setNewItemId(''); setBuscaNovoItem(''); setNewItemPreco(''); setNewItemPrecoSujo('')
     toast.success('Item adicionado')
   }
 
@@ -274,15 +275,37 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
               </div>
 
               {addItem && (
-                <div className="flex gap-2 mb-2 flex-wrap">
-                  <Select value={newItemId} onValueChange={setNewItemId}>
-                    <SelectTrigger className="flex-1 min-w-[160px] h-8 text-sm"><SelectValue placeholder="Selecionar item..." /></SelectTrigger>
-                    <SelectContent>{itensDisponiveis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Input type="number" placeholder="Sujo (opcional)" className="w-28 h-8 text-sm" value={newItemPrecoSujo} onChange={e => setNewItemPrecoSujo(e.target.value)} />
-                  <Input type="number" placeholder="Limpo *" className="w-24 h-8 text-sm" value={newItemPreco} onChange={e => setNewItemPreco(e.target.value)} />
-                  <Button size="sm" className="h-8 px-3" onClick={handleSalvarItem} disabled={savingItem || !newItemId || !newItemPreco}><Plus className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddItem(false); setNewItemId(''); setNewItemPreco(''); setNewItemPrecoSujo('') }}><X className="h-3.5 w-3.5" /></Button>
+                <div className="mb-2 space-y-2">
+                  <div className="flex gap-2 flex-wrap items-start">
+                    <div className="relative flex-1 min-w-[160px]">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                      <Input
+                        autoFocus
+                        placeholder="Buscar item..."
+                        value={buscaNovoItem}
+                        onChange={e => { setBuscaNovoItem(e.target.value); setNewItemId('') }}
+                        className={cn('h-8 text-sm pl-8', newItemId && 'border-primary')}
+                      />
+                      {buscaNovoItem && !newItemId && (
+                        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                          {itensDisponiveis.filter(p => p.nome.toLowerCase().includes(buscaNovoItem.toLowerCase())).length === 0
+                            ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item encontrado</p>
+                            : itensDisponiveis
+                                .filter(p => p.nome.toLowerCase().includes(buscaNovoItem.toLowerCase()))
+                                .map(p => (
+                                  <button key={p.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onClick={() => { setNewItemId(p.id); setBuscaNovoItem(p.nome) }}>
+                                    {p.nome}
+                                  </button>
+                                ))
+                          }
+                        </div>
+                      )}
+                    </div>
+                    <Input type="number" placeholder="Sujo (opcional)" className="w-28 h-8 text-sm" value={newItemPrecoSujo} onChange={e => setNewItemPrecoSujo(e.target.value)} />
+                    <Input type="number" placeholder="Limpo *" className="w-24 h-8 text-sm" value={newItemPreco} onChange={e => setNewItemPreco(e.target.value)} />
+                    <Button size="sm" className="h-8 px-3" onClick={handleSalvarItem} disabled={savingItem || !newItemId || !newItemPreco}><Plus className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddItem(false); setNewItemId(''); setBuscaNovoItem(''); setNewItemPreco(''); setNewItemPrecoSujo('') }}><X className="h-3.5 w-3.5" /></Button>
+                  </div>
                 </div>
               )}
 
