@@ -21,6 +21,8 @@ export default async function VendasPage() {
     { data: permRow },
     { data: usuarioRow },
     { data: configOcultar },
+    { data: servicosData },
+    { data: servicoItensData },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*'),
@@ -34,6 +36,8 @@ export default async function VendasPage() {
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
+    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
   ])
 
   // Calcular saldo de estoque por item a partir das movimentações
@@ -87,6 +91,15 @@ export default async function VendasPage() {
     categorias_item: Array.isArray(item.categorias_item) ? (item.categorias_item[0] ?? null) : item.categorias_item,
   }))
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const servicoItensMapped = (servicoItensData ?? []).map((si: any) => ({
+    servico_id: si.servico_id,
+    item_id: si.item_id,
+    quantidade: si.quantidade,
+    item_nome: Array.isArray(si.items) ? (si.items[0]?.nome ?? '') : (si.items?.nome ?? ''),
+    tem_craft: Array.isArray(si.items) ? (si.items[0]?.tem_craft ?? false) : (si.items?.tem_craft ?? false),
+  }))
+
   return (
     <>
       <Header title="Vendas" />
@@ -106,6 +119,8 @@ export default async function VendasPage() {
         podeEditar={podeEditar}
         podeExcluirConcluida={podeExcluirConcluida}
         ocultarConcluidosDias={ocultarConcluidosDias}
+        servicos={servicosData ?? []}
+        servicoItens={servicoItensMapped}
       />
     </>
   )

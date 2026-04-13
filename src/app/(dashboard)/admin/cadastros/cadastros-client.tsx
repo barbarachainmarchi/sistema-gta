@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -42,6 +42,13 @@ type Faccao = { id: string; nome: string; tag: string | null }
 type LocalTrabalhoLoja = { id: string; nome: string }
 type LocalTrabalhoFaccao = { id: string; nome: string }
 
+type Servico = {
+  id: string; nome: string; descricao: string | null
+  preco_sujo: number | null; preco_limpo: number | null
+  desconto_pct: number; status: 'ativo' | 'inativo'; created_at: string; updated_at: string
+}
+type ServicoItemFull = { id: string; servico_id: string; item_id: string; item_nome: string; quantidade: number; tem_craft: boolean }
+
 type ReceitaIngrediente = { id?: string; ingrediente_id: string; ingrediente_nome: string; quantidade: number }
 type ReciclagemResultado = { id?: string; resultado_id: string; resultado_nome: string; quantidade: number }
 type PrecoHistorico = { id?: string; preco_sujo: number | null; preco_limpo: number | null; data_inicio: string }
@@ -67,25 +74,29 @@ interface Props {
   userId: string
   localTrabalhoLoja: LocalTrabalhoLoja | null
   localTrabalhoFaccao: LocalTrabalhoFaccao | null
+  initialServicos: Servico[]
+  initialServicoItens: ServicoItemFull[]
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas, faccoes, userId, localTrabalhoLoja, localTrabalhoFaccao }: Props) {
+export function CadastrosClient({ initialItems, categorias: initialCategorias, lojas, faccoes, userId, localTrabalhoLoja, localTrabalhoFaccao, initialServicos, initialServicoItens }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [activeTab, setActiveTab] = useState('items')
   const [items, setItems] = useState<Item[]>(initialItems)
   const [categorias, setCategorias] = useState<Categoria[]>(initialCategorias)
+  const [servicos, setServicos] = useState<Servico[]>(initialServicos)
+  const [servicoItens, setServicoItens] = useState<ServicoItemFull[]>(initialServicoItens)
 
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; nome: string; type: 'item' | 'categoria' } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; nome: string; type: 'item' | 'categoria' | 'servico' } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   async function executeDelete() {
     if (!confirmDelete) return
     setDeleting(true)
-    const table = confirmDelete.type === 'item' ? 'items' : 'categorias_item'
+    const table = confirmDelete.type === 'item' ? 'items' : confirmDelete.type === 'categoria' ? 'categorias_item' : 'servicos'
     const { error } = await sb().from(table).delete().eq('id', confirmDelete.id)
     if (error) {
       toast.error('Erro ao excluir — verifique se não há registros vinculados')
@@ -93,6 +104,10 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
       toast.success('Excluído com sucesso')
       if (confirmDelete.type === 'item') setItems(p => p.filter(i => i.id !== confirmDelete.id))
       if (confirmDelete.type === 'categoria') setCategorias(p => p.filter(c => c.id !== confirmDelete.id))
+      if (confirmDelete.type === 'servico') {
+        setServicos(p => p.filter(s => s.id !== confirmDelete.id))
+        setServicoItens(p => p.filter(si => si.servico_id !== confirmDelete.id))
+      }
     }
     setDeleting(false)
     setConfirmDelete(null)
@@ -100,7 +115,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
 
   return (
     <>
-      <Header title="Cadastros" description="Itens e categorias">
+      <Header title="Cadastros" description="Itens, categorias e serviços">
         {activeTab === 'items' && (
           <BtnNovoItem
             onCreated={item => setItems(p => [...p, item].sort((a,b) => a.nome.localeCompare(b.nome)))}
@@ -117,6 +132,16 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
         {activeTab === 'categorias' && (
           <BtnNovaCategoria onCreated={c => setCategorias(p => [...p, c])} sb={sb} />
         )}
+        {activeTab === 'servicos' && (
+          <BtnNovoServico
+            allItems={items}
+            sb={sb}
+            onCreated={(s, itens) => {
+              setServicos(p => [...p, s].sort((a,b) => a.nome.localeCompare(b.nome)))
+              setServicoItens(p => [...p, ...itens])
+            }}
+          />
+        )}
       </Header>
 
       <div className="flex-1 p-6">
@@ -127,6 +152,9 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
             </TabsTrigger>
             <TabsTrigger value="categorias" className="gap-1.5">
               <Tag className="h-3.5 w-3.5" />Categorias
+            </TabsTrigger>
+            <TabsTrigger value="servicos" className="gap-1.5">
+              <Layers className="h-3.5 w-3.5" />Serviços
             </TabsTrigger>
           </TabsList>
 
@@ -154,6 +182,20 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'categoria' })}
             />
           </TabsContent>
+
+          <TabsContent value="servicos">
+            <ServicosTab
+              servicos={servicos}
+              servicoItens={servicoItens}
+              allItems={items}
+              sb={sb}
+              onUpdated={(s, itens) => {
+                setServicos(p => p.map(x => x.id === s.id ? s : x))
+                setServicoItens(p => [...p.filter(si => si.servico_id !== s.id), ...itens])
+              }}
+              onDelete={(id, nome) => setConfirmDelete({ id, nome, type: 'servico' })}
+            />
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -165,6 +207,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               Esta ação não pode ser desfeita.
               {confirmDelete?.type === 'item' && ' Receitas, preços e histórico vinculados também serão excluídos.'}
               {confirmDelete?.type === 'categoria' && ' Itens desta categoria perderão a categoria, mas não serão excluídos.'}
+              {confirmDelete?.type === 'servico' && ' Os itens do serviço serão removidos do kit, mas não excluídos do cadastro.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -884,7 +927,7 @@ function ItemCombobox({ allItems, selectedId, onSelect, onCriar, placeholder, cl
   allItems: Item[]
   selectedId: string
   onSelect: (id: string) => void
-  onCriar: (nome: string) => void
+  onCriar?: (nome: string) => void
   placeholder?: string
   className?: string
 }) {
@@ -915,7 +958,7 @@ function ItemCombobox({ allItems, selectedId, onSelect, onCriar, placeholder, cl
     if (e.key === 'Enter') {
       e.preventDefault()
       if (filtered.length > 0) selectItem(filtered[highlighted])
-      else if (query.trim()) onCriar(query.trim())
+      else if (query.trim()) onCriar?.(query.trim())
     }
     if (e.key === 'Escape') { setOpen(false); setQuery('') }
   }
@@ -949,7 +992,7 @@ function ItemCombobox({ allItems, selectedId, onSelect, onCriar, placeholder, cl
           )) : (
             <button
               className="w-full text-left px-3 py-2.5 text-sm hover:bg-accent transition-colors"
-              onMouseDown={e => { e.preventDefault(); onCriar(query.trim()) }}
+              onMouseDown={e => { e.preventDefault(); onCriar?.(query.trim()) }}
             >
               <span className="text-primary font-medium">+ Cadastrar</span>
               <span className="text-muted-foreground"> &quot;{query}&quot;</span>
@@ -1155,6 +1198,315 @@ function CategoriaDialog({ categoria, sb, onClose, onSaved }: {
           </div>
         </div>
         <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 text-xs">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── ABA SERVIÇOS ─────────────────────────────────────────────────────────────
+
+function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete }: {
+  servicos: Servico[]
+  servicoItens: ServicoItemFull[]
+  allItems: Item[]
+  sb: () => ReturnType<typeof createClient>
+  onUpdated: (s: Servico, itens: ServicoItemFull[]) => void
+  onDelete: (id: string, nome: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<Servico | null>(null)
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return servicos
+    const q = search.toLowerCase()
+    return servicos.filter(s => s.nome.toLowerCase().includes(q))
+  }, [servicos, search])
+
+  function fmt(v: number | null) {
+    if (v == null) return '—'
+    return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  }
+
+  return (
+    <>
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar serviço..." className="pl-8 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground">{filtered.length} serviço{filtered.length !== 1 ? 's' : ''}</p>
+
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent border-border">
+                <TableHead className="text-xs">Nome</TableHead>
+                <TableHead className="text-xs">Itens</TableHead>
+                <TableHead className="text-xs">Preço Limpo</TableHead>
+                <TableHead className="text-xs">Preço Sujo</TableHead>
+                <TableHead className="text-xs">Desconto</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="w-[70px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-10 text-sm">
+                    Nenhum serviço cadastrado
+                  </TableCell>
+                </TableRow>
+              ) : filtered.map(s => {
+                const itensDoServico = servicoItens.filter(si => si.servico_id === s.id)
+                return (
+                  <TableRow key={s.id} className="group border-border">
+                    <TableCell>
+                      <div>
+                        <p className="font-medium text-sm">{s.nome}</p>
+                        {s.descricao && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{s.descricao}</p>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">
+                        {itensDoServico.length > 0
+                          ? itensDoServico.map(si => `${si.item_nome} (${si.quantidade}×)`).join(', ')
+                          : <span className="italic">sem itens</span>}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">{fmt(s.preco_limpo)}</TableCell>
+                    <TableCell className="text-xs tabular-nums">{fmt(s.preco_sujo)}</TableCell>
+                    <TableCell>
+                      {s.desconto_pct > 0
+                        ? <span className="text-xs font-medium text-green-400">-{s.desconto_pct}%</span>
+                        : <span className="text-xs text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell><StatusBadge status={s.status} /></TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(s)}>
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-destructive" onClick={() => onDelete(s.id, s.nome)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {editing && (
+        <ServicoDialog
+          servico={editing}
+          servicoItens={servicoItens.filter(si => si.servico_id === editing.id)}
+          allItems={allItems}
+          sb={sb}
+          onClose={() => setEditing(null)}
+          onSaved={(s, itens) => { onUpdated(s, itens); setEditing(null) }}
+        />
+      )}
+    </>
+  )
+}
+
+function BtnNovoServico({ allItems, sb, onCreated }: {
+  allItems: Item[]
+  sb: () => ReturnType<typeof createClient>
+  onCreated: (s: Servico, itens: ServicoItemFull[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
+        <Plus className="h-3.5 w-3.5 mr-1" />Novo Serviço
+      </Button>
+      {open && (
+        <ServicoDialog
+          servico={null}
+          servicoItens={[]}
+          allItems={allItems}
+          sb={sb}
+          onClose={() => setOpen(false)}
+          onSaved={(s, itens) => { onCreated(s, itens); setOpen(false) }}
+        />
+      )}
+    </>
+  )
+}
+
+function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onClose, onSaved }: {
+  servico: Servico | null
+  servicoItens: ServicoItemFull[]
+  allItems: Item[]
+  sb: () => ReturnType<typeof createClient>
+  onClose: () => void
+  onSaved: (s: Servico, itens: ServicoItemFull[]) => void
+}) {
+  const [nome, setNome] = useState(servico?.nome ?? '')
+  const [descricao, setDescricao] = useState(servico?.descricao ?? '')
+  const [precoLimpo, setPrecoLimpo] = useState(servico?.preco_limpo != null ? String(servico.preco_limpo) : '')
+  const [precoSujo, setPrecoSujo] = useState(servico?.preco_sujo != null ? String(servico.preco_sujo) : '')
+  const [descontoPct, setDescontoPct] = useState(String(servico?.desconto_pct ?? 0))
+  const [status, setStatus] = useState<'ativo' | 'inativo'>(servico?.status ?? 'ativo')
+  const [itens, setItens] = useState<ServicoItemFull[]>(initialItens)
+  const [novoItemId, setNovoItemId] = useState('')
+  const [novoItemQtd, setNovoItemQtd] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  function addItem() {
+    if (!novoItemId || !novoItemQtd) return
+    const found = allItems.find(i => i.id === novoItemId)
+    if (!found) return
+    const qtd = parseFloat(novoItemQtd)
+    if (!qtd || qtd <= 0) return
+    setItens(prev => {
+      const exists = prev.find(it => it.item_id === novoItemId)
+      if (exists) return prev.map(it => it.item_id === novoItemId ? { ...it, quantidade: qtd } : it)
+      return [...prev, { id: '', servico_id: servico?.id ?? '', item_id: novoItemId, item_nome: found.nome, quantidade: qtd, tem_craft: found.tem_craft }]
+    })
+    setNovoItemId('')
+    setNovoItemQtd('')
+  }
+
+  async function handleSave() {
+    if (!nome.trim()) { toast.error('Nome é obrigatório'); return }
+    setSaving(true)
+    try {
+      const payload = {
+        nome: nome.trim(),
+        descricao: descricao.trim() || null,
+        preco_limpo: precoLimpo !== '' ? parseFloat(precoLimpo) : null,
+        preco_sujo: precoSujo !== '' ? parseFloat(precoSujo) : null,
+        desconto_pct: parseFloat(descontoPct) || 0,
+        status,
+      }
+
+      let saved: Servico
+      if (servico) {
+        const { data, error } = await sb().from('servicos').update(payload).eq('id', servico.id).select().single()
+        if (error) throw error
+        saved = data as Servico
+      } else {
+        const { data, error } = await sb().from('servicos').insert(payload).select().single()
+        if (error) throw error
+        saved = data as Servico
+      }
+
+      // Rebuild servico_itens
+      await sb().from('servico_itens').delete().eq('servico_id', saved.id)
+      let savedItens: ServicoItemFull[] = []
+      if (itens.length > 0) {
+        const { data, error } = await sb().from('servico_itens')
+          .insert(itens.map(it => ({ servico_id: saved.id, item_id: it.item_id, quantidade: it.quantidade })))
+          .select('id, servico_id, item_id, quantidade')
+        if (error) throw error
+        savedItens = (data ?? []).map((row: { id: string; servico_id: string; item_id: string; quantidade: number }) => {
+          const found = allItems.find(i => i.id === row.item_id)
+          return { id: row.id, servico_id: row.servico_id, item_id: row.item_id, quantidade: row.quantidade, item_nome: found?.nome ?? '', tem_craft: found?.tem_craft ?? false }
+        })
+      }
+
+      toast.success(servico ? 'Serviço atualizado!' : 'Serviço criado!')
+      onSaved(saved, savedItens)
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-base">{servico ? `Editar — ${servico.nome}` : 'Novo Serviço / Combo'}</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          {/* Geral */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs">Nome *</Label>
+              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Kit Vape, Manutenção Completa..." className="h-9" />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs">Descrição</Label>
+              <Textarea value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Opcional" rows={2} className="text-sm resize-none" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Preço Limpo (R$)</Label>
+              <Input type="number" min="0" value={precoLimpo} onChange={e => setPrecoLimpo(e.target.value)} placeholder="0" className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Preço Sujo (R$)</Label>
+              <Input type="number" min="0" value={precoSujo} onChange={e => setPrecoSujo(e.target.value)} placeholder="0" className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Desconto do combo (%)</Label>
+              <Input type="number" min="0" max="100" value={descontoPct} onChange={e => setDescontoPct(e.target.value)} placeholder="0" className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <Select value={status} onValueChange={v => setStatus(v as 'ativo' | 'inativo')}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Itens do serviço */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Itens do serviço/combo</p>
+            <div className="flex gap-2">
+              <ItemCombobox
+                allItems={allItems}
+                selectedId={novoItemId}
+                onSelect={id => setNovoItemId(id)}
+                placeholder="Selecionar item..."
+                className="flex-1"
+              />
+              <Input
+                type="number" min="0.01" step="0.01"
+                placeholder="Qtd"
+                className="w-20 h-9 text-sm"
+                value={novoItemQtd}
+                onChange={e => setNovoItemQtd(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+              />
+              <Button type="button" size="sm" className="h-9 px-3" onClick={addItem}><Plus className="h-4 w-4" /></Button>
+            </div>
+            {itens.length === 0
+              ? <EmptyState text="Nenhum item adicionado" />
+              : <div className="space-y-1.5">
+                  {itens.map(it => (
+                    <RowItem
+                      key={it.item_id}
+                      label={it.item_nome}
+                      value={`${it.quantidade}×`}
+                      onRemove={() => setItens(prev => prev.filter(x => x.item_id !== it.item_id))}
+                    />
+                  ))}
+                </div>
+            }
+          </div>
+        </div>
+
+        <DialogFooter className="shrink-0 pt-2">
           <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancelar</Button>
           <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 text-xs">
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}

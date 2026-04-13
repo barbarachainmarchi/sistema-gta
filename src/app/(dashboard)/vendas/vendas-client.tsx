@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers,
 } from 'lucide-react'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
@@ -42,6 +42,9 @@ type ItemSimples = { id: string; nome: string; tem_craft: boolean; peso: number 
 type Receita = { item_id: string; ingrediente_id: string; quantidade: number }
 type EstoqueEntry = { item_id: string; quantidade: number }
 
+type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
+type ServicoItemVenda = { servico_id: string; item_id: string; quantidade: number; item_nome: string; tem_craft: boolean }
+
 type CartItem = {
   item_id: string; nome: string; quantidade: number
   preco_limpo: number | null; preco_sujo: number | null
@@ -64,6 +67,7 @@ interface Props {
   meuLoja: { id: string; nome: string } | null
   filtroInicial: 'todos' | 'encomenda' | 'entregue'; podeEditar: boolean
   podeExcluirConcluida: boolean; ocultarConcluidosDias: number
+  servicos: Servico[]; servicoItens: ServicoItemVenda[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -380,6 +384,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
 function OrderDialog({
   open, onOpenChange, editando, faccoes, lojas, membros, onMembroCreated,
   meuFaccao, meuLoja, estoqueMap, receitas, allItems, onSave, saving,
+  servicos, servicoItens,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
@@ -388,6 +393,7 @@ function OrderDialog({
   estoqueMap: Record<string, number>
   receitas: Receita[]; allItems: ItemSimples[]
   onSave: (form: FormState) => void; saving: boolean
+  servicos: Servico[]; servicoItens: ServicoItemVenda[]
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -618,6 +624,35 @@ function OrderDialog({
     setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, origem } : c))
   }
 
+  function addServicoToCart(servico: Servico) {
+    const itensDoServico = servicoItens.filter(si => si.servico_id === servico.id)
+    if (itensDoServico.length === 0) { toast.info('Serviço sem itens configurados'); return }
+    setCart(prev => {
+      let next = [...prev]
+      for (const si of itensDoServico) {
+        const exists = next.find(c => c.item_id === si.item_id)
+        if (exists) {
+          next = next.map(c => c.item_id === si.item_id ? { ...c, quantidade: c.quantidade + si.quantidade } : c)
+        } else {
+          const prod = meusProdutos.find(p => p.item_id === si.item_id)
+          next.push({
+            item_id: si.item_id,
+            nome: si.item_nome,
+            quantidade: si.quantidade,
+            preco_limpo: prod?.preco_limpo ?? 0,
+            preco_sujo: prod?.preco_sujo ?? 0,
+            preco_override: null,
+            desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
+            tem_craft: si.tem_craft,
+            origem: si.tem_craft ? 'fabricar' : 'estoque',
+          })
+        }
+      }
+      return next
+    })
+    toast.success(`${itensDoServico.length} iten${itensDoServico.length !== 1 ? 's' : ''} do combo "${servico.nome}" adicionados`)
+  }
+
   // Produtos filtrados (search)
   const produtosFiltrados = useMemo(() => {
     if (!buscaProd.trim()) return meusProdutos
@@ -807,11 +842,52 @@ function OrderDialog({
             <div className="px-3 py-2 shrink-0 border-b border-border">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input placeholder="Filtrar produtos..." value={buscaProd}
+                <Input placeholder="Filtrar produtos e combos..." value={buscaProd}
                   onChange={e => setBuscaProd(e.target.value)}
                   className="h-8 text-xs pl-7" />
               </div>
             </div>
+
+            {/* Serviços / Combos */}
+            {servicos.length > 0 && (() => {
+              const q = buscaProd.toLowerCase()
+              const servicosFiltrados = buscaProd.trim()
+                ? servicos.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+                : servicos
+              if (servicosFiltrados.length === 0) return null
+              return (
+                <div className="shrink-0 border-b border-border bg-white/[0.01]">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Layers className="h-3 w-3" />Combos / Serviços
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+                    {servicosFiltrados.map(s => {
+                      const itensCount = servicoItens.filter(si => si.servico_id === s.id).length
+                      const preco = form.tipo_dinheiro === 'sujo' ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => addServicoToCart(s)}
+                          title={s.descricao ?? s.nome}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-background hover:bg-accent hover:border-primary/40 transition-colors text-left max-w-[200px]"
+                        >
+                          <Layers className="h-3 w-3 text-primary/70 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate leading-tight">{s.nome}</p>
+                            <p className="text-[10px] text-muted-foreground leading-tight">
+                              {itensCount} item{itensCount !== 1 ? 's' : ''}
+                              {s.desconto_pct > 0 && <span className="text-green-400 ml-1">-{s.desconto_pct}%</span>}
+                              {preco != null && <span className="ml-1 tabular-nums">· R${preco.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>}
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Column headers */}
             <div className="grid grid-cols-[1fr_56px_68px_80px_72px_32px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
@@ -1072,6 +1148,7 @@ export function VendasClient({
   userId, userNome, vendas: vendasIniciais, faccoes, lojas, allItems,
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
   meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
+  servicos, servicoItens,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1406,6 +1483,8 @@ export function VendasClient({
         receitas={receitas}
         allItems={allItems}
         onSave={handleSave} saving={saving}
+        servicos={servicos}
+        servicoItens={servicoItens}
       />
     </div>
   )

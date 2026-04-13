@@ -76,6 +76,8 @@ export default async function EncomendasPage() {
         podeEditar={podeEditar}
         podeExcluirConcluida={false}
         ocultarConcluidosDias={0}
+        servicos={[]}
+        servicoItens={[]}
       />
     </>
   )
