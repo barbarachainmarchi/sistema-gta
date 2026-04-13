@@ -28,7 +28,7 @@ type Loja = { id: string; nome: string }
 type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
 type FaccaoPreco = { faccao_id: string; item_id: string; preco_limpo: number | null; preco_sujo: number | null }
 type PrecoVigente = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
-type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
+type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; eh_meu_servico: boolean }
 type ServicoItemCalc = { servico_id: string; item_id: string; quantidade: number; item_nome: string }
 
 interface Props {
@@ -53,7 +53,7 @@ type Modo = 'simples' | 'producao'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(v: number) {
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 function fmtKg(kg: number) {
   if (kg === 0) return '—'
@@ -168,11 +168,12 @@ export function CalculadoraClient({
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [busca, setBusca] = useState('')
-  const [aba, setAba] = useState<Aba>('todos')
+  const [aba, setAba] = useState<Aba>('meus')
   const [filterCategoria, setFilterCategoria] = useState('')
   const [batch, setBatch] = useState<BatchEntry[]>([])
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
+  const [servicosSelecionados, setServicosSelecionados] = useState<Servico[]>([])
   const [modoSujo, setModoSujo] = useState(false)
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
@@ -299,27 +300,36 @@ export function CalculadoraClient({
 
   const addServico = useCallback((servico: Servico) => {
     const itens = servicoItens.filter(si => si.servico_id === servico.id)
-    if (itens.length === 0) { toast.info('Serviço sem itens configurados'); return }
-    setBatch(prev => {
-      let next = [...prev]
-      for (const si of itens) {
-        const exists = next.find(b => b.item_id === si.item_id)
-        if (exists) {
-          next = next.map(b => b.item_id === si.item_id ? { ...b, quantidade: b.quantidade + si.quantidade } : b)
-        } else {
-          next.push({ item_id: si.item_id, quantidade: si.quantidade, loja_id: '' })
+    if (itens.length === 0 && !servico.eh_meu_servico) { toast.info('Serviço sem itens configurados'); return }
+    if (itens.length > 0) {
+      setBatch(prev => {
+        let next = [...prev]
+        for (const si of itens) {
+          const exists = next.find(b => b.item_id === si.item_id)
+          if (exists) {
+            next = next.map(b => b.item_id === si.item_id ? { ...b, quantidade: b.quantidade + si.quantidade } : b)
+          } else {
+            next.push({ item_id: si.item_id, quantidade: si.quantidade, loja_id: '' })
+          }
         }
-      }
-      return next
-    })
-    toast.success(`${itens.length} iten${itens.length !== 1 ? 's' : ''} do kit "${servico.nome}" adicionados`)
+        return next
+      })
+    }
+    setServicosSelecionados(prev => prev.some(s => s.id === servico.id) ? prev : [...prev, servico])
+    toast.success(itens.length > 0
+      ? `${itens.length} iten${itens.length !== 1 ? 's' : ''} do kit "${servico.nome}" adicionados`
+      : `Kit "${servico.nome}" adicionado`)
   }, [servicoItens])
 
   const servicosFiltrados = useMemo(() => {
-    if (!busca.trim()) return servicos
-    const q = busca.toLowerCase()
-    return servicos.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
-  }, [servicos, busca])
+    let lista = servicos
+    if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
+    if (busca.trim()) {
+      const q = busca.toLowerCase()
+      lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+    }
+    return lista
+  }, [servicos, busca, aba, servicoItens, meusItemIds])
 
   // ── Ingredientes agregados ────────────────────────────────────────────────
 
@@ -544,7 +554,7 @@ export function CalculadoraClient({
             Selecionados{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
           </h3>
           {batch.length > 0 && (
-            <button onClick={() => { setBatch([]); setLojasPorIng({}) }}
+            <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
               className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
               <X className="h-3 w-3" /> Limpar
             </button>
@@ -769,7 +779,15 @@ export function CalculadoraClient({
 
                     return (
                       <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
-                        {/* Loja inline — na frente */}
+                        {/* Nome + qtd + peso */}
+                        <div className="flex items-center gap-1 min-w-0 flex-1">
+                          <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                          <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
+                          {ing.totalPeso > 0 && (
+                            <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
+                          )}
+                        </div>
+                        {/* Loja inline — depois do nome */}
                         {ing.lojasDisponiveis.length > 0 && (
                           <Select
                             value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
@@ -791,14 +809,6 @@ export function CalculadoraClient({
                             </SelectContent>
                           </Select>
                         )}
-                        {/* Nome + qtd + peso */}
-                        <div className="flex items-center gap-1 min-w-0 flex-1">
-                          <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                          <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
-                          {ing.totalPeso > 0 && (
-                            <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
-                          )}
-                        </div>
                         {/* Custo */}
                         <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
                           {subtotal != null ? fmt(subtotal) : '—'}
@@ -824,6 +834,64 @@ export function CalculadoraClient({
             {modo === 'producao' && ingredientesAgregados.length === 0 && (
               <div className="pt-3 border-t border-border/60">
                 <p className="text-xs text-muted-foreground">Nenhum item selecionado tem receita cadastrada.</p>
+              </div>
+            )}
+
+            {/* Comparativo de kits */}
+            {servicosSelecionados.length > 0 && (
+              <div className="pt-3 border-t border-border/60">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">Kits selecionados</p>
+                <div className="space-y-3">
+                  {servicosSelecionados.map(servico => {
+                    const itensKit = servicoItens.filter(si => si.servico_id === servico.id)
+                    let somaItens = 0; let completo = itensKit.length > 0
+                    for (const si of itensKit) {
+                      const batchEntry = batch.find(b => b.item_id === si.item_id)
+                      if (!batchEntry) { completo = false; continue }
+                      const preco = getPrecoItem(batchEntry)
+                      if (preco == null) { completo = false; continue }
+                      somaItens += preco * si.quantidade
+                    }
+                    const kitPreco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : (servico.preco_limpo ?? servico.preco_sujo)
+                    const diferenca = kitPreco != null && completo && somaItens > 0 ? kitPreco - somaItens : null
+                    const pct = diferenca != null && somaItens > 0 ? (diferenca / somaItens * 100) : null
+                    return (
+                      <div key={servico.id} className="space-y-1 text-xs">
+                        <div className="flex items-center gap-1 font-semibold text-foreground/80">
+                          <Layers className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{servico.nome}</span>
+                          <button onClick={() => setServicosSelecionados(prev => prev.filter(s => s.id !== servico.id))}
+                            className="ml-auto shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                        {itensKit.length > 0 && completo && (
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>Soma dos itens</span>
+                            <span className="tabular-nums">{fmt(somaItens)}</span>
+                          </div>
+                        )}
+                        {kitPreco != null && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Preço do kit</span>
+                            <span className={cn('tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>{fmt(kitPreco)}</span>
+                          </div>
+                        )}
+                        {diferenca != null && pct != null && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">{diferenca < 0 ? 'Desconto' : 'Acréscimo'}</span>
+                            <span className={cn('tabular-nums font-semibold', diferenca < 0 ? 'text-green-400' : 'text-red-400')}>
+                              {diferenca < 0 ? '-' : '+'}{fmt(Math.abs(diferenca))} ({Math.abs(pct).toFixed(1)}%)
+                            </span>
+                          </div>
+                        )}
+                        {itensKit.length === 0 && (
+                          <p className="text-muted-foreground/50 italic">Serviço sem itens</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>

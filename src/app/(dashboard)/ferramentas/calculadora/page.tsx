@@ -28,7 +28,7 @@ export default async function CalculadoraPage() {
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
-    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, eh_meu_servico').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome)'),
   ])
 

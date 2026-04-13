@@ -45,7 +45,7 @@ type LocalTrabalhoFaccao = { id: string; nome: string }
 type Servico = {
   id: string; nome: string; descricao: string | null
   preco_sujo: number | null; preco_limpo: number | null
-  desconto_pct: number; status: 'ativo' | 'inativo'; created_at: string; updated_at: string
+  desconto_pct: number; eh_meu_servico: boolean; status: 'ativo' | 'inativo'; created_at: string; updated_at: string
 }
 type ServicoItemFull = { id: string; servico_id: string; item_id: string; item_nome: string; quantidade: number; tem_craft: boolean }
 
@@ -1359,6 +1359,7 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
   const [precoLimpo, setPrecoLimpo] = useState(servico?.preco_limpo != null ? String(servico.preco_limpo) : '')
   const [precoSujo, setPrecoSujo] = useState(servico?.preco_sujo != null ? String(servico.preco_sujo) : '')
   const [descontoPct, setDescontoPct] = useState(String(servico?.desconto_pct ?? 0))
+  const [ehMeuServico, setEhMeuServico] = useState(servico?.eh_meu_servico ?? false)
   const [status, setStatus] = useState<'ativo' | 'inativo'>(servico?.status ?? 'ativo')
   const [itens, setItens] = useState<ServicoItemFull[]>(initialItens)
   const [novoItemId, setNovoItemId] = useState('')
@@ -1390,6 +1391,7 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
         preco_limpo: precoLimpo !== '' ? parseFloat(precoLimpo) : null,
         preco_sujo: precoSujo !== '' ? parseFloat(precoSujo) : null,
         desconto_pct: parseFloat(descontoPct) || 0,
+        eh_meu_servico: ehMeuServico,
         status,
       }
 
@@ -1466,6 +1468,10 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
                   <SelectItem value="inativo">Inativo</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="col-span-2 flex items-center gap-2 pt-1">
+              <Switch id="eh-meu-servico" checked={ehMeuServico} onCheckedChange={setEhMeuServico} />
+              <Label htmlFor="eh-meu-servico" className="text-xs cursor-pointer">Meu serviço (aparece na aba "Meus" da calculadora mesmo sem itens)</Label>
             </div>
           </div>
 
