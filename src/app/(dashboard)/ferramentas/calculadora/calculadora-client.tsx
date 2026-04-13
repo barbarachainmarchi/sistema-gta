@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, Pencil } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -75,7 +75,7 @@ function matchBusca(texto: string, apelidos: string | null | undefined, q: strin
 
 // ── Item compacto (linha única) ───────────────────────────────────────────────
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo, precoSujo, onAdd, onToggleFav, onEditarApelido, podeEditar }: {
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo, precoSujo, onAdd, onToggleFav, podeEditar }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
@@ -83,7 +83,6 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
   precoSujo: number | null
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
-  onEditarApelido: (item: Item) => void
   podeEditar: boolean
 }) {
   const preco = precoLimpo ?? precoSujo
@@ -109,21 +108,10 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
       {item.apelidos && (
         <span className="text-[9px] text-primary/30 shrink-0" title={`Apelidos: ${item.apelidos}`}>✦</span>
       )}
-
       {preco != null && (
         <span className={cn('text-xs tabular-nums shrink-0',
           isSujoOnly ? 'text-orange-400/70' : 'text-emerald-400/70'
         )}>{fmt(preco)}</span>
-      )}
-
-      {podeEditar && (
-        <button
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => onEditarApelido(item)}
-          title="Editar apelidos de busca"
-          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground/70 transition-all">
-          <Pencil className="h-3 w-3" />
-        </button>
       )}
 
       <button
@@ -135,6 +123,50 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
             ? 'text-primary/30 cursor-default'
             : 'text-muted-foreground hover:text-primary hover:bg-primary/10'
         )}>
+        <Plus className="h-3 w-3" />
+      </button>
+    </div>
+  )
+})
+
+// ── Combo / Kit (linha única, mesmo padrão do item) ──────────────────────────
+
+const ComboBtn = memo(function ComboBtn({ servico, isFavorito, modoSujo, itensCount, onAdd, onToggleFav, podeEditar }: {
+  servico: Servico
+  isFavorito: boolean
+  modoSujo: boolean
+  itensCount: number
+  onAdd: (s: Servico) => void
+  onToggleFav: (id: string, e: React.MouseEvent) => void
+  podeEditar: boolean
+}) {
+  const preco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : servico.preco_limpo
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 transition-colors hover:bg-white/[0.015]">
+      <button
+        onMouseDown={e => e.preventDefault()}
+        onClick={e => podeEditar && onToggleFav(servico.id, e)}
+        disabled={!podeEditar}
+        className={cn('shrink-0 p-0.5 rounded transition-colors',
+          isFavorito ? 'text-yellow-400' : 'text-muted-foreground/25 hover:text-yellow-400',
+          !podeEditar && 'opacity-0 pointer-events-none'
+        )}>
+        <Star className="h-3 w-3" fill={isFavorito ? 'currentColor' : 'none'} />
+      </button>
+      <Layers className="h-3 w-3 shrink-0 text-muted-foreground/30" />
+      <span className="flex-1 min-w-0 text-sm font-medium truncate">{servico.nome}</span>
+      {servico.desconto_pct > 0 && (
+        <span className="text-[10px] text-green-400/80 shrink-0">-{servico.desconto_pct}%</span>
+      )}
+      {preco != null && (
+        <span className={cn('text-xs tabular-nums shrink-0', modoSujo ? 'text-orange-400/70' : 'text-emerald-400/70')}>
+          {fmt(preco)}
+        </span>
+      )}
+      <button
+        onClick={() => onAdd(servico)}
+        title={itensCount > 0 ? `Adicionar ${itensCount} iten${itensCount !== 1 ? 's' : ''}` : 'Adicionar combo'}
+        className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
         <Plus className="h-3 w-3" />
       </button>
     </div>
@@ -192,8 +224,6 @@ export function CalculadoraClient({
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
-  const [editandoApelido, setEditandoApelido] = useState<string | null>(null)
-  const [apelidoTemp, setApelidoTemp] = useState('')
 
   const favoritosRef = useRef(favoritos)
   favoritosRef.current = favoritos
@@ -269,30 +299,37 @@ export function CalculadoraClient({
       const q = busca.toLowerCase()
       lista = lista.filter(i => matchBusca(i.nome, i.apelidos, q))
     }
-    if (aba !== 'favoritos') {
-      lista = [...lista].sort((a, b) => {
-        const af = favoritos.has(a.id) ? 0 : 1
-        const bf = favoritos.has(b.id) ? 0 : 1
-        if (af !== bf) return af - bf
-        return a.nome.localeCompare(b.nome)
-      })
-    }
     return lista
   }, [items, aba, favoritos, busca, meusItemIds, filterCategoria, filterLoja, lojaPrecoPorItem, faccaoPrecos])
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
 
   const servicosFiltrados = useMemo(() => {
+    if (filterLoja) return []  // combos não têm loja; ocultar quando filtro de loja ativo
     let lista = servicos
     if (aba === 'favoritos') lista = lista.filter(s => favoritosServicos.has(s.id))
     if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
-    if (filterLoja) return []  // serviços não têm loja; ocultar quando filtro de loja ativo
     if (busca.trim()) {
       const q = busca.toLowerCase()
       lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
     }
     return lista
   }, [servicos, busca, aba, servicoItens, meusItemIds, favoritosServicos, filterLoja])
+
+  // Lista unificada de itens + combos, ordenada (favoritos primeiro, depois alfabético)
+  const listaUnificada = useMemo(() => {
+    type Entry =
+      | { tipo: 'item'; id: string; nome: string; isFav: boolean; data: Item }
+      | { tipo: 'servico'; id: string; nome: string; isFav: boolean; data: Servico }
+    const itens: Entry[] = itensFiltrados.map(i => ({ tipo: 'item' as const, id: i.id, nome: i.nome, isFav: favoritos.has(i.id), data: i }))
+    const servs: Entry[] = servicosFiltrados.map(s => ({ tipo: 'servico' as const, id: s.id, nome: s.nome, isFav: favoritosServicos.has(s.id), data: s }))
+    return [...itens, ...servs].sort((a, b) => {
+      const af = a.isFav ? 0 : 1
+      const bf = b.isFav ? 0 : 1
+      if (af !== bf) return af - bf
+      return a.nome.localeCompare(b.nome)
+    })
+  }, [itensFiltrados, servicosFiltrados, favoritos, favoritosServicos])
 
   // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -321,25 +358,6 @@ export function CalculadoraClient({
       if (error) { toast.error('Erro ao favoritar'); setFavoritosServicos(prev => { const n = new Set(prev); n.delete(servicoId); return n }) }
     }
   }, [userId, sb])
-
-  const iniciarEdicaoApelido = useCallback((item: Item) => {
-    setApelidoTemp(item.apelidos ?? '')
-    setEditandoApelido(item.id)
-  }, [])
-
-  const salvarApelido = useCallback(async () => {
-    if (!editandoApelido) return
-    const valor = apelidoTemp.trim() || null
-    const { error } = await sb().from('items').update({ apelidos: valor }).eq('id', editandoApelido)
-    if (error) { toast.error('Erro ao salvar apelidos') }
-    else {
-      // Atualiza o item localmente sem recarregar a página
-      const item = itemMap[editandoApelido]
-      if (item) item.apelidos = valor
-      toast.success('Apelidos salvos')
-    }
-    setEditandoApelido(null)
-  }, [editandoApelido, apelidoTemp, sb, itemMap])
 
   const addToBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.some(b => b.item_id === itemId) ? prev : [...prev, { item_id: itemId, quantidade: 1, loja_id: '' }])
@@ -590,92 +608,42 @@ export function CalculadoraClient({
           ))}
         </div>
 
-        {/* Lista */}
+        {/* Lista unificada: itens + combos misturados, ordenados */}
         <div className="flex-1 overflow-y-auto">
-
-          {/* Serviços/kits */}
-          {servicosFiltrados.length > 0 && (aba === 'todos' || aba === 'meus' || aba === 'favoritos') && (
-            <div className="border-b border-border">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground bg-white/[0.01]">
-                <Layers className="h-3 w-3" />Kits / Serviços
-              </div>
-              {servicosFiltrados.map(s => {
-                const preco = modoSujo ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
-                const itensCount = servicoItens.filter(si => si.servico_id === s.id).length
-                const isFavServico = favoritosServicos.has(s.id)
-                return (
-                  <div key={s.id} className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 hover:bg-white/[0.015] transition-colors">
-                    <button
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={e => podeEditar && toggleFavoritoServico(s.id, e)}
-                      disabled={!podeEditar}
-                      className={cn('shrink-0 p-0.5 rounded transition-colors',
-                        isFavServico ? 'text-yellow-400' : 'text-muted-foreground/25 hover:text-yellow-400',
-                        !podeEditar && 'opacity-0 pointer-events-none'
-                      )}>
-                      <Star className="h-3 w-3" fill={isFavServico ? 'currentColor' : 'none'} />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium leading-tight truncate">{s.nome}</div>
-                      <div className="flex items-center gap-1.5">
-                        {itensCount > 0 && <span className="text-[10px] text-muted-foreground">{itensCount} item{itensCount !== 1 ? 's' : ''}</span>}
-                        {s.desconto_pct > 0 && <span className="text-[10px] text-green-400">-{s.desconto_pct}%</span>}
-                        {preco != null && <span className={cn('text-[10px] tabular-nums', modoSujo ? 'text-orange-400/70' : 'text-emerald-400/70')}>{fmt(preco)}</span>}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => addServico(s)}
-                      className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                      title={`Adicionar kit ${s.nome}`}>
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Itens */}
-          {itensFiltrados.length === 0 && servicosFiltrados.length === 0 ? (
+          {listaUnificada.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-8 px-4">
               {aba === 'favoritos' ? 'Nenhum favorito' : aba === 'meus' ? 'Nenhum item seu' : 'Nenhum item encontrado'}
             </p>
-          ) : itensFiltrados.length === 0 ? null : (
-            itensFiltrados.map(item => (
-              editandoApelido === item.id ? (
-                <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 border-b border-border/30 bg-muted/5">
-                  <span className="text-xs text-muted-foreground shrink-0 max-w-[110px] truncate">{item.nome}</span>
-                  <Input
-                    autoFocus
-                    value={apelidoTemp}
-                    onChange={e => setApelidoTemp(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') salvarApelido()
-                      if (e.key === 'Escape') setEditandoApelido(null)
-                    }}
-                    onBlur={salvarApelido}
-                    placeholder="apelidos: a, b, c..."
-                    className="h-6 text-xs flex-1"
-                  />
-                  <button onClick={() => setEditandoApelido(null)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ) : (
-                <ItemBtn
-                  key={item.id} item={item}
-                  isInBatch={batchIds.has(item.id)}
-                  isFavorito={favoritos.has(item.id)}
-                  precoLimpo={meuPrecoMap[item.id]?.preco_limpo ?? null}
-                  precoSujo={meuPrecoMap[item.id]?.preco_sujo ?? null}
-                  onAdd={addToBatch}
-                  onToggleFav={toggleFavorito}
-                  onEditarApelido={iniciarEdicaoApelido}
+          ) : listaUnificada.map(entry => {
+            if (entry.tipo === 'servico') {
+              const itensCount = servicoItens.filter(si => si.servico_id === entry.id).length
+              return (
+                <ComboBtn
+                  key={entry.id}
+                  servico={entry.data}
+                  isFavorito={entry.isFav}
+                  modoSujo={modoSujo}
+                  itensCount={itensCount}
+                  onAdd={addServico}
+                  onToggleFav={toggleFavoritoServico}
                   podeEditar={podeEditar}
                 />
               )
-            ))
-          )}
+            }
+            return (
+              <ItemBtn
+                key={entry.id}
+                item={entry.data}
+                isInBatch={batchIds.has(entry.id)}
+                isFavorito={entry.isFav}
+                precoLimpo={meuPrecoMap[entry.id]?.preco_limpo ?? null}
+                precoSujo={meuPrecoMap[entry.id]?.preco_sujo ?? null}
+                onAdd={addToBatch}
+                onToggleFav={toggleFavorito}
+                podeEditar={podeEditar}
+              />
+            )
+          })}
         </div>
       </aside>
 
