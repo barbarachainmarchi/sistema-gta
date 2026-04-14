@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
@@ -38,6 +38,40 @@ interface Props {
   todosProdutos: Produto[]
   initialFaccaoPrecos: FaccaoPreco[]
   lojaPorMembro: Record<string, string[]>
+}
+
+function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
+  value: string
+  onChange: (v: string) => void
+  suggestions: string[]
+  placeholder?: string
+  className?: string
+}) {
+  const [aberto, setAberto] = useState(false)
+  const filtradas = suggestions.filter(s => s && s.toLowerCase().includes(value.toLowerCase()) && s.toLowerCase() !== value.toLowerCase())
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        onChange={e => { onChange(e.target.value); setAberto(true) }}
+        onFocus={() => setAberto(true)}
+        onBlur={() => setTimeout(() => setAberto(false), 150)}
+        placeholder={placeholder}
+        className={cn('h-8 text-sm', className)}
+      />
+      {aberto && filtradas.length > 0 && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-0.5 rounded-md border border-border bg-popover shadow-md overflow-hidden max-h-36 overflow-y-auto">
+          {filtradas.slice(0, 8).map((s, i) => (
+            <button key={i} type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(s); setAberto(false) }}
+              className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent truncate">
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
@@ -143,9 +177,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const [buscaMembro, setBuscaMembro] = useState('')
   const [filtrFaccaoId, setFiltrFaccaoId] = useState('todas')
   const [filtrTipo, setFiltrTipo] = useState<'todos' | 'minha_equipe' | 'ex_membros'>('todos')
+  const [membroVeiculoInline, setMembroVeiculoInline] = useState({ ativo: false, placa: '', modelo: '', cor: '' })
 
-  function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroEditId(null); setMembroModal(true) }
-  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', instagram: m.instagram ?? '', deep: m.deep ?? '', faccao_id: m.faccao_id ?? 'sem', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '', membro_proprio: m.membro_proprio, data_entrada: m.data_entrada ?? '' }); setMembroEditId(m.id); setMembroModal(true) }
+  function openNovoMembro() { setMembroForm(emptyMembroForm); setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' }); setMembroEditId(null); setMembroModal(true) }
+  function openEditMembro(m: Membro) { setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', instagram: m.instagram ?? '', deep: m.deep ?? '', faccao_id: m.faccao_id ?? 'sem', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '', membro_proprio: m.membro_proprio, data_entrada: m.data_entrada ?? '' }); setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' }); setMembroEditId(m.id); setMembroModal(true) }
 
   async function handleSalvarMembro() {
     if (!membroForm.nome) { toast.error('Nome obrigatório'); return }
@@ -158,6 +193,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     }
     setMembroSaving(true)
     const row = { nome: membroForm.nome, vulgo: membroForm.vulgo || null, telefone: membroForm.telefone || null, instagram: membroForm.instagram || null, deep: membroForm.deep || null, faccao_id: membroForm.faccao_id === 'sem' ? null : membroForm.faccao_id || null, cargo_faccao: membroForm.cargo_faccao || null, status: membroForm.status, observacoes: membroForm.observacoes || null, membro_proprio: membroForm.membro_proprio, data_entrada: membroForm.data_entrada || null }
+    let novoMembroId: string | null = null
     if (membroEditId) {
       const { data, error } = await sb().from('membros').update(row).eq('id', membroEditId).select('*, faccoes(id, nome, cor_tag)').single()
       if (error) { toast.error('Erro ao salvar'); setMembroSaving(false); return }
@@ -165,7 +201,20 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     } else {
       const { data, error } = await sb().from('membros').insert(row).select('*, faccoes(id, nome, cor_tag)').single()
       if (error) { toast.error('Erro ao salvar'); setMembroSaving(false); return }
+      novoMembroId = (data as Membro).id
       setMembros(prev => [...prev, data as Membro].sort((a, b) => a.nome.localeCompare(b.nome)))
+    }
+    // Salvar veículo inline se preenchido (apenas para novos membros)
+    if (novoMembroId && membroVeiculoInline.ativo && (membroVeiculoInline.placa || membroVeiculoInline.modelo || membroVeiculoInline.cor)) {
+      const { data: vData } = await sb().from('veiculos').insert({
+        placa: membroVeiculoInline.placa ? membroVeiculoInline.placa.toUpperCase() : null,
+        modelo: membroVeiculoInline.modelo || null,
+        cor: membroVeiculoInline.cor || null,
+        proprietario_tipo: 'membro',
+        proprietario_id: novoMembroId,
+        observacoes: null,
+      }).select().single()
+      if (vData) setVeiculos(prev => [...prev, vData as Veiculo].sort((a, b) => (a.placa ?? '').localeCompare(b.placa ?? '')))
     }
     setMembroSaving(false); setMembroModal(false); toast.success('Membro salvo')
   }
@@ -790,11 +839,21 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome *</Label>
-                <Input value={membroForm.nome} onChange={e => setMembroForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
+                <AutocompleteInput
+                  value={membroForm.nome}
+                  onChange={v => setMembroForm(f => ({ ...f, nome: v }))}
+                  suggestions={membros.filter(m => !membroEditId || m.id !== membroEditId).map(m => m.nome)}
+                  placeholder="Nome ingame"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Vulgo</Label>
-                <Input value={membroForm.vulgo} onChange={e => setMembroForm(f => ({ ...f, vulgo: e.target.value }))} placeholder="Apelido..." className="h-8 text-sm" />
+                <AutocompleteInput
+                  value={membroForm.vulgo}
+                  onChange={v => setMembroForm(f => ({ ...f, vulgo: v }))}
+                  suggestions={[...new Set(membros.map(m => m.vulgo).filter(Boolean) as string[])]}
+                  placeholder="Apelido..."
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -826,7 +885,12 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Cargo na Facção</Label>
-                <Input value={membroForm.cargo_faccao} onChange={e => setMembroForm(f => ({ ...f, cargo_faccao: e.target.value }))} placeholder="Ex: Soldado, Capitão..." className="h-8 text-sm" />
+                <AutocompleteInput
+                  value={membroForm.cargo_faccao}
+                  onChange={v => setMembroForm(f => ({ ...f, cargo_faccao: v }))}
+                  suggestions={[...new Set(membros.map(m => m.cargo_faccao).filter(Boolean) as string[])]}
+                  placeholder="Ex: Soldado, Capitão..."
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Observações</Label>
@@ -849,6 +913,44 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 <Input type="date" value={membroForm.data_entrada} onChange={e => setMembroForm(f => ({ ...f, data_entrada: e.target.value }))} className="h-8 text-sm max-w-[180px]" />
               </div>
             )}
+            {/* Veículo inline — apenas para novos membros */}
+            {!membroEditId && (
+              <div className="pt-1 border-t border-border/40">
+                <button type="button"
+                  onClick={() => setMembroVeiculoInline(f => ({ ...f, ativo: !f.ativo, placa: '', modelo: '', cor: '' }))}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1">
+                  <Car className="h-3.5 w-3.5" />
+                  <span>{membroVeiculoInline.ativo ? '— Remover veículo' : '+ Veículo (opcional)'}</span>
+                  <ChevronDown className={cn('h-3 w-3 transition-transform', membroVeiculoInline.ativo && 'rotate-180')} />
+                </button>
+                {membroVeiculoInline.ativo && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Placa</Label>
+                      <Input value={membroVeiculoInline.placa} onChange={e => setMembroVeiculoInline(f => ({ ...f, placa: e.target.value }))} className="h-8 text-sm font-mono" placeholder="ABC1234" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Modelo</Label>
+                      <AutocompleteInput
+                        value={membroVeiculoInline.modelo}
+                        onChange={v => setMembroVeiculoInline(f => ({ ...f, modelo: v }))}
+                        suggestions={[...new Set(veiculos.map(v => v.modelo).filter(Boolean) as string[])]}
+                        placeholder="Ex: Sultan"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Cor</Label>
+                      <AutocompleteInput
+                        value={membroVeiculoInline.cor}
+                        onChange={v => setMembroVeiculoInline(f => ({ ...f, cor: v }))}
+                        suggestions={[...new Set(veiculos.map(v => v.cor).filter(Boolean) as string[])]}
+                        placeholder="Ex: Preto"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setMembroModal(false)}>Cancelar</Button>
@@ -866,18 +968,28 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           <div className="space-y-3 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Placa *</Label>
+                <Label className="text-xs">Placa</Label>
                 <Input value={veiculoForm.placa} onChange={e => setVeiculoForm(f => ({ ...f, placa: e.target.value.toUpperCase() }))} placeholder="ABC1234" className="h-8 text-sm font-mono" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Modelo</Label>
-                <Input value={veiculoForm.modelo} onChange={e => setVeiculoForm(f => ({ ...f, modelo: e.target.value }))} placeholder="Ex: Sultan RS..." className="h-8 text-sm" />
+                <AutocompleteInput
+                  value={veiculoForm.modelo}
+                  onChange={v => setVeiculoForm(f => ({ ...f, modelo: v }))}
+                  suggestions={[...new Set(veiculos.map(v => v.modelo).filter(Boolean) as string[])]}
+                  placeholder="Ex: Sultan RS..."
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Cor</Label>
-                <Input value={veiculoForm.cor} onChange={e => setVeiculoForm(f => ({ ...f, cor: e.target.value }))} placeholder="Ex: Preto..." className="h-8 text-sm" />
+                <AutocompleteInput
+                  value={veiculoForm.cor}
+                  onChange={v => setVeiculoForm(f => ({ ...f, cor: v }))}
+                  suggestions={[...new Set(veiculos.map(v => v.cor).filter(Boolean) as string[])]}
+                  placeholder="Ex: Preto..."
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Tipo do proprietário</Label>

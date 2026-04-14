@@ -26,7 +26,7 @@ export default async function VendasPage() {
     { data: favoritosData },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
-    supabase.from('venda_itens').select('*'),
+    supabase.from('venda_itens').select('*, servico_id'),
     supabase.from('faccoes').select('id, nome, sigla, telefone, desconto_padrao_pct').eq('status', 'ativo').order('nome'),
     supabase.from('items').select('id, nome, tem_craft, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
@@ -37,7 +37,7 @@ export default async function VendasPage() {
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
-    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, categoria').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
   ])

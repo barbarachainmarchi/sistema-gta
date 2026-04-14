@@ -9,8 +9,9 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package
+  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon
 } from 'lucide-react'
+import { TEMA_KEY } from '@/components/layout/theme-provider'
 
 const navGroups = [
   {
@@ -83,6 +84,7 @@ export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nome
   // Estado de recolhimento por grupo — inicia tudo aberto
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [mounted, setMounted] = useState(false)
+  const [tema, setTema] = useState<'escuro' | 'claro'>('escuro')
 
   // Carrega do localStorage após montar (evita hydration mismatch)
   useEffect(() => {
@@ -90,8 +92,19 @@ export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nome
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) setCollapsed(JSON.parse(saved))
     } catch {}
+    try {
+      const t = localStorage.getItem(TEMA_KEY) as 'escuro' | 'claro' | null
+      if (t) setTema(t)
+    } catch {}
     setMounted(true)
   }, [])
+
+  function toggleTema() {
+    const novo = tema === 'claro' ? 'escuro' : 'claro'
+    setTema(novo)
+    document.documentElement.setAttribute('data-tema', novo)
+    try { localStorage.setItem(TEMA_KEY, novo) } catch {}
+  }
 
   function toggle(key: string) {
     setCollapsed(prev => {
@@ -213,8 +226,16 @@ export function Sidebar({ nomeSistema, modulosVisiveis, categoriaCores }: { nome
         })}
       </nav>
 
-      {/* Sair */}
-      <div className="shrink-0 p-2 border-t border-border">
+      {/* Tema + Sair */}
+      <div className="shrink-0 p-2 border-t border-border space-y-0.5">
+        <button
+          onClick={toggleTema}
+          title={tema === 'claro' ? 'Mudar para tema escuro' : 'Mudar para tema claro'}
+          className="w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+        >
+          {tema === 'claro' ? <Moon className="h-3.5 w-3.5 shrink-0" /> : <Sun className="h-3.5 w-3.5 shrink-0" />}
+          {tema === 'claro' ? 'Tema escuro' : 'Tema claro'}
+        </button>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"

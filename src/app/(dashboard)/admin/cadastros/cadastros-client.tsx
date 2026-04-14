@@ -47,6 +47,7 @@ type Servico = {
   id: string; nome: string; descricao: string | null
   preco_sujo: number | null; preco_limpo: number | null
   desconto_pct: number; eh_meu_servico: boolean; status: 'ativo' | 'inativo'; created_at: string; updated_at: string
+  categoria: string | null
 }
 type ServicoItemFull = { id: string; servico_id: string; item_id: string; item_nome: string; quantidade: number; tem_craft: boolean }
 
@@ -1257,6 +1258,7 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete
             <TableHeader>
               <TableRow className="hover:bg-transparent border-border">
                 <TableHead className="text-xs">Nome</TableHead>
+                <TableHead className="text-xs">Categoria</TableHead>
                 <TableHead className="text-xs">Itens</TableHead>
                 <TableHead className="text-xs">Preço Limpo</TableHead>
                 <TableHead className="text-xs">Preço Sujo</TableHead>
@@ -1281,6 +1283,11 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete
                         <p className="font-medium text-sm">{s.nome}</p>
                         {s.descricao && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{s.descricao}</p>}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {s.categoria
+                        ? <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{s.categoria}</span>
+                        : <span className="text-xs text-muted-foreground/40">—</span>}
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
@@ -1364,6 +1371,7 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
 }) {
   const [nome, setNome] = useState(servico?.nome ?? '')
   const [descricao, setDescricao] = useState(servico?.descricao ?? '')
+  const [categoria, setCategoria] = useState(servico?.categoria ?? '')
   const [precoLimpo, setPrecoLimpo] = useState(servico?.preco_limpo != null ? String(servico.preco_limpo) : '')
   const [precoSujo, setPrecoSujo] = useState(servico?.preco_sujo != null ? String(servico.preco_sujo) : '')
   const [descontoPct, setDescontoPct] = useState(String(servico?.desconto_pct ?? 0))
@@ -1396,6 +1404,7 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
       const payload = {
         nome: nome.trim(),
         descricao: descricao.trim() || null,
+        categoria: categoria.trim() || null,
         preco_limpo: precoLimpo !== '' ? parseFloat(precoLimpo) : null,
         preco_sujo: precoSujo !== '' ? parseFloat(precoSujo) : null,
         desconto_pct: parseFloat(descontoPct) || 0,
@@ -1454,6 +1463,10 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
             <div className="col-span-2 space-y-1.5">
               <Label className="text-xs">Descrição</Label>
               <Textarea value={descricao} onChange={e => setDescricao(e.target.value)} placeholder="Opcional" rows={2} className="text-sm resize-none" />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-xs">Categoria</Label>
+              <Input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Ex: Drogas, Armas, Serviços..." className="h-9 text-sm" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Preço Limpo (R$)</Label>

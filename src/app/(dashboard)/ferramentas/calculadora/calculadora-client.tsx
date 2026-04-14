@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, memo } from 'react'
+import { useState, useMemo, useCallback, useRef, memo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -29,7 +29,7 @@ type Loja = { id: string; nome: string }
 type LojaPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
 type FaccaoPreco = { faccao_id: string; item_id: string; preco_limpo: number | null; preco_sujo: number | null }
 type PrecoVigente = { item_id: string; preco_sujo: number | null; preco_limpo: number | null }
-type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; eh_meu_servico: boolean }
+type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; eh_meu_servico: boolean; categoria: string | null }
 type ServicoItemCalc = { servico_id: string; item_id: string; quantidade: number; item_nome: string }
 
 interface Props {
@@ -279,11 +279,31 @@ export function CalculadoraClient({
     return lojas.filter(l => ids.has(l.id))
   }, [lojas, lojaPrecos])
 
-  const categoriasCalc = useMemo(() => {
+  // Categorias presentes na aba atual (sem filtro de categoria, mas com filtro de aba/loja)
+  const categoriasNaAba = useMemo(() => {
+    let lista = items
+    if (aba === 'favoritos') lista = lista.filter(i => favoritos.has(i.id))
+    if (aba === 'meus') lista = lista.filter(i => meusItemIds.has(i.id))
+    if (filterLoja === '_faccao') lista = lista.filter(i => faccaoPrecos.some(fp => fp.item_id === i.id))
+    else if (filterLoja) lista = lista.filter(i => lojaPrecoPorItem[i.id]?.some(lp => lp.loja_id === filterLoja))
     const cats = new Set<string>()
-    items.forEach(i => { if (i.categorias_item?.nome) cats.add(i.categorias_item.nome) })
+    lista.forEach(i => { if (i.categorias_item?.nome) cats.add(i.categorias_item.nome) })
+    // Incluir categorias de serviços da aba atual
+    if (!filterLoja) {
+      let servLista = servicos
+      if (aba === 'favoritos') servLista = servLista.filter(s => favoritosServicos.has(s.id))
+      if (aba === 'meus') servLista = servLista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
+      servLista.forEach(s => { if (s.categoria) cats.add(s.categoria) })
+    }
     return Array.from(cats).sort()
-  }, [items])
+  }, [items, aba, favoritos, meusItemIds, filterLoja, faccaoPrecos, lojaPrecoPorItem, servicos, favoritosServicos, servicoItens])
+
+  // Limpa filtro de categoria quando troca de aba e a categoria não existe mais
+  useEffect(() => {
+    if (filterCategoria && !categoriasNaAba.includes(filterCategoria)) {
+      setFilterCategoria('')
+    }
+  }, [aba]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const itensFiltrados = useMemo(() => {
     let lista = items
@@ -309,12 +329,13 @@ export function CalculadoraClient({
     let lista = servicos
     if (aba === 'favoritos') lista = lista.filter(s => favoritosServicos.has(s.id))
     if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
+    if (filterCategoria) lista = lista.filter(s => s.categoria === filterCategoria)
     if (busca.trim()) {
       const q = busca.toLowerCase()
       lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
     }
     return lista
-  }, [servicos, busca, aba, servicoItens, meusItemIds, favoritosServicos, filterLoja])
+  }, [servicos, busca, aba, servicoItens, meusItemIds, favoritosServicos, filterLoja, filterCategoria])
 
   // Lista unificada de itens + combos, ordenada (favoritos primeiro, depois alfabético)
   const listaUnificada = useMemo(() => {
@@ -555,8 +576,8 @@ export function CalculadoraClient({
               className="pl-8 h-8 text-sm" />
           </div>
 
-          {/* Chips de categoria */}
-          {categoriasCalc.length > 0 && (
+          {/* Chips de categoria — apenas as que têm itens na aba atual */}
+          {categoriasNaAba.length > 0 && (
             <div className="flex gap-1 overflow-x-auto scrollbar-none pb-0.5">
               <button
                 onClick={() => setFilterCategoria('')}
@@ -565,7 +586,7 @@ export function CalculadoraClient({
                     ? 'bg-primary/15 border-primary/40 text-primary'
                     : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
                 )}>Todas</button>
-              {categoriasCalc.map(c => (
+              {categoriasNaAba.map(c => (
                 <button key={c}
                   onClick={() => setFilterCategoria(c === filterCategoria ? '' : c)}
                   className={cn('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',

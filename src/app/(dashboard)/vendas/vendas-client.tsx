@@ -25,6 +25,7 @@ type StatusVenda = 'fabricando' | 'encomenda' | 'separado' | 'pronto' | 'entregu
 type VendaItem = {
   id: string; venda_id: string; item_id: string | null
   item_nome: string; quantidade: number; preco_unit: number; origem: 'fabricar' | 'estoque'
+  servico_id: string | null
 }
 type Venda = {
   id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; cliente_telefone: string | null
@@ -43,7 +44,7 @@ type ItemSimples = { id: string; nome: string; tem_craft: boolean; peso: number 
 type Receita = { item_id: string; ingrediente_id: string; quantidade: number }
 type EstoqueEntry = { item_id: string; quantidade: number }
 
-type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
+type Servico = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; categoria?: string | null }
 type ServicoItemVenda = { servico_id: string; item_id: string; quantidade: number; item_nome: string; tem_craft: boolean }
 
 type CartItem = {
@@ -52,8 +53,9 @@ type CartItem = {
   preco_override: number | null
   desconto_item_pct: number | null
   tem_craft: boolean; origem: 'fabricar' | 'estoque'
+  servico_id: string | null
 }
-type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque' }
+type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque'; servico_id: string | null }
 type FormState = {
   faccao_id: string; loja_id: string; cliente_nome: string; cliente_telefone: string
   tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; notas: string; data_encomenda: string
@@ -154,7 +156,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -164,8 +166,10 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void
   onSolicitarCancelamento: (id: string, motivo: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  servicos: Servico[]
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
+  const [combosColapsados, setCombosColapsados] = useState<Set<string>>(new Set())
   const [loadingStatus, setLoadingStatus] = useState(false)
   const [cancelamentoAberto, setCancelamentoAberto] = useState(false)
   const [motivoCancelamento, setMotivoCancelamento] = useState('')
@@ -246,36 +250,75 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
       <div className="flex-1">
         {venda.itens.length === 0
           ? <p className="text-xs text-muted-foreground px-3 py-2.5 italic">Sem itens</p>
-          : <>
-              <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1 text-[10px] text-muted-foreground/50 border-b border-border/20">
-                <span /><span>Item</span><span className="text-right">Qtd</span>
-                <span className="text-right">Unit.</span><span className="text-right">Total</span>
-              </div>
-              <div className="divide-y divide-border/20">
-                {venda.itens.map(it => (
-                  <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1.5">
-                    <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
-                      it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
-                    )}>
-                      {it.origem === 'fabricar' ? 'Fab' : 'Est'}
-                    </span>
-                    <span className="text-xs font-medium truncate">{it.item_nome}</span>
-                    <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
-                    <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
-                    <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
+          : (() => {
+              // Agrupar itens por servico_id
+              const servicoIds = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+              const itensAvulsos = venda.itens.filter(it => !it.servico_id)
+              return (
+                <>
+                  <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1 text-[10px] text-muted-foreground/50 border-b border-border/20">
+                    <span /><span>Item</span><span className="text-right">Qtd</span>
+                    <span className="text-right">Unit.</span><span className="text-right">Total</span>
                   </div>
-                ))}
-              </div>
-              <div className="px-3 py-2 border-t border-border/30 flex items-center justify-end gap-2">
-                {venda.desconto_pct > 0 && (
-                  <span className="text-xs text-muted-foreground tabular-nums line-through">{fmt(subtotal)}</span>
-                )}
-                <span className="text-sm font-bold tabular-nums text-primary">{fmt(total)}</span>
-                {venda.desconto_pct > 0 && (
-                  <span className="text-[10px] text-green-400">-{venda.desconto_pct}%</span>
-                )}
-              </div>
-            </>
+                  <div className="divide-y divide-border/20">
+                    {/* Combos agrupados */}
+                    {servicoIds.map(sid => {
+                      const nomeServico = servicos.find(s => s.id === sid)?.nome ?? 'Combo'
+                      const itensCombo = venda.itens.filter(it => it.servico_id === sid)
+                      const totalCombo = itensCombo.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+                      const colapsado = combosColapsados.has(sid)
+                      return (
+                        <div key={sid}>
+                          <button
+                            onClick={() => setCombosColapsados(prev => { const n = new Set(prev); colapsado ? n.delete(sid) : n.add(sid); return n })}
+                            className="w-full flex items-center gap-1.5 px-3 py-1.5 bg-primary/[0.04] hover:bg-primary/[0.07] transition-colors text-left border-b border-border/10">
+                            <Layers className="h-3 w-3 text-primary/60 shrink-0" />
+                            <span className="text-xs font-medium flex-1 truncate">{nomeServico}</span>
+                            <span className="text-[10px] text-muted-foreground tabular-nums">{itensCombo.length} iten{itensCombo.length !== 1 ? 's' : ''}</span>
+                            <span className="text-xs font-medium tabular-nums text-primary ml-1">{fmt(totalCombo)}</span>
+                            <ChevronDown className={cn('h-3 w-3 text-muted-foreground shrink-0 transition-transform', !colapsado && 'rotate-180')} />
+                          </button>
+                          {!colapsado && itensCombo.map(it => (
+                            <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center pl-6 pr-3 py-1.5 bg-primary/[0.02]">
+                              <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
+                                it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
+                              )}>{it.origem === 'fabricar' ? 'Fab' : 'Est'}</span>
+                              <span className="text-xs truncate text-muted-foreground/80">{it.item_nome}</span>
+                              <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
+                              <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
+                              <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    {/* Itens avulsos */}
+                    {itensAvulsos.map(it => (
+                      <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1.5">
+                        <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
+                          it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
+                        )}>
+                          {it.origem === 'fabricar' ? 'Fab' : 'Est'}
+                        </span>
+                        <span className="text-xs font-medium truncate">{it.item_nome}</span>
+                        <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
+                        <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
+                        <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-3 py-2 border-t border-border/30 flex items-center justify-end gap-2">
+                    {venda.desconto_pct > 0 && (
+                      <span className="text-xs text-muted-foreground tabular-nums line-through">{fmt(subtotal)}</span>
+                    )}
+                    <span className="text-sm font-bold tabular-nums text-primary">{fmt(total)}</span>
+                    {venda.desconto_pct > 0 && (
+                      <span className="text-[10px] text-green-400">-{venda.desconto_pct}%</span>
+                    )}
+                  </div>
+                </>
+              )
+            })()
         }
       </div>
 
@@ -516,6 +559,7 @@ function OrderDialog({
           preco_limpo: it.preco_unit, preco_sujo: null, preco_override: null,
           desconto_item_pct: null,
           tem_craft: it.origem === 'fabricar', origem: it.origem,
+          servico_id: it.servico_id ?? null,
         })))
       } else {
         setForm(emptyForm())
@@ -645,6 +689,7 @@ function OrderDialog({
         desconto_item_pct: faccaoDescontosItem[p.item_id] ?? null,
         tem_craft: p.tem_craft,
         origem: origemDraft ?? (p.tem_craft ? 'fabricar' : 'estoque'),
+        servico_id: null,
       }]
     })
   }
@@ -678,6 +723,7 @@ function OrderDialog({
             desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
             tem_craft: si.tem_craft,
             origem: si.tem_craft ? 'fabricar' : 'estoque',
+            servico_id: servico.id,
           })
         }
       }
@@ -746,6 +792,7 @@ function OrderDialog({
       quantidade: String(c.quantidade),
       preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
       origem: c.origem,
+      servico_id: c.servico_id,
     }))
   }
 
@@ -1290,6 +1337,7 @@ export function VendasClient({
         const novosItens = form.itens.map(it => ({
           venda_id: editando.id, item_id: it.item_id || null, item_nome: it.item_nome,
           quantidade: parseFloat(it.quantidade) || 1, preco_unit: parseFloat(it.preco_unit) || 0, origem: it.origem,
+          servico_id: it.servico_id || null,
         }))
         const { data: itensData, error: itensErr } = await sb().from('venda_itens').insert(novosItens).select()
         if (itensErr) { toast.error('Erro nos itens'); return }
@@ -1315,6 +1363,7 @@ export function VendasClient({
         const novosItens = form.itens.map(it => ({
           venda_id: (venda as Venda).id, item_id: it.item_id || null, item_nome: it.item_nome,
           quantidade: parseFloat(it.quantidade) || 1, preco_unit: parseFloat(it.preco_unit) || 0, origem: it.origem,
+          servico_id: it.servico_id || null,
         }))
         const { data: itensData, error: itensErr } = await sb().from('venda_itens').insert(novosItens).select()
         if (itensErr) { toast.error('Erro nos itens'); return }
@@ -1550,6 +1599,7 @@ export function VendasClient({
                     onEdit={v => { setEditando(v); setFormOpen(true) }}
                     onSolicitarCancelamento={handleSolicitarCancelamento}
                     onDelete={handleDeletarVendaAtiva}
+                    servicos={servicos}
                   />
                 ))}
               </div>

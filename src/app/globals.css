@@ -67,3 +67,22 @@
   --brand-s: 0%;
   --brand-l: 92%;
 }
+
+/* Tema claro (menos escuro) — ativado via data-tema="claro" no <html> */
+html[data-tema="claro"] {
+  --color-background: hsl(222, 16%, 20%);
+  --color-foreground: hsl(220, 20%, 92%);
+  --color-card: hsl(222, 16%, 24%);
+  --color-card-foreground: hsl(220, 20%, 92%);
+  --color-popover: hsl(222, 16%, 25%);
+  --color-popover-foreground: hsl(220, 20%, 92%);
+  --color-secondary: hsl(222, 16%, 30%);
+  --color-secondary-foreground: hsl(220, 20%, 92%);
+  --color-muted: hsl(222, 14%, 28%);
+  --color-muted-foreground: hsl(220, 12%, 58%);
+  --color-accent: hsl(222, 16%, 32%);
+  --color-accent-foreground: hsl(220, 20%, 92%);
+  --color-destructive: hsl(0, 65%, 50%);
+  --color-border: hsl(222, 14%, 32%);
+  --color-input: hsl(222, 16%, 27%);
+}
