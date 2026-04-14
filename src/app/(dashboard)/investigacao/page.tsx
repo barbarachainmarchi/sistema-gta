@@ -15,6 +15,7 @@ export default async function InvestigacaoPage() {
     { data: todosProdutos },
     { data: faccaoPrecos },
     { data: lojaMembrosRaw },
+    { data: usuariosOnline },
   ] = await Promise.all([
     supabase.from('faccoes').select('*').order('nome'),
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
@@ -23,6 +24,7 @@ export default async function InvestigacaoPage() {
     supabase.from('items').select('id, nome, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('faccao_item_precos').select('*'),
     supabase.from('loja_membros').select('membro_id, loja_id'),
+    supabase.from('usuarios').select('membro_id, ultimo_acesso').not('membro_id', 'is', null),
   ])
 
   // Monta mapa membro_id → nomes das lojas onde trabalha
@@ -32,6 +34,15 @@ export default async function InvestigacaoPage() {
     if (!loja) continue
     if (!lojaPorMembro[lm.membro_id]) lojaPorMembro[lm.membro_id] = []
     lojaPorMembro[lm.membro_id].push(loja.nome)
+  }
+
+  // Build online map: membro_id → true (online < 5min) | false (tem conta mas offline)
+  const agora = new Date()
+  const onlineMap: Record<string, boolean> = {}
+  for (const u of (usuariosOnline ?? [])) {
+    if (!u.membro_id) continue
+    const online = !!u.ultimo_acesso && (agora.getTime() - new Date(u.ultimo_acesso).getTime()) < 5 * 60 * 1000
+    onlineMap[u.membro_id] = online
   }
 
   return (
@@ -47,6 +58,7 @@ export default async function InvestigacaoPage() {
       }))}
       initialFaccaoPrecos={faccaoPrecos ?? []}
       lojaPorMembro={lojaPorMembro}
+      onlineMap={onlineMap}
     />
   )
 }

@@ -6,24 +6,31 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowRight } from 'lucide-react'
 
 export function ConviteForm({ token, nomeSistema }: { token: string; nomeSistema: string }) {
   const router = useRouter()
+  const [step, setStep] = useState<1 | 2>(1)
   const [apelido, setApelido] = useState('')
   const [senha, setSenha] = useState('')
   const [confirmar, setConfirmar] = useState('')
+  const [nomePersonagem, setNomePersonagem] = useState('')
   const [loading, setLoading] = useState(false)
+
+  function handleStep1(e: React.FormEvent) {
+    e.preventDefault()
+    if (senha !== confirmar) { toast.error('As senhas não coincidem'); return }
+    if (senha.length < 6) { toast.error('Senha deve ter pelo menos 6 caracteres'); return }
+    setStep(2)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (senha !== confirmar) { toast.error('As senhas não coincidem'); return }
-
     setLoading(true)
     const res = await fetch('/api/convite/usar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, apelido, senha }),
+      body: JSON.stringify({ token, apelido, senha, nomePersonagem: nomePersonagem.trim() || null }),
     })
     const json = await res.json()
     setLoading(false)
@@ -45,58 +52,91 @@ export function ConviteForm({ token, nomeSistema }: { token: string; nomeSistema
               </svg>
             </div>
             <h1 className="text-lg font-semibold tracking-tight">{nomeSistema}</h1>
-            <p className="text-xs text-muted-foreground">Você foi convidado. Crie seu acesso abaixo.</p>
+            <p className="text-xs text-muted-foreground">
+              {step === 1 ? 'Você foi convidado. Crie seu acesso abaixo.' : 'Qual é o nome do seu personagem?'}
+            </p>
           </div>
 
           <div className="h-px bg-border" />
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="apelido" className="text-xs text-muted-foreground">Apelido</Label>
-              <Input
-                id="apelido"
-                placeholder="seunome"
-                value={apelido}
-                onChange={e => setApelido(e.target.value)}
-                required
-                autoComplete="username"
-                className="h-9 text-sm"
-              />
-              <p className="text-[11px] text-muted-foreground">3–20 caracteres, sem espaços</p>
-            </div>
+          {/* Indicador de step */}
+          <div className="flex items-center gap-2 justify-center">
+            <span className={`h-1.5 w-8 rounded-full transition-colors ${step >= 1 ? 'bg-primary' : 'bg-border'}`} />
+            <span className={`h-1.5 w-8 rounded-full transition-colors ${step >= 2 ? 'bg-primary' : 'bg-border'}`} />
+          </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="senha" className="text-xs text-muted-foreground">Senha</Label>
-              <Input
-                id="senha"
-                type="password"
-                placeholder="••••••••"
-                value={senha}
-                onChange={e => setSenha(e.target.value)}
-                required
-                autoComplete="new-password"
-                className="h-9 text-sm"
-              />
-            </div>
+          {step === 1 ? (
+            <form onSubmit={handleStep1} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="apelido" className="text-xs text-muted-foreground">Apelido</Label>
+                <Input
+                  id="apelido"
+                  placeholder="seunome"
+                  value={apelido}
+                  onChange={e => setApelido(e.target.value)}
+                  required
+                  autoComplete="username"
+                  className="h-9 text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">3–20 caracteres, sem espaços</p>
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="confirmar" className="text-xs text-muted-foreground">Confirmar senha</Label>
-              <Input
-                id="confirmar"
-                type="password"
-                placeholder="••••••••"
-                value={confirmar}
-                onChange={e => setConfirmar(e.target.value)}
-                required
-                autoComplete="new-password"
-                className="h-9 text-sm"
-              />
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="senha" className="text-xs text-muted-foreground">Senha</Label>
+                <Input
+                  id="senha"
+                  type="password"
+                  placeholder="••••••••"
+                  value={senha}
+                  onChange={e => setSenha(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className="h-9 text-sm"
+                />
+              </div>
 
-            <Button type="submit" className="w-full h-9 mt-2" disabled={loading}>
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar minha conta'}
-            </Button>
-          </form>
+              <div className="space-y-1.5">
+                <Label htmlFor="confirmar" className="text-xs text-muted-foreground">Confirmar senha</Label>
+                <Input
+                  id="confirmar"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmar}
+                  onChange={e => setConfirmar(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className="h-9 text-sm"
+                />
+              </div>
+
+              <Button type="submit" className="w-full h-9 mt-2 gap-1.5">
+                Próximo <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="nome" className="text-xs text-muted-foreground">Nome do personagem</Label>
+                <Input
+                  id="nome"
+                  placeholder="Ex: John Smith"
+                  value={nomePersonagem}
+                  onChange={e => setNomePersonagem(e.target.value)}
+                  autoFocus
+                  className="h-9 text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">Deixe em branco para preencher depois.</p>
+              </div>
+
+              <Button type="submit" className="w-full h-9 mt-2" disabled={loading}>
+                {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar minha conta'}
+              </Button>
+              <button type="button" onClick={() => setStep(1)}
+                className="w-full text-xs text-muted-foreground hover:text-foreground text-center transition-colors">
+                ← Voltar
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 // POST → registrar-se via convite (público, sem auth)
 export async function POST(req: NextRequest) {
-  const { token, apelido, senha } = await req.json()
+  const { token, apelido, senha, nomePersonagem } = await req.json()
 
   if (!token || !apelido || !senha) {
     return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
@@ -55,13 +55,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: createError.message }, { status: 500 })
   }
 
+  // Se nome do personagem fornecido, cria membro e vincula
+  let membroId: string | null = null
+  if (nomePersonagem && typeof nomePersonagem === 'string' && nomePersonagem.trim()) {
+    const { data: membro, error: membroError } = await admin
+      .from('membros')
+      .insert({ nome: nomePersonagem.trim(), status: 'ativo', membro_proprio: true })
+      .select('id')
+      .single()
+    if (!membroError && membro) membroId = membro.id
+  }
+
   // Insere na tabela usuarios com status pendente
   const { error: insertError } = await admin
     .from('usuarios')
-    .insert({ id: created.user.id, nome: apelido, status: 'pendente' })
+    .insert({ id: created.user.id, nome: apelido, status: 'pendente', membro_id: membroId })
 
   if (insertError) {
     await admin.auth.admin.deleteUser(created.user.id)
+    if (membroId) await admin.from('membros').delete().eq('id', membroId)
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 

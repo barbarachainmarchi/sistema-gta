@@ -38,6 +38,7 @@ interface Props {
   todosProdutos: Produto[]
   initialFaccaoPrecos: FaccaoPreco[]
   lojaPorMembro: Record<string, string[]>
+  onlineMap: Record<string, boolean>
 }
 
 function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
@@ -84,7 +85,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos, lojaPorMembro }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos, lojaPorMembro, onlineMap }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -472,6 +473,12 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               ) : membrosFiltrados.map(m => (
                 <div key={m.id} className="grid grid-cols-[1fr_100px_110px_110px_120px_80px_64px] gap-2 items-center px-4 py-2.5 border-b border-border/40 last:border-0 hover:bg-white/[0.02]">
                   <div className="flex items-center gap-2 min-w-0">
+                    {onlineMap[m.id] !== undefined && (
+                      <span
+                        className={cn('h-2 w-2 rounded-full shrink-0 flex-none', onlineMap[m.id] ? 'bg-green-500' : 'bg-red-500')}
+                        title={onlineMap[m.id] ? 'Online' : 'Offline'}
+                      />
+                    )}
                     <div className="min-w-0">
                       <span className="text-sm font-medium">{m.nome}</span>
                       {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}

@@ -13,7 +13,7 @@ export default async function DashboardLayout({
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Paraleliza: perfil do usuário (dinâmico) + tema (cacheado)
+  // Paraleliza: perfil do usuário (dinâmico) + tema (cacheado) + atualiza ultimo_acesso
   const [{ data: perfilRow }, tema] = await Promise.all([
     supabase
       .from('usuarios')
@@ -21,6 +21,7 @@ export default async function DashboardLayout({
       .eq('id', user.id)
       .maybeSingle(),
     getTema(),
+    supabase.from('usuarios').update({ ultimo_acesso: new Date().toISOString() }).eq('id', user.id),
   ])
 
   if (perfilRow?.status === 'pendente') redirect('/aguardando')

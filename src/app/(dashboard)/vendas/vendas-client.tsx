@@ -481,11 +481,12 @@ function OrderDialog({
   const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
   const [combosModo, setCombosModo] = useState<Record<string, 'resumo' | 'detalhado'>>({})  // por servico_id
+  const [combosQtd, setCombosQtd] = useState<Record<string, number>>({})  // quantidade do combo inteiro
   const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
 
-  const cartMap = useMemo(() => Object.fromEntries(cart.map(c => [c.item_id, c])), [cart])
+  const cartMap = useMemo(() => Object.fromEntries(cart.filter(c => !c.servico_id).map(c => [c.item_id, c])), [cart])
   const descontoPct = parseFloat(form.desconto_pct) || 0
 
   // Load products when dialog opens
@@ -565,6 +566,7 @@ function OrderDialog({
         // Inicializa modo dos combos existentes
         const idsCombo = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
         setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
+        setCombosQtd(Object.fromEntries(idsCombo.map(id => [id, 1])))
       } else {
         setForm(emptyForm())
         setEmpresaNome('')
@@ -572,6 +574,7 @@ function OrderDialog({
         setCart([])
         setNovoMembroTel('')
         setCombosModo({})
+        setCombosQtd({})
       }
       setEmpresaAberta(false)
       setMembroAberta(false)
@@ -679,10 +682,10 @@ function OrderDialog({
   }
 
   function setCartQtd(item_id: string, qtd: number) {
-    if (qtd <= 0) { setCart(prev => prev.filter(c => c.item_id !== item_id)); return }
+    if (qtd <= 0) { setCart(prev => prev.filter(c => !(c.item_id === item_id && !c.servico_id))); return }
     setCart(prev => {
-      const exists = prev.find(c => c.item_id === item_id)
-      if (exists) return prev.map(c => c.item_id === item_id ? { ...c, quantidade: qtd } : c)
+      const exists = prev.find(c => c.item_id === item_id && !c.servico_id)
+      if (exists) return prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, quantidade: qtd } : c)
       const p = meusProdutos.find(p => p.item_id === item_id)
       if (!p) return prev
       const origemDraft = draftOrigem[item_id]
@@ -700,40 +703,36 @@ function OrderDialog({
   }
 
   function setCartPreco(item_id: string, preco: number | null) {
-    setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, preco_override: preco } : c))
+    setCart(prev => prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, preco_override: preco } : c))
   }
 
   function setCartOrigem(item_id: string, origem: 'fabricar' | 'estoque') {
-    setCart(prev => prev.map(c => c.item_id === item_id ? { ...c, origem } : c))
+    setCart(prev => prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, origem } : c))
   }
 
   function addServicoToCart(servico: Servico) {
     const itensDoServico = servicoItens.filter(si => si.servico_id === servico.id)
     if (itensDoServico.length === 0) { toast.info('Serviço sem itens configurados'); return }
     setCart(prev => {
-      let next = [...prev]
-      for (const si of itensDoServico) {
-        const exists = next.find(c => c.item_id === si.item_id)
-        if (exists) {
-          next = next.map(c => c.item_id === si.item_id ? { ...c, quantidade: c.quantidade + si.quantidade } : c)
-        } else {
-          const prod = meusProdutos.find(p => p.item_id === si.item_id)
-          next.push({
-            item_id: si.item_id,
-            nome: si.item_nome,
-            quantidade: si.quantidade,
-            preco_limpo: prod?.preco_limpo ?? 0,
-            preco_sujo: prod?.preco_sujo ?? 0,
-            preco_override: null,
-            desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
-            tem_craft: si.tem_craft,
-            origem: si.tem_craft ? 'fabricar' : 'estoque',
-            servico_id: servico.id,
-          })
+      const withoutOld = prev.filter(c => c.servico_id !== servico.id)
+      const newItems = itensDoServico.map(si => {
+        const prod = meusProdutos.find(p => p.item_id === si.item_id)
+        return {
+          item_id: si.item_id,
+          nome: si.item_nome,
+          quantidade: si.quantidade,
+          preco_limpo: prod?.preco_limpo ?? 0,
+          preco_sujo: prod?.preco_sujo ?? 0,
+          preco_override: null,
+          desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
+          tem_craft: si.tem_craft,
+          origem: (si.tem_craft ? 'fabricar' : 'estoque') as 'fabricar' | 'estoque',
+          servico_id: servico.id,
         }
-      }
-      return next
+      })
+      return [...withoutOld, ...newItems]
     })
+    setCombosQtd(prev => ({ ...prev, [servico.id]: prev[servico.id] ?? 1 }))
     setCombosModo(prev => ({ ...prev, [servico.id]: prev[servico.id] ?? 'resumo' }))
     toast.success(`Combo "${servico.nome}" adicionado`)
   }
@@ -770,36 +769,50 @@ function OrderDialog({
 
   // Ingredients panel
   const ingredientes = useMemo(() => {
-    const ingredMap: Record<string, { nome: string; necessario: number }> = {}
+    const ingredMap: Record<string, { nome: string; necessario: number; doCombo: number; extra: number }> = {}
     for (const c of cart) {
       if (!c.item_id || c.origem !== 'fabricar') continue
+      const isComboResumo = !!c.servico_id && combosModo[c.servico_id] === 'resumo'
+      const qty = isComboResumo ? c.quantidade * (combosQtd[c.servico_id!] ?? 1) : c.quantidade
       for (const r of receitas.filter(r => r.item_id === c.item_id)) {
         const nome = allItems.find(i => i.id === r.ingrediente_id)?.nome ?? r.ingrediente_id
-        if (!ingredMap[r.ingrediente_id]) ingredMap[r.ingrediente_id] = { nome, necessario: 0 }
-        ingredMap[r.ingrediente_id].necessario += r.quantidade * c.quantidade
+        if (!ingredMap[r.ingrediente_id]) ingredMap[r.ingrediente_id] = { nome, necessario: 0, doCombo: 0, extra: 0 }
+        const needed = r.quantidade * qty
+        ingredMap[r.ingrediente_id].necessario += needed
+        if (isComboResumo) ingredMap[r.ingrediente_id].doCombo += needed
+        else ingredMap[r.ingrediente_id].extra += needed
       }
     }
     return Object.entries(ingredMap)
       .map(([id, v]) => ({ id, ...v, disponivel: estoqueMap[id] ?? 0 }))
       .sort((a, b) => a.nome.localeCompare(b.nome))
-  }, [cart, receitas, allItems, estoqueMap])
+  }, [cart, receitas, allItems, estoqueMap, combosModo, combosQtd])
 
   // Totals
-  const subtotal = cart.reduce((s, c) => s + c.quantidade * getPrecoEfetivo(c), 0)
+  const subtotal = cart.reduce((s, c) => {
+    const qty = c.servico_id && combosModo[c.servico_id] === 'resumo' ? c.quantidade * (combosQtd[c.servico_id] ?? 1) : c.quantidade
+    return s + qty * getPrecoEfetivo(c)
+  }, 0)
   const total = cart.reduce((s, c) => {
+    const qty = c.servico_id && combosModo[c.servico_id] === 'resumo' ? c.quantidade * (combosQtd[c.servico_id] ?? 1) : c.quantidade
     const d = c.desconto_item_pct ?? descontoPct
-    return s + c.quantidade * getPrecoEfetivo(c) * (1 - d / 100)
+    return s + qty * getPrecoEfetivo(c) * (1 - d / 100)
   }, 0)
   const descValor = subtotal - total
 
   function buildItens(): FormItem[] {
-    return cart.map(c => ({
-      tempId: c.item_id, item_id: c.item_id, item_nome: c.nome,
-      quantidade: String(c.quantidade),
-      preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
-      origem: c.origem,
-      servico_id: c.servico_id,
-    }))
+    return cart.map(c => {
+      const qty = c.servico_id && combosModo[c.servico_id] === 'resumo'
+        ? c.quantidade * (combosQtd[c.servico_id] ?? 1)
+        : c.quantidade
+      return {
+        tempId: c.item_id + (c.servico_id ?? ''), item_id: c.item_id, item_nome: c.nome,
+        quantidade: String(qty),
+        preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
+        origem: c.origem,
+        servico_id: c.servico_id,
+      }
+    })
   }
 
   return (
@@ -1183,12 +1196,13 @@ function OrderDialog({
                           const modificado = isModificado(sid)
 
                           if (modo === 'resumo') {
+                            const qtdCombo = combosQtd[sid] ?? 1
                             const precoBase = form.tipo_dinheiro === 'sujo'
                               ? (s?.preco_sujo ?? s?.preco_limpo)
                               : s?.preco_limpo
-                            const totalCombo = (!modificado && precoBase != null)
+                            const totalCombo = ((!modificado && precoBase != null)
                               ? precoBase
-                              : itensCombo.reduce((acc, c) => acc + c.quantidade * getPrecoEfetivo(c), 0)
+                              : itensCombo.reduce((acc, c) => acc + c.quantidade * getPrecoEfetivo(c), 0)) * qtdCombo
 
                             return (
                               <div key={sid} className="space-y-0.5">
@@ -1203,11 +1217,16 @@ function OrderDialog({
                                       <span className="text-[9px] text-yellow-400/80 shrink-0">editado</span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <span className="text-[11px] tabular-nums text-foreground font-medium">{fmt(totalCombo)}</span>
+                                  <div className="flex items-center gap-0.5 shrink-0">
+                                    <button onClick={() => setCombosQtd(p => ({ ...p, [sid]: Math.max(1, (p[sid] ?? 1) - 1) }))}
+                                      className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">−</button>
+                                    <span className="text-[11px] tabular-nums font-medium min-w-[1.4rem] text-center">{qtdCombo}×</span>
+                                    <button onClick={() => setCombosQtd(p => ({ ...p, [sid]: (p[sid] ?? 1) + 1 }))}
+                                      className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">+</button>
+                                    <span className="text-[11px] tabular-nums text-foreground font-medium ml-1">{fmt(totalCombo)}</span>
                                     <button
                                       onClick={() => setCombosModo(p => ({ ...p, [sid]: 'detalhado' }))}
-                                      className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors">
+                                      className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors ml-1">
                                       detalhar
                                     </button>
                                   </div>
@@ -1216,7 +1235,7 @@ function OrderDialog({
                                   {itensCombo.map(c => (
                                     <div key={c.item_id} className="flex items-center justify-between gap-1">
                                       <span className="text-[10px] text-muted-foreground/50 truncate min-w-0">{c.nome}</span>
-                                      <span className="text-[10px] text-muted-foreground/35 tabular-nums shrink-0">×{c.quantidade}</span>
+                                      <span className="text-[10px] text-muted-foreground/35 tabular-nums shrink-0">×{c.quantidade * qtdCombo}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -1322,7 +1341,12 @@ function OrderDialog({
                     const ok = ing.disponivel >= ing.necessario
                     return (
                       <div key={ing.id} className={cn('grid grid-cols-[1fr_44px_44px_20px] gap-1 items-center px-4 py-2', !ok && 'bg-red-500/[0.04]')}>
-                        <span className="text-xs font-medium truncate">{ing.nome}</span>
+                        <div className="min-w-0">
+                          <span className="text-xs font-medium truncate block">{ing.nome}</span>
+                          {ing.doCombo > 0 && ing.extra > 0 && (
+                            <span className="text-[9px] text-muted-foreground/50">{ing.doCombo} combo · {ing.extra} extra</span>
+                          )}
+                        </div>
                         <span className="text-xs text-right tabular-nums text-muted-foreground">{ing.necessario}</span>
                         <span className={cn('text-xs text-right tabular-nums font-medium', ok ? 'text-green-400' : 'text-red-400')}>{ing.disponivel}</span>
                         <span className="flex justify-center">
@@ -1341,7 +1365,7 @@ function OrderDialog({
         <div className="flex items-center gap-2 px-5 py-3 border-t border-border shrink-0">
           {cart.length > 0 && (
             <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive gap-1.5 mr-auto"
-              onClick={() => { setCart([]); setEditandoPreco(new Set()); setDraftOrigem({}); setDraftPreco({}) }}>
+              onClick={() => { setCart([]); setEditandoPreco(new Set()); setDraftOrigem({}); setDraftPreco({}); setCombosModo({}); setCombosQtd({}) }}>
               <Trash2 className="h-3.5 w-3.5" />Limpar tudo
             </Button>
           )}
@@ -1398,6 +1422,7 @@ export function VendasClient({
   const [saving, setSaving] = useState(false)
   const [filtro, setFiltro] = useState<string>(filtroInicial)
   const [mostrarTodosConcluidos, setMostrarTodosConcluidos] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
   const receitaMap = useMemo(() => {
@@ -1410,6 +1435,40 @@ export function VendasClient({
     estoqueState.forEach(e => { map[e.item_id] = e.quantidade })
     return map
   }, [estoqueState])
+
+  // Dados agregados das vendas selecionadas
+  const agregado = useMemo(() => {
+    if (selectedIds.size === 0) return null
+    const vs = vendas.filter(v => selectedIds.has(v.id))
+    const totalValor = vs.reduce((s, v) => {
+      const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
+      return s + sub * (1 - v.desconto_pct / 100)
+    }, 0)
+    const itemTotals: Record<string, { nome: string; qtd: number }> = {}
+    for (const v of vs) {
+      for (const it of v.itens) {
+        if (!it.item_id) continue
+        if (!itemTotals[it.item_id]) itemTotals[it.item_id] = { nome: it.item_nome, qtd: 0 }
+        itemTotals[it.item_id].qtd += it.quantidade
+      }
+    }
+    const matTotals: Record<string, { nome: string; necessario: number; disponivel: number }> = {}
+    for (const v of vs) {
+      for (const it of v.itens.filter(it => it.origem === 'fabricar' && it.item_id)) {
+        for (const r of receitaMap[it.item_id!] ?? []) {
+          const nome = itemMap[r.ingrediente_id]?.nome ?? r.ingrediente_id
+          if (!matTotals[r.ingrediente_id]) matTotals[r.ingrediente_id] = { nome, necessario: 0, disponivel: estoqueMap[r.ingrediente_id] ?? 0 }
+          matTotals[r.ingrediente_id].necessario += r.quantidade * it.quantidade
+        }
+      }
+    }
+    return {
+      count: vs.length,
+      totalValor,
+      itens: Object.entries(itemTotals).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.nome.localeCompare(b.nome)),
+      materiais: Object.entries(matTotals).map(([id, v]) => ({ id, ...v })).sort((a, b) => a.nome.localeCompare(b.nome)),
+    }
+  }, [selectedIds, vendas, receitaMap, itemMap, estoqueMap])
 
   const vendasFiltradas = useMemo(() => {
     if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue' && v.status !== 'cancelado')
@@ -1663,7 +1722,7 @@ export function VendasClient({
         </div>
       </div>
 
-      {(
+      <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6">
           {vendasFiltradas.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -1689,27 +1748,104 @@ export function VendasClient({
                   </button>
                 </div>
               )}
+              {selectedIds.size === 0 && (
+                <p className="text-[10px] text-muted-foreground/40 mb-3">Ctrl+clique para selecionar múltiplos pedidos</p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
                 {vendasFiltradas.map(venda => (
-                  <VendaCard key={venda.id} venda={venda}
-                    faccoes={faccoes}
-                    lojas={lojas}
-                    receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
-                    podeEditar={podeEditar} isOwner={venda.criado_por === userId}
-                    onStatusChange={handleStatusChange}
-                    onEntregar={handleEntregar}
-                    onDesfazerEntrega={handleDesfazerEntrega}
-                    onEdit={v => { setEditando(v); setFormOpen(true) }}
-                    onSolicitarCancelamento={handleSolicitarCancelamento}
-                    onDelete={handleDeletarVendaAtiva}
-                    servicos={servicos}
-                  />
+                  <div key={venda.id}
+                    className={cn('relative', selectedIds.has(venda.id) && 'ring-2 ring-primary/60 rounded-lg')}
+                    onClick={e => {
+                      if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault()
+                        setSelectedIds(prev => { const n = new Set(prev); n.has(venda.id) ? n.delete(venda.id) : n.add(venda.id); return n })
+                      }
+                    }}>
+                    {selectedIds.has(venda.id) && (
+                      <div className="absolute top-1.5 right-1.5 z-10 h-4 w-4 rounded-full bg-primary flex items-center justify-center pointer-events-none">
+                        <Check className="h-2.5 w-2.5 text-primary-foreground" />
+                      </div>
+                    )}
+                    <VendaCard venda={venda}
+                      faccoes={faccoes}
+                      lojas={lojas}
+                      receitaMap={receitaMap} estoqueMap={estoqueMap} itemMap={itemMap}
+                      podeEditar={podeEditar} isOwner={venda.criado_por === userId}
+                      onStatusChange={handleStatusChange}
+                      onEntregar={handleEntregar}
+                      onDesfazerEntrega={handleDesfazerEntrega}
+                      onEdit={v => { setEditando(v); setFormOpen(true) }}
+                      onSolicitarCancelamento={handleSolicitarCancelamento}
+                      onDelete={handleDeletarVendaAtiva}
+                      servicos={servicos}
+                    />
+                  </div>
                 ))}
               </div>
             </>
           )}
         </div>
-      )}
+
+        {/* Painel lateral: seleção múltipla */}
+        {agregado && (
+          <div className="w-72 shrink-0 border-l border-border flex flex-col overflow-y-auto">
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {agregado.count} pedido{agregado.count !== 1 ? 's' : ''} selecionado{agregado.count !== 1 ? 's' : ''}
+              </p>
+              <button onClick={() => setSelectedIds(new Set())}
+                className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Total */}
+              <div className="flex justify-between items-center border-b border-border/50 pb-3">
+                <span className="text-xs text-muted-foreground">Total</span>
+                <span className="text-sm font-bold text-primary">{fmt(agregado.totalValor)}</span>
+              </div>
+
+              {/* Itens agregados */}
+              {agregado.itens.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Itens</p>
+                  <div className="space-y-1">
+                    {agregado.itens.map(it => (
+                      <div key={it.id} className="flex justify-between gap-2 items-center">
+                        <span className="text-xs truncate min-w-0">{it.nome}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground shrink-0">×{it.qtd}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Materiais agregados */}
+              {agregado.materiais.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Matérias-primas</p>
+                  <div className="space-y-1">
+                    {agregado.materiais.map(m => {
+                      const ok = m.disponivel >= m.necessario
+                      return (
+                        <div key={m.id} className="flex justify-between gap-2 items-center">
+                          <span className="text-xs truncate min-w-0">{m.nome}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs tabular-nums text-muted-foreground">{m.necessario}×</span>
+                            <span className={cn('text-[10px] tabular-nums font-medium', ok ? 'text-green-400' : 'text-red-400')}>{m.disponivel}</span>
+                            {ok ? <Check className="h-2.5 w-2.5 text-green-400" /> : <AlertTriangle className="h-2.5 w-2.5 text-red-400" />}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       <OrderDialog
         open={formOpen}
