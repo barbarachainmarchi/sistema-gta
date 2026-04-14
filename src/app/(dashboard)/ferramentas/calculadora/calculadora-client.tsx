@@ -67,7 +67,6 @@ interface Props {
 
 type BatchEntry = { item_id: string; quantidade: number; loja_id: string }
 type Aba = 'favoritos' | 'meus' | 'todos'
-type Modo = 'simples' | 'producao'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -252,9 +251,9 @@ export function CalculadoraClient({
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
   const [servicosSelecionados, setServicosSelecionados] = useState<Servico[]>([])
   const [modoSujo, setModoSujo] = useState(false)
-  const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
+  const [imgbbResumoLoading, setImgbbResumoLoading] = useState(false)
   const [fonte, setFonte] = useState<FonteConfig>(FONTE_PADRAO)
   const [fonteModalAberto, setFonteModalAberto] = useState(false)
   const [ingExpandido, setIngExpandido] = useState(false)
@@ -552,7 +551,7 @@ export function CalculadoraClient({
       linhas.push({ text: `Peso: ${fmtKg(totais.pesoProdutos)}`, dim: true })
     }
 
-    if (modo === 'producao' && ingredientesAgregados.length > 0) {
+    if (ingredientesAgregados.length > 0) {
       linhas.push({ text: '' })
       linhas.push({ text: '─── Ingredientes ───', dim: true })
       for (const ing of ingredientesAgregados) {
@@ -573,7 +572,42 @@ export function CalculadoraClient({
     }
 
     return linhas
-  }, [batch, itemMap, lojaMap, getPrecoItem, totais, modo, ingredientesAgregados, lojasPorIng, modoSujo])
+  }, [batch, itemMap, lojaMap, getPrecoItem, totais, ingredientesAgregados, lojasPorIng, modoSujo])
+
+  const gerarLinhasResumoCompacto = useCallback(() => {
+    const linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[] = []
+    linhas.push({ text: 'ORÇAMENTO', bold: true })
+    linhas.push({ text: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), dim: true })
+    linhas.push({ text: '' })
+
+    for (const entry of batch) {
+      const item = itemMap[entry.item_id]
+      if (!item) continue
+      linhas.push({ text: `${item.nome}  ×${entry.quantidade}` })
+    }
+
+    if (ingredientesAgregados.length > 0) {
+      linhas.push({ text: '' })
+      linhas.push({ text: '─── Ingredientes ───', dim: true })
+      for (const ing of ingredientesAgregados) {
+        const lojaId = lojasPorIng[ing.ingrediente_id]
+        const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+        const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+        const custo = precoUnit != null ? `  ${fmt(precoUnit * ing.totalQty)}` : ''
+        const peso = ing.totalPeso > 0 ? ` (${fmtKg(ing.totalPeso)})` : ''
+        linhas.push({
+          text: `${ing.ingrediente?.nome ?? ing.ingrediente_id}: ${fmtNum(ing.totalQty)}×${peso}${custo}`,
+          indent: true,
+        })
+      }
+      if (totais.custoIng > 0) {
+        linhas.push({ text: '' })
+        linhas.push({ text: `Custo ingredientes: ${fmt(totais.custoIng)}`, bold: true })
+      }
+    }
+
+    return linhas
+  }, [batch, itemMap, ingredientesAgregados, lojasPorIng, modoSujo, totais])
 
   const copiarTexto = useCallback(() => {
     const linhas = gerarLinhasResumo()
@@ -602,6 +636,25 @@ export function CalculadoraClient({
       setImgbbLoading(false)
     }
   }, [batch.length, gerarLinhasResumo])
+
+  const enviarImgbbResumo = useCallback(async () => {
+    if (batch.length === 0) return
+    setImgbbResumoLoading(true)
+    try {
+      const key = await getImgbbKey()
+      if (!key) { toast.error('Chave imgbb não configurada', { description: 'Acesse Admin → Integrações para configurar.' }); return }
+      const linhas = gerarLinhasResumoCompacto()
+      const canvas = gerarCanvas(linhas)
+      const base64 = canvas.toDataURL('image/png').split(',')[1]
+      const url = await uploadImgbb(base64, key, 'calculadora-resumo')
+      await navigator.clipboard.writeText(url)
+      toast.success('URL copiada!')
+    } catch (e: unknown) {
+      toast.error('Erro ao enviar imagem', { description: e instanceof Error ? e.message : undefined })
+    } finally {
+      setImgbbResumoLoading(false)
+    }
+  }, [batch.length, gerarLinhasResumoCompacto])
 
   const temFiltroAtivo = filterCategoria !== '' || filterLoja !== ''
 
@@ -729,22 +782,9 @@ export function CalculadoraClient({
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-              Orçamento{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
-            </h3>
-            <div className="flex bg-muted/40 rounded-md p-0.5 gap-0.5 shrink-0">
-              {(['simples', 'producao'] as Modo[]).map(m => (
-                <button key={m} onClick={() => setModo(m)}
-                  className={cn(
-                    'px-3 py-1 rounded text-xs font-medium transition-colors',
-                    modo === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  )}>
-                  {m === 'simples' ? 'Simples' : 'Produção'}
-                </button>
-              ))}
-            </div>
-          </div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+            Orçamento{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
+          </h3>
 
           <div className="flex items-center gap-2 shrink-0">
             {batch.length > 0 && (
@@ -921,35 +961,61 @@ export function CalculadoraClient({
               </div>
             )}
 
-            {/* Resumo compacto dos itens */}
-            {batch.length > 0 && (
-              <div className="px-4 py-2 border-t border-border/60 shrink-0">
-                <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
-                  {batch.map((entry, i) => {
-                    const nome = itemMap[entry.item_id]?.nome ?? '—'
-                    return <span key={entry.item_id}>{nome} ({entry.quantidade}×){i < batch.length - 1 ? <span className="mx-1 text-border">·</span> : null}</span>
-                  })}
-                </p>
-              </div>
-            )}
+          </div>
+        )}
+      </div>
 
-            {/* Ingredientes colapsáveis — modo produção */}
-            {modo === 'producao' && (
-              <div className="border-t border-border/60 shrink-0">
+      {/* ── Col 3: Resumo + Ingredientes ── */}
+      <div className="w-56 shrink-0 border-l border-border flex flex-col overflow-hidden bg-muted/[0.02]">
+
+        {/* Header */}
+        <div className="px-3 py-3 border-b border-border shrink-0 flex items-center justify-between">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
+          {batch.length > 0 && (
+            <button onClick={enviarImgbbResumo} disabled={imgbbResumoLoading}
+              title="Gerar imagem do resumo (copia URL)"
+              className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
+              {imgbbResumoLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
+
+        {batch.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-[11px] text-muted-foreground/40 text-center px-3">Vazio</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto flex flex-col">
+
+            {/* Itens resumidos */}
+            <div className="px-3 py-3 space-y-1 border-b border-border/50">
+              {batch.map(entry => {
+                const nome = itemMap[entry.item_id]?.nome ?? '—'
+                return (
+                  <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
+                    <span className="text-[11px] text-foreground/70 truncate">{nome}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{entry.quantidade}×</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Ingredientes colapsáveis */}
+            <div className="flex flex-col">
                 <button
                   onClick={() => setIngExpandido(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
+                  className="flex items-center justify-between px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
                   <span>
-                    Ingredientes necessários
+                    Ingredientes
                     {ingredientesAgregados.length > 0 && <span className="ml-1 normal-case font-normal">({ingredientesAgregados.length})</span>}
                   </span>
-                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', ingExpandido && 'rotate-180')} />
+                  <ChevronDown className={cn('h-3 w-3 transition-transform', ingExpandido && 'rotate-180')} />
                 </button>
 
                 {ingExpandido && (
-                  <div className="px-4 pb-4 space-y-1">
+                  <div className="px-3 pb-3 space-y-2">
                     {ingredientesAgregados.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhum item tem receita cadastrada.</p>
+                      <p className="text-[11px] text-muted-foreground">Nenhum tem receita.</p>
                     ) : (
                       <>
                         {ingredientesAgregados.map(ing => {
@@ -958,47 +1024,45 @@ export function CalculadoraClient({
                           const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
                           const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
                           return (
-                            <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
-                              <div className="flex items-center gap-1 min-w-0 flex-1">
-                                <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                                <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
-                                {ing.totalPeso > 0 && (
-                                  <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
-                                )}
+                            <div key={ing.ingrediente_id} className="space-y-1">
+                              <div className="flex items-baseline justify-between gap-1 min-w-0">
+                                <span className="text-[11px] text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                                <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtNum(ing.totalQty)}×</span>
                               </div>
-                              {ing.lojasDisponiveis.length > 0 && (
-                                <Select
-                                  value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
-                                  onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
-                                >
-                                  <SelectTrigger className="h-6 text-[10px] border-border/50 px-1.5 shrink-0 w-[72px]">
-                                    <SelectValue placeholder="loja" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="sem">— sem —</SelectItem>
-                                    {ing.lojasDisponiveis.map(l => {
-                                      const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
-                                      return (
-                                        <SelectItem key={l.loja_id} value={l.loja_id}>
-                                          {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
-                                        </SelectItem>
-                                      )
-                                    })}
-                                  </SelectContent>
-                                </Select>
-                              )}
-                              <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
-                                {subtotal != null ? fmt(subtotal) : '—'}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                {ing.lojasDisponiveis.length > 0 && (
+                                  <Select
+                                    value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
+                                    onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
+                                  >
+                                    <SelectTrigger className="h-5 text-[9px] border-border/50 px-1 flex-1">
+                                      <SelectValue placeholder="loja" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="sem">— sem —</SelectItem>
+                                      {ing.lojasDisponiveis.map(l => {
+                                        const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
+                                        return (
+                                          <SelectItem key={l.loja_id} value={l.loja_id}>
+                                            {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
+                                          </SelectItem>
+                                        )
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                <span className={cn('text-[10px] tabular-nums shrink-0', subtotal != null ? 'text-foreground/60' : 'text-muted-foreground/30')}>
+                                  {subtotal != null ? fmt(subtotal) : '—'}
+                                </span>
+                              </div>
                             </div>
                           )
                         })}
                         {totais.custoIng > 0 && (
-                          <div className="mt-2 pt-2 border-t border-border/40 flex justify-between text-xs font-semibold">
-                            <span className="text-muted-foreground">Custo ingredientes</span>
+                          <div className="pt-2 border-t border-border/40 flex justify-between text-[11px] font-semibold">
+                            <span className="text-muted-foreground">Total</span>
                             <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
                               {fmt(totais.custoIng)}
-                              {!totais.custoIngCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
                             </span>
                           </div>
                         )}
@@ -1007,7 +1071,7 @@ export function CalculadoraClient({
                   </div>
                 )}
               </div>
-            )}
+            </div>
 
           </div>
         )}
