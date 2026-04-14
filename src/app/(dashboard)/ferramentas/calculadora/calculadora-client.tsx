@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -18,13 +18,15 @@ import { toast } from 'sonner'
 const CALC_FONTE_KEY = 'calculadora-fonte'
 
 type FonteConfig = {
-  tamanho: number   // 11–17
+  tamanho: number           // 11–20 (col 1: lista)
+  tamanhoSelecionados: number // 11–20 (col 2: selecionados)
   negrito: boolean
-  corNome: string   // '' = padrão do tema
-  corValor: string  // '' = usa verde/laranja padrão
+  corNome: string           // '' = padrão do tema
+  corValor: string          // '' = usa verde/laranja padrão
+  mostrarLojas: boolean     // exibir select de loja nos selecionados
 }
 
-const FONTE_PADRAO: FonteConfig = { tamanho: 13, negrito: false, corNome: '', corValor: '' }
+const FONTE_PADRAO: FonteConfig = { tamanho: 13, tamanhoSelecionados: 13, negrito: false, corNome: '', corValor: '', mostrarLojas: true }
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -255,6 +257,7 @@ export function CalculadoraClient({
   const [imgbbLoading, setImgbbLoading] = useState(false)
   const [fonte, setFonte] = useState<FonteConfig>(FONTE_PADRAO)
   const [fonteModalAberto, setFonteModalAberto] = useState(false)
+  const [ingExpandido, setIngExpandido] = useState(false)
 
   useEffect(() => {
     try {
@@ -721,18 +724,53 @@ export function CalculadoraClient({
         </div>
       </aside>
 
-      {/* ── Col 2: Itens selecionados ── */}
-      <div className="w-[35%] shrink-0 flex flex-col border-r border-border bg-muted/[0.03] overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Selecionados{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
-          </h3>
-          {batch.length > 0 && (
-            <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
-              className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
-              <X className="h-3 w-3" /> Limpar
-            </button>
-          )}
+      {/* ── Col 2: Orçamento ── */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+              Orçamento{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
+            </h3>
+            <div className="flex bg-muted/40 rounded-md p-0.5 gap-0.5 shrink-0">
+              {(['simples', 'producao'] as Modo[]).map(m => (
+                <button key={m} onClick={() => setModo(m)}
+                  className={cn(
+                    'px-3 py-1 rounded text-xs font-medium transition-colors',
+                    modo === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  )}>
+                  {m === 'simples' ? 'Simples' : 'Produção'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {batch.length > 0 && (
+              <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
+                className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
+                <X className="h-3 w-3" /> Limpar
+              </button>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px] text-muted-foreground">Sujo</Label>
+              <Switch checked={modoSujo} onCheckedChange={setModoSujo} />
+            </div>
+            {batch.length > 0 && (
+              <>
+                <button onClick={copiarTexto}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]">
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                <button onClick={enviarImgbb} disabled={imgbbLoading}
+                  title="Gerar imagem e enviar para imgbb (copia URL)"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06] disabled:opacity-40">
+                  {imgbbLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {batch.length === 0 ? (
@@ -742,7 +780,9 @@ export function CalculadoraClient({
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto flex flex-col">
-            <div className="flex-1 divide-y divide-border/40">
+
+            {/* Itens editáveis */}
+            <div className="flex-1">
               {batch.map(entry => {
                 const item = itemMap[entry.item_id]
                 const lojasItem = lojaPrecoPorItem[entry.item_id] ?? []
@@ -751,8 +791,8 @@ export function CalculadoraClient({
                 const peso = item?.peso != null ? item.peso * entry.quantidade : null
 
                 return (
-                  <div key={entry.item_id} className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
-                    {lojasItem.length > 0 && (
+                  <div key={entry.item_id} className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 hover:bg-white/[0.01]">
+                    {fonte.mostrarLojas && lojasItem.length > 0 && (
                       <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
                         <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
                           <SelectValue placeholder="— loja —" />
@@ -768,33 +808,32 @@ export function CalculadoraClient({
                       </Select>
                     )}
                     <span className="flex-1 min-w-0 truncate" style={{
-                      fontSize: `${fonte.tamanho}px`,
+                      fontSize: `${fonte.tamanhoSelecionados}px`,
                       fontWeight: fonte.negrito ? 600 : 500,
                       ...(fonte.corNome ? { color: fonte.corNome } : {}),
                     }}>{item?.nome ?? '—'}</span>
                     <div className="flex items-center gap-0.5 shrink-0">
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
-                        className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                        <Minus className="h-2.5 w-2.5" />
+                        className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                        <Minus className="h-3 w-3" />
                       </button>
                       <Input type="number" value={entry.quantidade}
                         onChange={e => setQtd(entry.item_id, Math.max(1, parseInt(e.target.value) || 1))}
-                        className="h-6 w-16 text-center text-xs px-0.5" />
+                        className="h-7 w-16 text-center text-sm px-0.5" />
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
-                        className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                        <Plus className="h-2.5 w-2.5" />
+                        className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                        <Plus className="h-3 w-3" />
                       </button>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0 min-w-[100px] justify-end">
+                    <div className="flex items-center gap-2 shrink-0 min-w-[120px] justify-end">
                       {peso != null && peso > 0 && (
                         <span className="text-[10px] text-muted-foreground/50 tabular-nums">{fmtKg(peso)}</span>
                       )}
                       {total != null ? (
-                        <span className="tabular-nums font-semibold text-sm" style={{
+                        <span className="tabular-nums font-semibold" style={{
+                          fontSize: `${fonte.tamanhoSelecionados}px`,
                           color: fonte.corValor || (modoSujo ? '#fb923c' : '#34d399'),
-                        }}>
-                          {fmt(total)}
-                        </span>
+                        }}>{fmt(total)}</span>
                       ) : (
                         <span className="text-muted-foreground/30 text-sm">—</span>
                       )}
@@ -808,11 +847,12 @@ export function CalculadoraClient({
               })}
             </div>
 
-            <div className="px-3 py-3 border-t border-border/60 bg-muted/[0.04] shrink-0 space-y-1">
+            {/* Totais */}
+            <div className="px-4 py-3 border-t border-border/60 bg-muted/[0.04] shrink-0 space-y-1">
               {totais.custoItens > 0 ? (
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm font-semibold">
                   <span className="text-muted-foreground">Total</span>
-                  <span className={cn('font-bold tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                  <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
                     {fmt(totais.custoItens)}
                     {!totais.custoItensCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
                   </span>
@@ -827,242 +867,136 @@ export function CalculadoraClient({
                 </div>
               )}
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* ── Col 3: Resumo ── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
-          <div className="flex bg-muted/40 rounded-md p-0.5 gap-0.5">
-            {(['simples', 'producao'] as Modo[]).map(m => (
-              <button key={m} onClick={() => setModo(m)}
-                className={cn(
-                  'px-3 py-1 rounded text-xs font-medium transition-colors',
-                  modo === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                )}>
-                {m === 'simples' ? 'Simples' : 'Produção'}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <Label className="text-[11px] text-muted-foreground">Sujo</Label>
-              <Switch checked={modoSujo} onCheckedChange={setModoSujo} />
-            </div>
-
-            {batch.length > 0 && (
-              <>
-                <button onClick={copiarTexto}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]">
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-
-                <button
-                  onClick={enviarImgbb}
-                  disabled={imgbbLoading}
-                  title="Gerar imagem e enviar para imgbb (copia URL)"
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06] disabled:opacity-40">
-                  {imgbbLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {batch.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-xs text-muted-foreground text-center px-4">Adicione itens para ver o resumo</p>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto p-4 space-y-5">
-
-            {/* Itens */}
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">Itens</p>
-              <div className="space-y-2">
-                {batch.map(entry => {
-                  const item = itemMap[entry.item_id]
-                  const lojaNome = entry.loja_id ? (lojaMap[entry.loja_id]?.nome ?? '') : ''
-                  const preco = getPrecoItem(entry)
-                  const total = preco != null ? preco * entry.quantidade : null
-                  const pesoItem = item?.peso != null ? item.peso * entry.quantidade : null
-
+            {/* Kits selecionados */}
+            {servicosSelecionados.length > 0 && (
+              <div className="px-4 py-3 border-t border-border/60 space-y-3 shrink-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Kits selecionados</p>
+                {servicosSelecionados.map(servico => {
+                  const itensKit = servicoItens.filter(si => si.servico_id === servico.id)
+                  let somaItens = 0; let completo = itensKit.length > 0
+                  for (const si of itensKit) {
+                    const batchEntry = batch.find(b => b.item_id === si.item_id)
+                    if (!batchEntry) { completo = false; continue }
+                    const preco = getPrecoItem(batchEntry)
+                    if (preco == null) { completo = false; continue }
+                    somaItens += preco * si.quantidade
+                  }
+                  const kitPreco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : (servico.preco_limpo ?? servico.preco_sujo)
+                  const diferenca = kitPreco != null && completo && somaItens > 0 ? kitPreco - somaItens : null
+                  const pct = diferenca != null && somaItens > 0 ? (diferenca / somaItens * 100) : null
                   return (
-                    <div key={entry.item_id} className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        {lojaNome && (
-                          <span className="text-[10px] text-muted-foreground shrink-0 bg-muted/50 px-1.5 py-0.5 rounded font-medium">
-                            {lojaNome}
-                          </span>
-                        )}
-                        <span className="text-sm font-medium truncate">{item?.nome ?? '—'}</span>
-                        <span className="text-xs text-muted-foreground shrink-0">×{entry.quantidade}</span>
+                    <div key={servico.id} className="space-y-1 text-xs">
+                      <div className="flex items-center gap-1 font-semibold text-foreground/80">
+                        <Layers className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{servico.nome}</span>
+                        <button onClick={() => setServicosSelecionados(prev => prev.filter(s => s.id !== servico.id))}
+                          className="ml-auto shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors">
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {pesoItem != null && pesoItem > 0 && (
-                          <span className="text-[10px] text-muted-foreground/60 tabular-nums">{fmtKg(pesoItem)}</span>
-                        )}
-                        {total != null ? (
-                          <span className={cn('text-sm tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                            {fmt(total)}
+                      {itensKit.length > 0 && completo && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Soma dos itens</span><span className="tabular-nums">{fmt(somaItens)}</span>
+                        </div>
+                      )}
+                      {kitPreco != null && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Preço do kit</span>
+                          <span className={cn('tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>{fmt(kitPreco)}</span>
+                        </div>
+                      )}
+                      {diferenca != null && pct != null && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{diferenca < 0 ? 'Desconto' : 'Acréscimo'}</span>
+                          <span className={cn('tabular-nums font-semibold', diferenca < 0 ? 'text-green-400' : 'text-red-400')}>
+                            {diferenca < 0 ? '-' : '+'}{fmt(Math.abs(diferenca))} ({Math.abs(pct).toFixed(1)}%)
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground/30 text-sm">—</span>
-                        )}
-                      </div>
+                        </div>
+                      )}
+                      {itensKit.length === 0 && <p className="text-muted-foreground/50 italic">Serviço sem itens</p>}
                     </div>
                   )
                 })}
               </div>
-            </div>
+            )}
 
-            {/* Totais itens */}
-            <div className="pt-3 border-t border-border/60 space-y-1.5">
-              {totais.custoItens > 0 && (
-                <div className="flex justify-between text-sm font-semibold">
-                  <span className="text-muted-foreground">Total</span>
-                  <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                    {fmt(totais.custoItens)}
-                    {!totais.custoItensCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
+            {/* Ingredientes colapsáveis — modo produção */}
+            {modo === 'producao' && (
+              <div className="border-t border-border/60 shrink-0">
+                <button
+                  onClick={() => setIngExpandido(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
+                  <span>
+                    Ingredientes necessários
+                    {ingredientesAgregados.length > 0 && <span className="ml-1 normal-case font-normal">({ingredientesAgregados.length})</span>}
                   </span>
-                </div>
-              )}
-              {totais.pesoProdutos > 0 && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Peso total</span>
-                  <span className="tabular-nums">{fmtKg(totais.pesoProdutos)}</span>
-                </div>
-              )}
-            </div>
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', ingExpandido && 'rotate-180')} />
+                </button>
 
-            {/* Ingredientes — modo produção */}
-            {modo === 'producao' && ingredientesAgregados.length > 0 && (
-              <div className="pt-3 border-t border-border/60">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">
-                  Ingredientes necessários
-                </p>
-                <div className="space-y-1">
-                  {ingredientesAgregados.map(ing => {
-                    const lojaId = lojasPorIng[ing.ingrediente_id]
-                    const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
-                    const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
-                    const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
-
-                    return (
-                      <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
-                        <div className="flex items-center gap-1 min-w-0 flex-1">
-                          <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                          <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
-                          {ing.totalPeso > 0 && (
-                            <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
-                          )}
-                        </div>
-                        {ing.lojasDisponiveis.length > 0 && (
-                          <Select
-                            value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
-                            onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
-                          >
-                            <SelectTrigger className="h-6 text-[10px] border-border/50 px-1.5 shrink-0 w-[72px]">
-                              <SelectValue placeholder="loja" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="sem">— sem —</SelectItem>
-                              {ing.lojasDisponiveis.map(l => {
-                                const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
-                                return (
-                                  <SelectItem key={l.loja_id} value={l.loja_id}>
-                                    {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
-                                  </SelectItem>
-                                )
-                              })}
-                            </SelectContent>
-                          </Select>
+                {ingExpandido && (
+                  <div className="px-4 pb-4 space-y-1">
+                    {ingredientesAgregados.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhum item tem receita cadastrada.</p>
+                    ) : (
+                      <>
+                        {ingredientesAgregados.map(ing => {
+                          const lojaId = lojasPorIng[ing.ingrediente_id]
+                          const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+                          const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+                          const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
+                          return (
+                            <div key={ing.ingrediente_id} className="flex items-center gap-1.5 text-xs min-w-0">
+                              <div className="flex items-center gap-1 min-w-0 flex-1">
+                                <span className="text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                                <span className="text-muted-foreground shrink-0">{fmtNum(ing.totalQty)}×</span>
+                                {ing.totalPeso > 0 && (
+                                  <span className="text-muted-foreground/50 shrink-0">{fmtKg(ing.totalPeso)}</span>
+                                )}
+                              </div>
+                              {ing.lojasDisponiveis.length > 0 && (
+                                <Select
+                                  value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
+                                  onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
+                                >
+                                  <SelectTrigger className="h-6 text-[10px] border-border/50 px-1.5 shrink-0 w-[72px]">
+                                    <SelectValue placeholder="loja" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="sem">— sem —</SelectItem>
+                                    {ing.lojasDisponiveis.map(l => {
+                                      const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
+                                      return (
+                                        <SelectItem key={l.loja_id} value={l.loja_id}>
+                                          {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
+                                        </SelectItem>
+                                      )
+                                    })}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
+                                {subtotal != null ? fmt(subtotal) : '—'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                        {totais.custoIng > 0 && (
+                          <div className="mt-2 pt-2 border-t border-border/40 flex justify-between text-xs font-semibold">
+                            <span className="text-muted-foreground">Custo ingredientes</span>
+                            <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                              {fmt(totais.custoIng)}
+                              {!totais.custoIngCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
+                            </span>
+                          </div>
                         )}
-                        <span className={cn('tabular-nums shrink-0', subtotal != null ? 'text-foreground/70' : 'text-muted-foreground/30')}>
-                          {subtotal != null ? fmt(subtotal) : '—'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {totais.custoIng > 0 && (
-                  <div className="mt-3 pt-2 border-t border-border/40 flex justify-between text-xs font-semibold">
-                    <span className="text-muted-foreground">Custo ingredientes</span>
-                    <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                      {fmt(totais.custoIng)}
-                      {!totais.custoIngCompleto && <span className="text-[10px] font-normal text-muted-foreground ml-1">*parcial</span>}
-                    </span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
-            {modo === 'producao' && ingredientesAgregados.length === 0 && (
-              <div className="pt-3 border-t border-border/60">
-                <p className="text-xs text-muted-foreground">Nenhum item selecionado tem receita cadastrada.</p>
-              </div>
-            )}
-
-            {/* Kits selecionados */}
-            {servicosSelecionados.length > 0 && (
-              <div className="pt-3 border-t border-border/60">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2.5">Kits selecionados</p>
-                <div className="space-y-3">
-                  {servicosSelecionados.map(servico => {
-                    const itensKit = servicoItens.filter(si => si.servico_id === servico.id)
-                    let somaItens = 0; let completo = itensKit.length > 0
-                    for (const si of itensKit) {
-                      const batchEntry = batch.find(b => b.item_id === si.item_id)
-                      if (!batchEntry) { completo = false; continue }
-                      const preco = getPrecoItem(batchEntry)
-                      if (preco == null) { completo = false; continue }
-                      somaItens += preco * si.quantidade
-                    }
-                    const kitPreco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : (servico.preco_limpo ?? servico.preco_sujo)
-                    const diferenca = kitPreco != null && completo && somaItens > 0 ? kitPreco - somaItens : null
-                    const pct = diferenca != null && somaItens > 0 ? (diferenca / somaItens * 100) : null
-                    return (
-                      <div key={servico.id} className="space-y-1 text-xs">
-                        <div className="flex items-center gap-1 font-semibold text-foreground/80">
-                          <Layers className="h-3 w-3 shrink-0" />
-                          <span className="truncate">{servico.nome}</span>
-                          <button onClick={() => setServicosSelecionados(prev => prev.filter(s => s.id !== servico.id))}
-                            className="ml-auto shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors">
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                        {itensKit.length > 0 && completo && (
-                          <div className="flex justify-between text-muted-foreground">
-                            <span>Soma dos itens</span>
-                            <span className="tabular-nums">{fmt(somaItens)}</span>
-                          </div>
-                        )}
-                        {kitPreco != null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Preço do kit</span>
-                            <span className={cn('tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>{fmt(kitPreco)}</span>
-                          </div>
-                        )}
-                        {diferenca != null && pct != null && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">{diferenca < 0 ? 'Desconto' : 'Acréscimo'}</span>
-                            <span className={cn('tabular-nums font-semibold', diferenca < 0 ? 'text-green-400' : 'text-red-400')}>
-                              {diferenca < 0 ? '-' : '+'}{fmt(Math.abs(diferenca))} ({Math.abs(pct).toFixed(1)}%)
-                            </span>
-                          </div>
-                        )}
-                        {itensKit.length === 0 && (
-                          <p className="text-muted-foreground/50 italic">Serviço sem itens</p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1075,9 +1009,9 @@ export function CalculadoraClient({
           </DialogHeader>
           <div className="space-y-4 py-1">
 
-            {/* Tamanho */}
+            {/* Tamanho — Lista */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Tamanho da letra</Label>
+              <Label className="text-xs text-muted-foreground">Letra — Lista</Label>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => salvarFonte({ ...fonte, tamanho: Math.max(10, fonte.tamanho - 1) })}
@@ -1090,7 +1024,28 @@ export function CalculadoraClient({
                   className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
                   <Plus className="h-3 w-3" />
                 </button>
-                <span className="text-sm ml-2 truncate" style={{ fontSize: `${fonte.tamanho}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
+                <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanho}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
+                  Preview
+                </span>
+              </div>
+            </div>
+
+            {/* Tamanho — Orçamento */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Letra — Orçamento</Label>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.max(10, fonte.tamanhoSelecionados - 1) })}
+                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                  <Minus className="h-3 w-3" />
+                </button>
+                <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanhoSelecionados}px</span>
+                <button
+                  onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.min(20, fonte.tamanhoSelecionados + 1) })}
+                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                  <Plus className="h-3 w-3" />
+                </button>
+                <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanhoSelecionados}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
                   Preview
                 </span>
               </div>
@@ -1102,6 +1057,15 @@ export function CalculadoraClient({
               <Switch
                 checked={fonte.negrito}
                 onCheckedChange={v => salvarFonte({ ...fonte, negrito: v })}
+              />
+            </div>
+
+            {/* Mostrar lojas nos selecionados */}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Mostrar lojas nos selecionados</Label>
+              <Switch
+                checked={fonte.mostrarLojas}
+                onCheckedChange={v => salvarFonte({ ...fonte, mostrarLojas: v })}
               />
             </div>
 
@@ -1146,7 +1110,7 @@ export function CalculadoraClient({
             </div>
 
             {/* Reset geral */}
-            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.negrito !== FONTE_PADRAO.negrito || fonte.corNome || fonte.corValor) && (
+            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.tamanhoSelecionados !== FONTE_PADRAO.tamanhoSelecionados || fonte.negrito !== FONTE_PADRAO.negrito || fonte.corNome || fonte.corValor || !fonte.mostrarLojas) && (
               <Button
                 variant="outline"
                 size="sm"
