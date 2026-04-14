@@ -280,29 +280,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   const [faixasPrecos, setFaixasPrecos] = useState<Record<string, FaixaPreco[]>>({})
   const [faixasForm, setFaixasForm] = useState<{ qtd_min: string; preco_sujo: string; preco_limpo: string }[]>([])
   const [precoSaving, setPrecoSaving] = useState(false)
-  // Batch add
-  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
-  const [buscaAdicionar, setBuscaAdicionar] = useState('')
-  const [categoriaAdicionar, setCategoriaAdicionar] = useState('')
-  const [adicionandoBatch, setAdicionandoBatch] = useState(false)
+  const [addingPreco, setAddingPreco] = useState(false)
+  const [newItemId, setNewItemId] = useState('')
+  const [buscaNovoPreco, setBuscaNovoPreco] = useState('')
 
   const produtosDisponiveis = useMemo(() => todosProdutos.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id)), [todosProdutos, faccaoPrecos])
-
-  const categoriasDisponiveis = useMemo(() => {
-    const cats = new Set<string>()
-    produtosDisponiveis.forEach(p => { if (p.categoria) cats.add(p.categoria) })
-    return Array.from(cats).sort()
-  }, [produtosDisponiveis])
-
-  const produtosDisponiveisFiltrados = useMemo(() => {
-    let lista = produtosDisponiveis
-    if (categoriaAdicionar) lista = lista.filter(p => p.categoria === categoriaAdicionar)
-    if (buscaAdicionar.trim()) {
-      const q = buscaAdicionar.toLowerCase()
-      lista = lista.filter(p => p.nome.toLowerCase().includes(q))
-    }
-    return lista
-  }, [produtosDisponiveis, buscaAdicionar, categoriaAdicionar])
 
   useEffect(() => {
     if (!open) return
@@ -394,23 +376,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     setEditPreco(produto)
   }
 
-  async function handleAdicionarSelecionados() {
-    if (selecionados.size === 0) return
-    setAdicionandoBatch(true)
-    const rows = Array.from(selecionados).map(itemId => ({
-      faccao_id: faccao.id, item_id: itemId, tipo: 'fixo' as const,
-      percentual: null, preco_sujo: null, preco_limpo: null,
-      parceria_tipo: null, parceria_pct: null, preco_sujo_parceria: null, preco_limpo_parceria: null,
-      desconto_qtd_minima: null, desconto_qtd_tipo: null, desconto_qtd_pct: null,
-      desconto_qtd_preco_sujo: null, desconto_qtd_preco_limpo: null,
-    }))
-    const { data, error } = await sb().from('faccao_item_precos').upsert(rows, { onConflict: 'faccao_id,item_id' }).select()
-    setAdicionandoBatch(false)
-    if (error) { toast.error('Erro ao adicionar produtos'); return }
-    const novos = (data as FaccaoPreco[]).filter(d => !faccaoPrecos.some(p => p.item_id === d.item_id))
-    onUpdateFaccaoPrecos([...faccaoPrecos, ...novos])
-    setSelecionados(new Set())
-    toast.success(`${rows.length} produto${rows.length !== 1 ? 's' : ''} adicionado${rows.length !== 1 ? 's' : ''}. Configure os preços clicando em Editar.`)
+  function handleAdicionarProduto() {
+    if (!newItemId) return
+    const produto = todosProdutos.find(p => p.id === newItemId)
+    if (!produto) return
+    setAddingPreco(false); setNewItemId(''); setBuscaNovoPreco('')
+    openEditPreco(produto)
   }
 
   async function handleSalvarPreco() {
@@ -652,20 +623,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           </section>
           </div>{/* end grid 2 colunas */}
 
-          {/* ── Produtos — full width, duas colunas ── */}
-          <section className="space-y-3 border-t border-border pt-4">
-            <p className="text-sm font-semibold flex items-center gap-2"><Package className="h-4 w-4 text-muted-foreground" />Produtos</p>
-            <div className="grid grid-cols-[1fr_280px] gap-4 items-start">
+          {/* ── Produtos + Descontos — lado a lado ── */}
+          <div className="grid grid-cols-2 gap-8 items-start border-t border-border pt-4">
 
-            {/* ── Coluna esquerda: Produtos da facção ── */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium text-muted-foreground">Produtos da facção <span className="text-foreground/60">({precosFiltrados.length})</span></p>
-                <div className="relative flex-1">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                  <Input placeholder="Buscar..." value={buscaProduto} onChange={e => setBuscaProduto(e.target.value)} className="pl-6 h-7 text-xs" />
-                </div>
+          {/* ── Coluna esquerda: Produtos da facção ── */}
+          <section className="space-y-2">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produtos ({precosFiltrados.length})</p>
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input placeholder="Buscar produto..." value={buscaProduto} onChange={e => setBuscaProduto(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0}>
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
             {precosFiltrados.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-6 rounded-lg border border-border border-dashed">
                 {buscaProduto ? 'Nenhum resultado' : 'Nenhum produto cadastrado'}
@@ -750,119 +722,19 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                 })}
               </div>
             )}
-            </div>{/* end left column */}
-
-            {/* ── Coluna direita: Meus produtos (para adicionar) ── */}
-            <div className="space-y-2 rounded-lg border border-border/60 bg-white/[0.015] p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                Meus produtos <span className="text-foreground/50">({produtosDisponiveisFiltrados.length})</span>
-                {selecionados.size > 0 && <span className="ml-1 text-primary"> · {selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''}</span>}
-              </p>
-
-              {/* Busca + categoria */}
-              <div className="space-y-1.5">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar produto..."
-                    value={buscaAdicionar}
-                    onChange={e => setBuscaAdicionar(e.target.value)}
-                    className="pl-6 h-7 text-xs"
-                  />
-                </div>
-                {categoriasDisponiveis.length > 0 && (
-                  <Select value={categoriaAdicionar || '_all'} onValueChange={v => setCategoriaAdicionar(v === '_all' ? '' : v)}>
-                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Todas as categorias" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_all">Todas as categorias</SelectItem>
-                      {categoriasDisponiveis.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-
-              {/* Ações de seleção */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setSelecionados(new Set(produtosDisponiveisFiltrados.map(p => p.id)))}
-                >
-                  Selecionar todos
-                </button>
-                {selecionados.size > 0 && (
-                  <>
-                    <span className="text-muted-foreground/40">·</span>
-                    <button
-                      className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setSelecionados(new Set())}
-                    >
-                      Desmarcar
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Lista de produtos disponíveis */}
-              {produtosDisponiveisFiltrados.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground/60 text-center py-4">
-                  {produtosDisponiveis.length === 0 ? 'Todos os produtos já foram adicionados' : 'Nenhum resultado'}
-                </p>
-              ) : (
-                <div className="max-h-64 overflow-y-auto space-y-0.5 pr-0.5">
-                  {produtosDisponiveisFiltrados.map(p => (
-                    <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-white/[0.04] transition-colors group">
-                      <input
-                        type="checkbox"
-                        checked={selecionados.has(p.id)}
-                        onChange={e => {
-                          setSelecionados(prev => {
-                            const next = new Set(prev)
-                            if (e.target.checked) next.add(p.id)
-                            else next.delete(p.id)
-                            return next
-                          })
-                        }}
-                        className="h-3.5 w-3.5 rounded border-border accent-primary shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs">{p.nome}</span>
-                        {p.categoria && <span className="ml-1.5 text-[10px] text-muted-foreground/50">{p.categoria}</span>}
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {/* Botão adicionar */}
-              <Button
-                size="sm"
-                className="w-full h-7 text-xs mt-1"
-                disabled={selecionados.size === 0 || adicionandoBatch}
-                onClick={handleAdicionarSelecionados}
-              >
-                {adicionandoBatch
-                  ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Adicionando...</>
-                  : selecionados.size > 0
-                    ? `Adicionar ${selecionados.size} selecionado${selecionados.size !== 1 ? 's' : ''}`
-                    : 'Adicionar selecionados'
-                }
-              </Button>
-            </div>{/* end right column */}
-
-            </div>{/* end grid 2 colunas produtos */}
           </section>
 
-          {/* Descontos por Item */}
-          <section className="space-y-2 border-t border-border pt-4">
+          {/* ── Coluna direita: Descontos por Item ── */}
+          <section className="space-y-2">
             <div className="flex items-center gap-3">
               <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Percent className="h-4 w-4 text-muted-foreground" />Descontos por Item</p>
-              <span className="text-[11px] text-muted-foreground">(sobrescreve o desconto geral de {faccao.desconto_padrao_pct}%)</span>
-              <div className="relative flex-1 max-w-xs">
+              <span className="text-[11px] text-muted-foreground/60">sobrescreve {faccao.desconto_padrao_pct}%</span>
+              <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar produto..." value={buscaDesconto} onChange={e => setBuscaDesconto(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 ml-auto shrink-0" onClick={abrirNovoDesconto} disabled={produtosParaDesconto.length === 0}>
-                <Plus className="h-3 w-3" />Adicionar
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={abrirNovoDesconto} disabled={produtosParaDesconto.length === 0}>
+                <Plus className="h-3 w-3" />
               </Button>
             </div>
             {loadingDescontos ? (
@@ -892,6 +764,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </div>
             )}
           </section>
+          </div>{/* end grid produtos + descontos */}
         </div>
       </DialogContent>
 
@@ -921,6 +794,41 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setDescontoItemDialog(null)}>Cancelar</Button>
             <Button size="sm" onClick={handleSalvarDesconto} disabled={descontoSaving}>{descontoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Selecionar produto */}
+      <Dialog open={addingPreco} onOpenChange={v => { if (!v) { setAddingPreco(false); setNewItemId(''); setBuscaNovoPreco('') } }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+          <DialogHeader><DialogTitle className="text-sm">Adicionar produto</DialogTitle></DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              autoFocus
+              placeholder="Buscar produto..."
+              value={buscaNovoPreco}
+              onChange={e => { setBuscaNovoPreco(e.target.value); setNewItemId('') }}
+              className={cn('h-9 text-sm pl-8', newItemId && 'border-primary')}
+            />
+            {buscaNovoPreco && !newItemId && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
+                {produtosDisponiveis.filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase())).length === 0
+                  ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
+                  : produtosDisponiveis
+                      .filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase()))
+                      .map(p => (
+                        <button key={p.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onClick={() => { setNewItemId(p.id); setBuscaNovoPreco(p.nome) }}>
+                          {p.nome}
+                        </button>
+                      ))
+                }
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setAddingPreco(false); setNewItemId(''); setBuscaNovoPreco('') }}>Cancelar</Button>
+            <Button size="sm" onClick={handleAdicionarProduto} disabled={!newItemId}>Continuar</Button>
           </div>
         </DialogContent>
       </Dialog>
