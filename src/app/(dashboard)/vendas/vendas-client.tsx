@@ -480,6 +480,7 @@ function OrderDialog({
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
+  const [combosModo, setCombosModo] = useState<Record<string, 'resumo' | 'detalhado'>>({})  // por servico_id
   const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
@@ -561,12 +562,16 @@ function OrderDialog({
           tem_craft: it.origem === 'fabricar', origem: it.origem,
           servico_id: it.servico_id ?? null,
         })))
+        // Inicializa modo dos combos existentes
+        const idsCombo = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
+        setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
       } else {
         setForm(emptyForm())
         setEmpresaNome('')
         setMembroNome('')
         setCart([])
         setNovoMembroTel('')
+        setCombosModo({})
       }
       setEmpresaAberta(false)
       setMembroAberta(false)
@@ -729,7 +734,8 @@ function OrderDialog({
       }
       return next
     })
-    toast.success(`${itensDoServico.length} iten${itensDoServico.length !== 1 ? 's' : ''} do combo "${servico.nome}" adicionados`)
+    setCombosModo(prev => ({ ...prev, [servico.id]: prev[servico.id] ?? 'resumo' }))
+    toast.success(`Combo "${servico.nome}" adicionado`)
   }
 
   // Mapa item_id → categoria (via allItems)
@@ -1153,19 +1159,116 @@ function OrderDialog({
             <div className="p-4 border-b border-border shrink-0 space-y-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
               {cart.length > 0 && (
-                <div className="space-y-1 border-b border-border/30 pb-2">
-                  {cart.map(c => {
-                    const preco = getPrecoEfetivo(c)
-                    const subtotalItem = c.quantidade * preco  // sem desconto
+                <div className="space-y-1.5 border-b border-border/30 pb-2">
+                  {(() => {
+                    const servicoIdsNoCart = [...new Set(cart.filter(c => c.servico_id).map(c => c.servico_id!))]
+                    const avulsos = cart.filter(c => !c.servico_id)
+
+                    function isModificado(sid: string) {
+                      const original = servicoItens.filter(si => si.servico_id === sid)
+                      const atual = cart.filter(c => c.servico_id === sid)
+                      if (original.length !== atual.length) return true
+                      return original.some(orig => {
+                        const ci = atual.find(c => c.item_id === orig.item_id)
+                        return !ci || ci.quantidade !== orig.quantidade
+                      })
+                    }
+
                     return (
-                      <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
-                        <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
-                        <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
-                          {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
-                        </span>
-                      </div>
+                      <>
+                        {servicoIdsNoCart.map(sid => {
+                          const s = servicos.find(sv => sv.id === sid)
+                          const itensCombo = cart.filter(c => c.servico_id === sid)
+                          const modo = combosModo[sid] ?? 'resumo'
+                          const modificado = isModificado(sid)
+
+                          if (modo === 'resumo') {
+                            const precoBase = form.tipo_dinheiro === 'sujo'
+                              ? (s?.preco_sujo ?? s?.preco_limpo)
+                              : s?.preco_limpo
+                            const totalCombo = (!modificado && precoBase != null)
+                              ? precoBase
+                              : itensCombo.reduce((acc, c) => acc + c.quantidade * getPrecoEfetivo(c), 0)
+
+                            return (
+                              <div key={sid} className="space-y-0.5">
+                                <div className="flex items-start justify-between gap-1">
+                                  <div className="flex items-center gap-1 min-w-0 flex-1">
+                                    <Layers className="h-3 w-3 text-primary/50 shrink-0" />
+                                    <span className="text-[11px] font-medium truncate">{s?.nome ?? 'Combo'}</span>
+                                    {!modificado && s && s.desconto_pct > 0 && (
+                                      <span className="text-[9px] text-green-400 shrink-0">-{s.desconto_pct}%</span>
+                                    )}
+                                    {modificado && (
+                                      <span className="text-[9px] text-yellow-400/80 shrink-0">editado</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-[11px] tabular-nums text-foreground font-medium">{fmt(totalCombo)}</span>
+                                    <button
+                                      onClick={() => setCombosModo(p => ({ ...p, [sid]: 'detalhado' }))}
+                                      className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors">
+                                      detalhar
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="pl-3.5 space-y-0.5">
+                                  {itensCombo.map(c => (
+                                    <div key={c.item_id} className="flex items-center justify-between gap-1">
+                                      <span className="text-[10px] text-muted-foreground/50 truncate min-w-0">{c.nome}</span>
+                                      <span className="text-[10px] text-muted-foreground/35 tabular-nums shrink-0">×{c.quantidade}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          // Modo detalhado
+                          return (
+                            <div key={sid} className="space-y-0.5">
+                              <div className="flex items-center gap-1">
+                                <Layers className="h-3 w-3 text-primary/30 shrink-0" />
+                                <span className="text-[10px] text-muted-foreground/60 truncate flex-1 italic">{s?.nome ?? 'Combo'}</span>
+                                <button
+                                  onClick={() => setCombosModo(p => ({ ...p, [sid]: 'resumo' }))}
+                                  className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors shrink-0">
+                                  resumir
+                                </button>
+                              </div>
+                              <div className="pl-3.5 space-y-0.5">
+                                {itensCombo.map(c => {
+                                  const preco = getPrecoEfetivo(c)
+                                  const subtotalItem = c.quantidade * preco
+                                  return (
+                                    <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
+                                      <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
+                                      <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
+                                        {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        {avulsos.map(c => {
+                          const preco = getPrecoEfetivo(c)
+                          const subtotalItem = c.quantidade * preco
+                          return (
+                            <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
+                              <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
+                              <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
+                                {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </>
                     )
-                  })}
+                  })()}
                 </div>
               )}
               <div className="space-y-1">

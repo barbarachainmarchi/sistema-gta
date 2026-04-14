@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { Check, X, Loader2, ClipboardList, ScrollText } from 'lucide-react'
+import { Check, X, Loader2, ClipboardList, ScrollText, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -55,8 +55,45 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [aba, setAba] = useState<'log' | 'solicitacoes'>('solicitacoes')
+  const [logs, setLogs] = useState<Log[]>(logsIniciais)
   const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>(solicitacoesIniciais)
   const [resolvendo, setResolvendo] = useState<string | null>(null)
+  const [confirmLimpar, setConfirmLimpar] = useState<'log' | 'solicitacoes' | null>(null)
+  const [limpando, setLimpando] = useState(false)
+
+  async function handleLimparLogs() {
+    setLimpando(true)
+    try {
+      const ids = logs.map(l => l.id)
+      if (ids.length > 0) {
+        const { error } = await sb().from('sistema_logs').delete().in('id', ids)
+        if (error) throw new Error(error.message)
+      }
+      setLogs([])
+      setConfirmLimpar(null)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao limpar log')
+    } finally {
+      setLimpando(false)
+    }
+  }
+
+  async function handleLimparSolicitacoes() {
+    setLimpando(true)
+    try {
+      const resolvidas = solicitacoes.filter(s => s.status !== 'pendente')
+      if (resolvidas.length > 0) {
+        const { error } = await sb().from('sistema_solicitacoes').delete().in('id', resolvidas.map(s => s.id))
+        if (error) throw new Error(error.message)
+      }
+      setSolicitacoes(prev => prev.filter(s => s.status === 'pendente'))
+      setConfirmLimpar(null)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao limpar histórico')
+    } finally {
+      setLimpando(false)
+    }
+  }
 
   async function handleResolver(sol: Solicitacao, novoStatus: 'aprovado' | 'rejeitado') {
     setResolvendo(sol.id)
@@ -119,9 +156,9 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
       <div className="flex border-b border-border shrink-0 px-6">
         {([
           ['solicitacoes', 'Solicitações', ClipboardList, pendentes.length],
-          ['log',          'Log',          ScrollText, logsIniciais.length],
+          ['log',          'Log',          ScrollText, logs.length],
         ] as const).map(([key, label, Icon, count]) => (
-          <button key={key} onClick={() => setAba(key)}
+          <button key={key} onClick={() => { setAba(key); setConfirmLimpar(null) }}
             className={cn(
               'flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
               aba === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -206,9 +243,28 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
           {/* Resolvidas */}
           {resolvidas.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-widest mb-3">
-                Resolvidas ({resolvidas.length})
-              </p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
+                  Resolvidas ({resolvidas.length})
+                </p>
+                {podeAprovar && confirmLimpar === 'solicitacoes' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Apagar todas as resolvidas?</span>
+                    <Button size="sm" variant="destructive" className="h-6 text-[10px] px-2 gap-1"
+                      disabled={limpando} onClick={handleLimparSolicitacoes}>
+                      {limpando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar'}
+                    </Button>
+                    <button onClick={() => setConfirmLimpar(null)} className="text-[10px] text-muted-foreground hover:text-foreground">
+                      Cancelar
+                    </button>
+                  </div>
+                ) : podeAprovar ? (
+                  <button onClick={() => setConfirmLimpar('solicitacoes')}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                    <Trash2 className="h-3 w-3" /> Limpar
+                  </button>
+                ) : null}
+              </div>
               <div className="space-y-1.5">
                 {resolvidas.map(sol => (
                   <div key={sol.id} className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3 flex items-center gap-3">
@@ -235,8 +291,29 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
 
       {/* ── Aba: Log ── */}
       {aba === 'log' && (
-        <div className="flex-1 overflow-y-auto p-6">
-          {logsIniciais.length === 0 ? (
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {podeAprovar && logs.length > 0 && (
+            <div className="flex items-center justify-end gap-2">
+              {confirmLimpar === 'log' ? (
+                <>
+                  <span className="text-xs text-muted-foreground">Apagar todos os registros?</span>
+                  <Button size="sm" variant="destructive" className="h-7 text-xs gap-1"
+                    disabled={limpando} onClick={handleLimparLogs}>
+                    {limpando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Trash2 className="h-3.5 w-3.5" />Confirmar</>}
+                  </Button>
+                  <button onClick={() => setConfirmLimpar(null)} className="text-xs text-muted-foreground hover:text-foreground">
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setConfirmLimpar('log')}
+                  className="flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+                  <Trash2 className="h-3.5 w-3.5" /> Limpar log
+                </button>
+              )}
+            </div>
+          )}
+          {logs.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-12 text-center">
               <p className="text-sm text-muted-foreground">Nenhum log registrado ainda</p>
             </div>
@@ -252,7 +329,7 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {logsIniciais.map(l => (
+                  {logs.map(l => (
                     <tr key={l.id} className="hover:bg-white/[0.02]">
                       <td className="px-3 py-2.5 text-muted-foreground tabular-nums whitespace-nowrap">{fmtDt(l.created_at)}</td>
                       <td className="px-3 py-2.5 text-muted-foreground">{l.tipo}</td>
