@@ -3,13 +3,28 @@
 import { useState, useMemo, useCallback, useRef, memo, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+
+// ── Config de fonte ───────────────────────────────────────────────────────────
+
+const CALC_FONTE_KEY = 'calculadora-fonte'
+
+type FonteConfig = {
+  tamanho: number   // 11–17
+  negrito: boolean
+  corNome: string   // '' = padrão do tema
+  corValor: string  // '' = usa verde/laranja padrão
+}
+
+const FONTE_PADRAO: FonteConfig = { tamanho: 13, negrito: false, corNome: '', corValor: '' }
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -75,7 +90,7 @@ function matchBusca(texto: string, apelidos: string | null | undefined, q: strin
 
 // ── Item compacto (linha única) ───────────────────────────────────────────────
 
-const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo, precoSujo, onAdd, onToggleFav, podeEditar }: {
+const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo, precoSujo, onAdd, onToggleFav, podeEditar, fonte }: {
   item: Item
   isInBatch: boolean
   isFavorito: boolean
@@ -84,9 +99,16 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
   onAdd: (id: string) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
   podeEditar: boolean
+  fonte: FonteConfig
 }) {
   const preco = precoLimpo ?? precoSujo
   const isSujoOnly = precoLimpo == null && precoSujo != null
+  const nomeStyle = {
+    fontSize: `${fonte.tamanho}px`,
+    fontWeight: fonte.negrito ? 600 : 500,
+    ...(fonte.corNome ? { color: fonte.corNome } : {}),
+  }
+  const valorColor = fonte.corValor || (isSujoOnly ? '#fb923c' : '#34d399')
   return (
     <div className={cn(
       'group flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 transition-colors hover:bg-white/[0.015]',
@@ -103,15 +125,15 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
         <Star className="h-3 w-3" fill={isFavorito ? 'currentColor' : 'none'} />
       </button>
 
-      <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.nome}</span>
+      <span className="flex-1 min-w-0 truncate" style={nomeStyle}>{item.nome}</span>
 
       {item.apelidos && (
         <span className="text-[9px] text-primary/30 shrink-0" title={`Apelidos: ${item.apelidos}`}>✦</span>
       )}
       {preco != null && (
-        <span className={cn('text-xs tabular-nums shrink-0',
-          isSujoOnly ? 'text-orange-400/70' : 'text-emerald-400/70'
-        )}>{fmt(preco)}</span>
+        <span className="text-xs tabular-nums shrink-0" style={{ color: valorColor, opacity: 0.75 }}>
+          {fmt(preco)}
+        </span>
       )}
 
       <button
@@ -131,7 +153,7 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
 
 // ── Combo / Kit (linha única, mesmo padrão do item) ──────────────────────────
 
-const ComboBtn = memo(function ComboBtn({ servico, isFavorito, modoSujo, itensCount, onAdd, onToggleFav, podeEditar }: {
+const ComboBtn = memo(function ComboBtn({ servico, isFavorito, modoSujo, itensCount, onAdd, onToggleFav, podeEditar, fonte }: {
   servico: Servico
   isFavorito: boolean
   modoSujo: boolean
@@ -139,8 +161,15 @@ const ComboBtn = memo(function ComboBtn({ servico, isFavorito, modoSujo, itensCo
   onAdd: (s: Servico) => void
   onToggleFav: (id: string, e: React.MouseEvent) => void
   podeEditar: boolean
+  fonte: FonteConfig
 }) {
   const preco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : servico.preco_limpo
+  const nomeStyle = {
+    fontSize: `${fonte.tamanho}px`,
+    fontWeight: fonte.negrito ? 600 : 500,
+    ...(fonte.corNome ? { color: fonte.corNome } : {}),
+  }
+  const valorColor = fonte.corValor || (modoSujo ? '#fb923c' : '#34d399')
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-border/30 transition-colors hover:bg-white/[0.015]">
       <button
@@ -154,12 +183,12 @@ const ComboBtn = memo(function ComboBtn({ servico, isFavorito, modoSujo, itensCo
         <Star className="h-3 w-3" fill={isFavorito ? 'currentColor' : 'none'} />
       </button>
       <Layers className="h-3 w-3 shrink-0 text-muted-foreground/30" />
-      <span className="flex-1 min-w-0 text-sm font-medium truncate">{servico.nome}</span>
+      <span className="flex-1 min-w-0 truncate" style={nomeStyle}>{servico.nome}</span>
       {servico.desconto_pct > 0 && (
         <span className="text-[10px] text-green-400/80 shrink-0">-{servico.desconto_pct}%</span>
       )}
       {preco != null && (
-        <span className={cn('text-xs tabular-nums shrink-0', modoSujo ? 'text-orange-400/70' : 'text-emerald-400/70')}>
+        <span className="text-xs tabular-nums shrink-0" style={{ color: valorColor, opacity: 0.75 }}>
           {fmt(preco)}
         </span>
       )}
@@ -224,6 +253,20 @@ export function CalculadoraClient({
   const [modo, setModo] = useState<Modo>('simples')
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
+  const [fonte, setFonte] = useState<FonteConfig>(FONTE_PADRAO)
+  const [fonteModalAberto, setFonteModalAberto] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CALC_FONTE_KEY)
+      if (saved) setFonte({ ...FONTE_PADRAO, ...JSON.parse(saved) })
+    } catch { /* ignore */ }
+  }, [])
+
+  function salvarFonte(nova: FonteConfig) {
+    setFonte(nova)
+    localStorage.setItem(CALC_FONTE_KEY, JSON.stringify(nova))
+  }
 
   const favoritosRef = useRef(favoritos)
   favoritosRef.current = favoritos
@@ -570,10 +613,18 @@ export function CalculadoraClient({
         {/* Filtros */}
         <div className="p-2.5 border-b border-border space-y-2">
           {/* Busca */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar por nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)}
-              className="pl-8 h-8 text-sm" />
+          <div className="flex gap-1.5">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Buscar por nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)}
+                className="pl-8 h-8 text-sm" />
+            </div>
+            <button
+              onClick={() => setFonteModalAberto(true)}
+              title="Configurar fonte"
+              className="shrink-0 h-8 w-8 rounded border border-border/50 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border transition-colors">
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </button>
           </div>
 
           {/* Chips de categoria — apenas as que têm itens na aba atual */}
@@ -648,6 +699,7 @@ export function CalculadoraClient({
                   onAdd={addServico}
                   onToggleFav={toggleFavoritoServico}
                   podeEditar={podeEditar}
+                  fonte={fonte}
                 />
               )
             }
@@ -662,6 +714,7 @@ export function CalculadoraClient({
                 onAdd={addToBatch}
                 onToggleFav={toggleFavorito}
                 podeEditar={podeEditar}
+                fonte={fonte}
               />
             )
           })}
@@ -1007,6 +1060,98 @@ export function CalculadoraClient({
           </div>
         )}
       </div>
+
+      {/* ── Modal de configuração de fonte ── */}
+      <Dialog open={fonteModalAberto} onOpenChange={setFonteModalAberto}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Configurar exibição</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+
+            {/* Tamanho */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Tamanho da letra</Label>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => salvarFonte({ ...fonte, tamanho: Math.max(10, fonte.tamanho - 1) })}
+                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                  <Minus className="h-3 w-3" />
+                </button>
+                <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanho}px</span>
+                <button
+                  onClick={() => salvarFonte({ ...fonte, tamanho: Math.min(20, fonte.tamanho + 1) })}
+                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                  <Plus className="h-3 w-3" />
+                </button>
+                <span className="text-sm ml-2 truncate" style={{ fontSize: `${fonte.tamanho}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
+                  Preview
+                </span>
+              </div>
+            </div>
+
+            {/* Negrito */}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Negrito</Label>
+              <Switch
+                checked={fonte.negrito}
+                onCheckedChange={v => salvarFonte({ ...fonte, negrito: v })}
+              />
+            </div>
+
+            {/* Cor do nome */}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Cor do nome</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={fonte.corNome || '#cbd5e1'}
+                  onChange={e => salvarFonte({ ...fonte, corNome: e.target.value })}
+                  className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent"
+                />
+                {fonte.corNome && (
+                  <button
+                    onClick={() => salvarFonte({ ...fonte, corNome: '' })}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    Padrão
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cor dos valores */}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Cor dos valores</Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={fonte.corValor || '#34d399'}
+                  onChange={e => salvarFonte({ ...fonte, corValor: e.target.value })}
+                  className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent"
+                />
+                {fonte.corValor && (
+                  <button
+                    onClick={() => salvarFonte({ ...fonte, corValor: '' })}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    Padrão
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Reset geral */}
+            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.negrito !== FONTE_PADRAO.negrito || fonte.corNome || fonte.corValor) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-7 text-xs"
+                onClick={() => salvarFonte(FONTE_PADRAO)}>
+                Restaurar padrões
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

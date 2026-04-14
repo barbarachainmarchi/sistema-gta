@@ -14,8 +14,52 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight, Layers } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight, Layers, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+// ─── AutocompleteInput ────────────────────────────────────────────────────────
+
+function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
+  value: string
+  onChange: (v: string) => void
+  suggestions: string[]
+  placeholder?: string
+  className?: string
+}) {
+  const [aberto, setAberto] = useState(false)
+  const filtradas = suggestions.filter(s =>
+    s && (!value.trim() || s.toLowerCase().includes(value.toLowerCase()))
+  )
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        onChange={e => { onChange(e.target.value); setAberto(true) }}
+        onFocus={() => setAberto(true)}
+        onBlur={() => setTimeout(() => setAberto(false), 150)}
+        placeholder={placeholder}
+        className={cn('pr-7', className)}
+      />
+      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+      {aberto && filtradas.length > 0 && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
+          {filtradas.map(s => (
+            <button
+              key={s}
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => { onChange(s); setAberto(false) }}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-sm hover:bg-accent transition-colors',
+                s === value && 'bg-primary/10 text-primary'
+              )}
+            >{s}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +182,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
           <BtnNovoServico
             allItems={items}
             sb={sb}
+            categoriaNomes={categorias.map(c => c.nome)}
             onCreated={(s, itens) => {
               setServicos(p => [...p, s].sort((a,b) => a.nome.localeCompare(b.nome)))
               setServicoItens(p => [...p, ...itens])
@@ -191,6 +236,7 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               servicoItens={servicoItens}
               allItems={items}
               sb={sb}
+              categoriaNomes={categorias.map(c => c.nome)}
               onUpdated={(s, itens) => {
                 setServicos(p => p.map(x => x.id === s.id ? s : x))
                 setServicoItens(p => [...p.filter(si => si.servico_id !== s.id), ...itens])
@@ -1219,11 +1265,12 @@ function CategoriaDialog({ categoria, sb, onClose, onSaved }: {
 
 // ─── ABA SERVIÇOS ─────────────────────────────────────────────────────────────
 
-function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete }: {
+function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, onUpdated, onDelete }: {
   servicos: Servico[]
   servicoItens: ServicoItemFull[]
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
+  categoriaNomes: string[]
   onUpdated: (s: Servico, itens: ServicoItemFull[]) => void
   onDelete: (id: string, nome: string) => void
 }) {
@@ -1328,6 +1375,7 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete
           servicoItens={servicoItens.filter(si => si.servico_id === editing.id)}
           allItems={allItems}
           sb={sb}
+          categoriaNomes={categoriaNomes}
           onClose={() => setEditing(null)}
           onSaved={(s, itens) => { onUpdated(s, itens); setEditing(null) }}
         />
@@ -1336,9 +1384,10 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, onUpdated, onDelete
   )
 }
 
-function BtnNovoServico({ allItems, sb, onCreated }: {
+function BtnNovoServico({ allItems, sb, categoriaNomes, onCreated }: {
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
+  categoriaNomes: string[]
   onCreated: (s: Servico, itens: ServicoItemFull[]) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -1353,6 +1402,7 @@ function BtnNovoServico({ allItems, sb, onCreated }: {
           servicoItens={[]}
           allItems={allItems}
           sb={sb}
+          categoriaNomes={categoriaNomes}
           onClose={() => setOpen(false)}
           onSaved={(s, itens) => { onCreated(s, itens); setOpen(false) }}
         />
@@ -1361,11 +1411,12 @@ function BtnNovoServico({ allItems, sb, onCreated }: {
   )
 }
 
-function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onClose, onSaved }: {
+function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, categoriaNomes, onClose, onSaved }: {
   servico: Servico | null
   servicoItens: ServicoItemFull[]
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
+  categoriaNomes: string[]
   onClose: () => void
   onSaved: (s: Servico, itens: ServicoItemFull[]) => void
 }) {
@@ -1466,7 +1517,13 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, onCl
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label className="text-xs">Categoria</Label>
-              <Input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Ex: Drogas, Armas, Serviços..." className="h-9 text-sm" />
+              <AutocompleteInput
+                value={categoria}
+                onChange={setCategoria}
+                suggestions={categoriaNomes}
+                placeholder="Selecione ou digite uma categoria..."
+                className="h-9 text-sm"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Preço Limpo (R$)</Label>
