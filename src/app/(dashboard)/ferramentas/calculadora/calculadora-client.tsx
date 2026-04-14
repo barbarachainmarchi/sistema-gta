@@ -767,7 +767,11 @@ export function CalculadoraClient({
                         </SelectContent>
                       </Select>
                     )}
-                    <span className="flex-1 min-w-0 text-sm font-medium truncate">{item?.nome ?? '—'}</span>
+                    <span className="flex-1 min-w-0 truncate" style={{
+                      fontSize: `${fonte.tamanho}px`,
+                      fontWeight: fonte.negrito ? 600 : 500,
+                      ...(fonte.corNome ? { color: fonte.corNome } : {}),
+                    }}>{item?.nome ?? '—'}</span>
                     <div className="flex items-center gap-0.5 shrink-0">
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
                         className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
@@ -775,7 +779,7 @@ export function CalculadoraClient({
                       </button>
                       <Input type="number" value={entry.quantidade}
                         onChange={e => setQtd(entry.item_id, Math.max(1, parseInt(e.target.value) || 1))}
-                        className="h-6 w-10 text-center text-xs px-0.5" />
+                        className="h-6 w-16 text-center text-xs px-0.5" />
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
                         className="h-6 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                         <Plus className="h-2.5 w-2.5" />
@@ -786,7 +790,9 @@ export function CalculadoraClient({
                         <span className="text-[10px] text-muted-foreground/50 tabular-nums">{fmtKg(peso)}</span>
                       )}
                       {total != null ? (
-                        <span className={cn('tabular-nums font-semibold text-sm', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                        <span className="tabular-nums font-semibold text-sm" style={{
+                          color: fonte.corValor || (modoSujo ? '#fb923c' : '#34d399'),
+                        }}>
                           {fmt(total)}
                         </span>
                       ) : (
