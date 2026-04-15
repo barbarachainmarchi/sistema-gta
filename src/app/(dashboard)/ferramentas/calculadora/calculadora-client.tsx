@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -256,7 +256,7 @@ export function CalculadoraClient({
   const [imgbbResumoLoading, setImgbbResumoLoading] = useState(false)
   const [fonte, setFonte] = useState<FonteConfig>(FONTE_PADRAO)
   const [fonteModalAberto, setFonteModalAberto] = useState(false)
-  const [ingExpandido, setIngExpandido] = useState(false)
+  const [modoCusto, setModoCusto] = useState(false)
 
   useEffect(() => {
     try {
@@ -609,6 +609,27 @@ export function CalculadoraClient({
     return linhas
   }, [batch, itemMap, ingredientesAgregados, lojasPorIng, modoSujo, totais])
 
+  // Apenas o pedido (Col 2 imgbb) — sem ingredientes
+  const gerarLinhasPedido = useCallback(() => {
+    const linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[] = []
+    linhas.push({ text: 'PEDIDO', bold: true })
+    linhas.push({ text: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), dim: true })
+    linhas.push({ text: '' })
+    for (const entry of batch) {
+      const item = itemMap[entry.item_id]
+      if (!item) continue
+      const lojaNome = entry.loja_id ? (lojaMap[entry.loja_id]?.nome ?? '') : ''
+      const preco = getPrecoItem(entry)
+      const total = preco != null ? fmt(preco * entry.quantidade) : '—'
+      const prefix = lojaNome ? `[${lojaNome}] ` : ''
+      linhas.push({ text: `${prefix}${item.nome}  ×${entry.quantidade}  ${total}` })
+    }
+    linhas.push({ text: '' })
+    if (totais.custoItens > 0) linhas.push({ text: `TOTAL: ${fmt(totais.custoItens)}`, bold: true })
+    if (totais.pesoProdutos > 0) linhas.push({ text: `Peso: ${fmtKg(totais.pesoProdutos)}`, dim: true })
+    return linhas
+  }, [batch, itemMap, lojaMap, getPrecoItem, totais])
+
   const copiarTexto = useCallback(() => {
     const linhas = gerarLinhasResumo()
     const texto = linhas.map(l => l.text).join('\n')
@@ -624,7 +645,7 @@ export function CalculadoraClient({
     try {
       const key = await getImgbbKey()
       if (!key) { toast.error('Chave imgbb não configurada', { description: 'Acesse Admin → Integrações para configurar.' }); return }
-      const linhas = gerarLinhasResumo()
+      const linhas = gerarLinhasPedido()
       const canvas = gerarCanvas(linhas)
       const base64 = canvas.toDataURL('image/png').split(',')[1]
       const url = await uploadImgbb(base64, key, 'calculadora')
@@ -635,7 +656,7 @@ export function CalculadoraClient({
     } finally {
       setImgbbLoading(false)
     }
-  }, [batch.length, gerarLinhasResumo])
+  }, [batch.length, gerarLinhasPedido])
 
   const enviarImgbbResumo = useCallback(async () => {
     if (batch.length === 0) return
@@ -705,16 +726,18 @@ export function CalculadoraClient({
             </div>
           )}
 
-          {/* Filtro loja / facção */}
+          {/* Filtro loja / facção — apenas no modo Custo */}
           <div className="flex items-center gap-1.5">
-            <Select value={filterLoja || '_todas'} onValueChange={v => setFilterLoja(v === '_todas' ? '' : v)}>
-              <SelectTrigger className="h-7 text-xs border-border/50 flex-1"><SelectValue placeholder="Loja / Facção" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_todas">Todas as origens</SelectItem>
-                {meuFaccaoId && <SelectItem value="_faccao">Minha facção</SelectItem>}
-                {lojasComPrecos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {modoCusto && (
+              <Select value={filterLoja || '_todas'} onValueChange={v => setFilterLoja(v === '_todas' ? '' : v)}>
+                <SelectTrigger className="h-7 text-xs border-border/50 flex-1"><SelectValue placeholder="Loja / Facção" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_todas">Todas as origens</SelectItem>
+                  {meuFaccaoId && <SelectItem value="_faccao">Minha facção</SelectItem>}
+                  {lojasComPrecos.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             {temFiltroAtivo && (
               <button
                 onClick={() => { setFilterCategoria(''); setFilterLoja('') }}
@@ -787,6 +810,19 @@ export function CalculadoraClient({
           </h3>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Toggle Produção / Custo */}
+            <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30">
+              <button
+                onClick={() => { setModoCusto(false); setFilterLoja('') }}
+                className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+                  !modoCusto ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+                )}>Produção</button>
+              <button
+                onClick={() => setModoCusto(true)}
+                className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+                  modoCusto ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+                )}>Custo</button>
+            </div>
             {batch.length > 0 && (
               <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
                 className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
@@ -804,7 +840,7 @@ export function CalculadoraClient({
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
                 <button onClick={enviarImgbb} disabled={imgbbLoading}
-                  title="Gerar imagem e enviar para imgbb (copia URL)"
+                  title="Gerar imagem do pedido (copia URL)"
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06] disabled:opacity-40">
                   {imgbbLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
                 </button>
@@ -832,7 +868,7 @@ export function CalculadoraClient({
 
                 return (
                   <div key={entry.item_id} className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 hover:bg-white/[0.01]">
-                    {fonte.mostrarLojas && lojasItem.length > 0 && (
+                    {modoCusto && fonte.mostrarLojas && lojasItem.length > 0 && (
                       <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
                         <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
                           <SelectValue placeholder="— loja —" />
@@ -966,14 +1002,14 @@ export function CalculadoraClient({
       </div>
 
       {/* ── Col 3: Resumo + Ingredientes ── */}
-      <div className="w-56 shrink-0 border-l border-border flex flex-col overflow-hidden bg-muted/[0.02]">
+      <div className="w-72 shrink-0 border-l border-border flex flex-col overflow-hidden bg-muted/[0.02]">
 
         {/* Header */}
         <div className="px-3 py-3 border-b border-border shrink-0 flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
           {batch.length > 0 && (
             <button onClick={enviarImgbbResumo} disabled={imgbbResumoLoading}
-              title="Gerar imagem do resumo (copia URL)"
+              title="Gerar imagem do resumo + materiais (copia URL)"
               className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
               {imgbbResumoLoading ? <span className="text-[10px]">...</span> : <Image className="h-3.5 w-3.5" />}
             </button>
@@ -1000,75 +1036,70 @@ export function CalculadoraClient({
               })}
             </div>
 
-            {/* Ingredientes colapsáveis */}
-            <div className="flex flex-col">
-                <button
-                  onClick={() => setIngExpandido(v => !v)}
-                  className="flex items-center justify-between px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors">
-                  <span>
-                    Ingredientes
-                    {ingredientesAgregados.length > 0 && <span className="ml-1 normal-case font-normal">({ingredientesAgregados.length})</span>}
-                  </span>
-                  <ChevronDown className={cn('h-3 w-3 transition-transform', ingExpandido && 'rotate-180')} />
-                </button>
-
-                {ingExpandido && (
-                  <div className="px-3 pb-3 space-y-2">
-                    {ingredientesAgregados.length === 0 ? (
-                      <p className="text-[11px] text-muted-foreground">Nenhum tem receita.</p>
-                    ) : (
-                      <>
-                        {ingredientesAgregados.map(ing => {
-                          const lojaId = lojasPorIng[ing.ingrediente_id]
-                          const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
-                          const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
-                          const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
-                          return (
-                            <div key={ing.ingrediente_id} className="space-y-1">
-                              <div className="flex items-baseline justify-between gap-1 min-w-0">
-                                <span className="text-[11px] text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                                <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtNum(ing.totalQty)}×</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {ing.lojasDisponiveis.length > 0 && (
-                                  <Select
-                                    value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
-                                    onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
-                                  >
-                                    <SelectTrigger className="h-5 text-[9px] border-border/50 px-1 flex-1">
-                                      <SelectValue placeholder="loja" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="sem">— sem —</SelectItem>
-                                      {ing.lojasDisponiveis.map(l => {
-                                        const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
-                                        return (
-                                          <SelectItem key={l.loja_id} value={l.loja_id}>
-                                            {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
-                                          </SelectItem>
-                                        )
-                                      })}
-                                    </SelectContent>
-                                  </Select>
-                                )}
-                                <span className={cn('text-[10px] tabular-nums shrink-0', subtotal != null ? 'text-foreground/60' : 'text-muted-foreground/30')}>
-                                  {subtotal != null ? fmt(subtotal) : '—'}
-                                </span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                        {totais.custoIng > 0 && (
-                          <div className="pt-2 border-t border-border/40 flex justify-between text-[11px] font-semibold">
-                            <span className="text-muted-foreground">Total</span>
-                            <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
-                              {fmt(totais.custoIng)}
-                            </span>
+            {/* Ingredientes — sempre visíveis */}
+            <div className="flex flex-col border-t border-border/40">
+              <div className="px-3 py-2 border-b border-border/30">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Materiais
+                  {ingredientesAgregados.length > 0 && <span className="ml-1 normal-case font-normal opacity-60">({ingredientesAgregados.length})</span>}
+                </p>
+              </div>
+              <div className="px-3 py-2.5 space-y-2">
+                {ingredientesAgregados.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground/40">Nenhum item com receita.</p>
+                ) : (
+                  <>
+                    {ingredientesAgregados.map(ing => {
+                      const lojaId = lojasPorIng[ing.ingrediente_id]
+                      const lp = lojaId ? ing.lojasDisponiveis.find(l => l.loja_id === lojaId) : null
+                      const precoUnit = lp ? (modoSujo && lp.preco_sujo != null ? lp.preco_sujo : lp.preco) : null
+                      const subtotal = precoUnit != null ? precoUnit * ing.totalQty : null
+                      return (
+                        <div key={ing.ingrediente_id} className="space-y-1">
+                          <div className="flex items-baseline justify-between gap-1 min-w-0">
+                            <span className="text-[11px] text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                            <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtNum(ing.totalQty)}×</span>
                           </div>
-                        )}
-                      </>
+                          {modoCusto && (
+                            <div className="flex items-center gap-1">
+                              {ing.lojasDisponiveis.length > 0 && (
+                                <Select
+                                  value={lojasPorIng[ing.ingrediente_id] ?? 'sem'}
+                                  onValueChange={v => setLojasPorIng(prev => ({ ...prev, [ing.ingrediente_id]: v === 'sem' ? '' : v }))}
+                                >
+                                  <SelectTrigger className="h-5 text-[9px] border-border/50 px-1 flex-1">
+                                    <SelectValue placeholder="loja" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="sem">— sem —</SelectItem>
+                                    {ing.lojasDisponiveis.map(l => {
+                                      const p = modoSujo && l.preco_sujo != null ? l.preco_sujo : l.preco
+                                      return (
+                                        <SelectItem key={l.loja_id} value={l.loja_id}>
+                                          {lojaMap[l.loja_id]?.nome ?? l.loja_id} ({fmt(p)})
+                                        </SelectItem>
+                                      )
+                                    })}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              <span className={cn('text-[10px] tabular-nums shrink-0', subtotal != null ? 'text-foreground/60' : 'text-muted-foreground/30')}>
+                                {subtotal != null ? fmt(subtotal) : '—'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {modoCusto && totais.custoIng > 0 && (
+                      <div className="pt-2 border-t border-border/40 flex justify-between text-[11px] font-semibold">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
+                          {fmt(totais.custoIng)}
+                        </span>
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             </div>
