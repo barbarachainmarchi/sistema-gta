@@ -50,7 +50,10 @@ interface Props {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(v: number) {
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+  const rounded = Math.round(v)
+  const neg = rounded < 0 ? '-' : ''
+  const abs = Math.abs(rounded).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${neg}R$ ${abs}`
 }
 function fmtKg(kg: number) { return `${kg % 1 === 0 ? kg : kg.toFixed(2)} kg` }
 
