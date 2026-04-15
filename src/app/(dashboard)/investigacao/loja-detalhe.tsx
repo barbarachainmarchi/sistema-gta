@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car, ImageUp, Copy, Check } from 'lucide-react'
@@ -165,6 +164,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   // ── Funcionários ───────────────────────────────────────────────────────────
   const [addFunc, setAddFunc] = useState(false)
   const [newFuncId, setNewFuncId] = useState('')
+  const [newFuncBusca, setNewFuncBusca] = useState('')
   const [newFuncCargo, setNewFuncCargo] = useState('')
   const [savingFunc, setSavingFunc] = useState(false)
   const [buscaFunc, setBuscaFunc] = useState('')
@@ -195,7 +195,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     if (error) { toast.error('Erro ao adicionar'); return }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setFuncionarios(prev => [...prev, data as any])
-    setAddFunc(false); setNewFuncId(''); setNewFuncCargo('')
+    setAddFunc(false); setNewFuncId(''); setNewFuncBusca(''); setNewFuncCargo('')
     toast.success('Funcionário adicionado')
   }
 
@@ -207,7 +207,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent aria-describedby={undefined} className="max-w-4xl max-h-[95vh] overflow-hidden flex flex-col">
+      <DialogContent aria-describedby={undefined} className="max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <span className="flex-1">{loja.nome}</span>
@@ -237,7 +237,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+          <div className="flex-1 overflow-y-auto pr-1">
             {/* Editar loja */}
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Informações</p>
@@ -265,7 +265,8 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
               </div>
             )}
 
-            {/* Itens */}
+            {/* Itens + Funcionários lado a lado */}
+            <div className="grid grid-cols-2 gap-6 items-start mt-5">
             <section>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Itens ({itens.length})</p>
@@ -379,14 +380,33 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
               </div>
 
               {addFunc && (
-                <div className="flex gap-2 mb-2">
-                  <Select value={newFuncId} onValueChange={setNewFuncId}>
-                    <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar membro..." /></SelectTrigger>
-                    <SelectContent>{membrosDisponiveis.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}</SelectContent>
-                  </Select>
+                <div className="flex gap-2 mb-2 flex-wrap items-start">
+                  <div className="relative flex-1 min-w-[180px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      autoFocus
+                      placeholder="Buscar membro..."
+                      value={newFuncBusca}
+                      onChange={e => { setNewFuncBusca(e.target.value); if (!e.target.value) setNewFuncId('') }}
+                      className={cn('h-8 text-sm pl-8', newFuncId && 'border-primary')}
+                      autoComplete="off"
+                    />
+                    {newFuncBusca && !newFuncId && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {membrosDisponiveis.filter(m => m.nome.toLowerCase().includes(newFuncBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(newFuncBusca.toLowerCase())).length === 0
+                          ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum membro encontrado</p>
+                          : membrosDisponiveis.filter(m => m.nome.toLowerCase().includes(newFuncBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(newFuncBusca.toLowerCase())).map(m => (
+                            <button key={m.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setNewFuncId(m.id); setNewFuncBusca(m.nome + (m.vulgo ? ` "${m.vulgo}"` : '')) }}>
+                              {m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}
+                            </button>
+                          ))
+                        }
+                      </div>
+                    )}
+                  </div>
                   <Input placeholder="Cargo (opcional)" className="w-32 h-8 text-sm" value={newFuncCargo} onChange={e => setNewFuncCargo(e.target.value)} />
                   <Button size="sm" className="h-8 px-3" onClick={handleSalvarFunc} disabled={savingFunc || !newFuncId}><Plus className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddFunc(false); setNewFuncId(''); setNewFuncCargo('') }}><X className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setAddFunc(false); setNewFuncId(''); setNewFuncBusca(''); setNewFuncCargo('') }}><X className="h-3.5 w-3.5" /></Button>
                 </div>
               )}
 
@@ -432,6 +452,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
                 </>
               )}
             </section>
+            </div>{/* end grid itens + funcionários */}
           </div>
         )}
       </DialogContent>

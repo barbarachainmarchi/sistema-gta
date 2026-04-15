@@ -22,7 +22,7 @@ const FACTION_COLORS = [
 ]
 
 export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; created_at: string; updated_at: string }
-export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
+export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; local_trabalho_loja_id: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo     = { id: string; placa: string | null; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
 export type FaccaoPreco = {
   id: string; faccao_id: string; item_id: string
@@ -44,7 +44,7 @@ function fmt(v: number | null) {
   return `R$ ${v.toLocaleString('pt-BR')}`
 }
 
-const emptyMembroForm = { nome: '', vulgo: '', telefone: '', cargo_faccao: '', status: 'ativo' as 'ativo' | 'inativo', observacoes: '' }
+const emptyMembroForm = { nome: '', vulgo: '', telefone: '', cargo_faccao: '', status: 'ativo' as 'ativo' | 'inativo', observacoes: '', loja_id: '' }
 const emptyVeiculoForm = { placa: '', modelo: '', cor: '', proprietario_tipo: 'faccao' as 'membro' | 'faccao' | 'desconhecido', proprietario_id: '', observacoes: '' }
 
 interface Props {
@@ -163,15 +163,42 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   const [membroForm, setMembroForm] = useState(emptyMembroForm)
   const [membroSaving, setMembroSaving] = useState(false)
   const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<Membro | null>(null)
+  const [membroSugestoes, setMembroSugestoes] = useState<{id: string, nome: string, vulgo: string|null, telefone: string|null, cargo_faccao: string|null}[]>([])
+  const [membroExistenteId, setMembroExistenteId] = useState<string | null>(null)
+  const [membroLojaBusca, setMembroLojaBusca] = useState('')
+  const [todasLojas, setTodasLojas] = useState<{id: string, nome: string}[]>([])
 
   function abrirNovoMembro() {
     setMembroForm(emptyMembroForm)
     setMembroDialog({ membro: null })
+    setMembroSugestoes([])
+    setMembroExistenteId(null)
+    setMembroLojaBusca('')
   }
 
   function abrirEditarMembro(m: Membro) {
-    setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '' })
+    const lojaAtual = todasLojas.find(l => l.id === m.local_trabalho_loja_id)
+    setMembroForm({ nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', cargo_faccao: m.cargo_faccao ?? '', status: m.status, observacoes: m.observacoes ?? '', loja_id: m.local_trabalho_loja_id ?? '' })
+    setMembroLojaBusca(lojaAtual?.nome ?? '')
     setMembroDialog({ membro: m })
+    setMembroSugestoes([])
+    setMembroExistenteId(null)
+  }
+
+  async function handleMembroNomeChange(nome: string) {
+    setMembroExistenteId(null)
+    setMembroForm(f => ({ ...f, nome }))
+    if (nome.length < 2) { setMembroSugestoes([]); return }
+    let query = sb().from('membros').select('id, nome, vulgo, telefone, cargo_faccao').ilike('nome', `%${nome}%`).limit(8)
+    if (membroDialog?.membro) query = query.neq('id', membroDialog.membro.id)
+    const { data } = await query
+    setMembroSugestoes(data ?? [])
+  }
+
+  function selecionarMembroExistente(m: {id: string, nome: string, vulgo: string|null, telefone: string|null, cargo_faccao: string|null}) {
+    setMembroForm(f => ({ ...f, nome: m.nome, vulgo: m.vulgo ?? '', telefone: m.telefone ?? '', cargo_faccao: m.cargo_faccao ?? '' }))
+    setMembroExistenteId(m.id)
+    setMembroSugestoes([])
   }
 
   async function handleSalvarMembro() {
@@ -192,9 +219,19 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       status: membroForm.status,
       observacoes: membroForm.observacoes.trim() || null,
       faccao_id: faccao.id,
+      local_trabalho_loja_id: membroForm.loja_id || null,
     }
     const isNew = !membroDialog?.membro
     let data: Membro | null = null
+    if (isNew && membroExistenteId) {
+      const res = await sb().from('membros').update(payload).eq('id', membroExistenteId).select('*, faccoes(id, nome, cor_tag)').single()
+      setMembroSaving(false)
+      if (res.error) { toast.error('Erro ao vincular membro'); return }
+      onMembroSaved(res.data as Membro, true)
+      setMembroDialog(null); setMembroSugestoes([]); setMembroExistenteId(null)
+      toast.success('Membro vinculado à facção')
+      return
+    }
     if (isNew) {
       const res = await sb().from('membros').insert(payload).select('*, faccoes(id, nome, cor_tag)').single()
       if (res.error) { toast.error('Erro ao criar membro'); setMembroSaving(false); return }
@@ -206,7 +243,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     }
     setMembroSaving(false)
     onMembroSaved(data!, isNew)
-    setMembroDialog(null)
+    setMembroDialog(null); setMembroSugestoes([]); setMembroExistenteId(null)
     toast.success(isNew ? 'Membro adicionado' : 'Membro atualizado')
   }
 
@@ -223,14 +260,18 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   const [veiculoForm, setVeiculoForm] = useState(emptyVeiculoForm)
   const [veiculoSaving, setVeiculoSaving] = useState(false)
   const [confirmDeleteVeiculo, setConfirmDeleteVeiculo] = useState<Veiculo | null>(null)
+  const [veiculoMembroBusca, setVeiculoMembroBusca] = useState('')
 
   function abrirNovoVeiculo() {
     setVeiculoForm(emptyVeiculoForm)
     setVeiculoDialog({ veiculo: null })
+    setVeiculoMembroBusca('')
   }
 
   function abrirEditarVeiculo(v: Veiculo) {
+    const membroDono = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id) : null
     setVeiculoForm({ placa: v.placa ?? '', modelo: v.modelo ?? '', cor: v.cor ?? '', proprietario_tipo: v.proprietario_tipo ?? 'faccao', proprietario_id: v.proprietario_id ?? '', observacoes: v.observacoes ?? '' })
+    setVeiculoMembroBusca(membroDono ? membroDono.nome + (membroDono.vulgo ? ` "${membroDono.vulgo}"` : '') : '')
     setVeiculoDialog({ veiculo: v })
   }
 
@@ -315,6 +356,13 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       .then(({ data }) => { setDescontosItem((data ?? []) as DescontoItem[]); setLoadingDescontos(false) })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, faccao.id])
+
+  useEffect(() => {
+    if (!open) return
+    sb().from('lojas').select('id, nome').eq('status', 'ativo').order('nome')
+      .then(({ data }) => setTodasLojas(data ?? []))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
 
@@ -551,11 +599,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_90px_80px_50px_44px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Nome / Vulgo</span><span>Cargo</span><span>Telefone</span><span>Status</span><span />
+                <div className="grid grid-cols-[1fr_90px_120px_44px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                  <span>Nome / Vulgo</span><span>Cargo</span><span>Telefone</span><span />
                 </div>
                 {membrosFiltrados.map((m, idx) => (
-                  <div key={m.id} className={cn('grid grid-cols-[1fr_90px_80px_50px_44px] gap-2 items-center px-3 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
+                  <div key={m.id} className={cn('grid grid-cols-[1fr_90px_120px_44px] gap-2 items-center px-3 py-2.5', idx < membrosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <div className="min-w-0">
                         <span className="text-sm font-medium">{m.nome}</span>
@@ -569,9 +617,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                     </div>
                     <span className="text-xs text-muted-foreground truncate">{m.cargo_faccao ?? '—'}</span>
                     <span className="text-xs font-mono text-muted-foreground">{m.telefone ?? '—'}</span>
-                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded w-fit', m.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
-                      {m.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                    </span>
                     <div className="flex gap-0.5">
                       <button onClick={() => abrirEditarMembro(m)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
                       <button onClick={() => setConfirmDeleteMembro(m)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
@@ -646,7 +691,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               <div className="rounded-lg border border-border overflow-hidden">
                 {/* Header */}
                 <div className="grid grid-cols-[1fr_180px_180px_44px] gap-4 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Produto / Faixas de preço</span>
+                  <span>Produto</span>
                   <span className="text-right">Sujo</span>
                   <span className="text-right">Limpo</span>
                   <span />
@@ -980,9 +1025,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative">
                 <Label className="text-xs">Nome *</Label>
-                <Input value={membroForm.nome} onChange={e => setMembroForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" placeholder="Nome ingame" />
+                <Input value={membroForm.nome} onChange={e => handleMembroNomeChange(e.target.value)} className="h-8 text-sm" placeholder="Nome ingame" autoComplete="off" />
+                {membroSugestoes.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {membroSugestoes.map(s => (
+                      <button key={s.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2" onMouseDown={e => { e.preventDefault(); selecionarMembroExistente(s) }}>
+                        <span>{s.nome}</span>
+                        {s.vulgo && <span className="text-xs text-muted-foreground">"{s.vulgo}"</span>}
+                        {s.telefone && <span className="text-xs font-mono text-muted-foreground ml-auto">{s.telefone}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {membroExistenteId && <p className="text-[11px] text-sky-400">Membro existente — será vinculado</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Vulgo</Label>
@@ -998,6 +1055,28 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                 <Label className="text-xs">Cargo</Label>
                 <Input value={membroForm.cargo_faccao} onChange={e => setMembroForm(f => ({ ...f, cargo_faccao: e.target.value }))} className="h-8 text-sm" placeholder="Ex: Soldado" />
               </div>
+            </div>
+            <div className="space-y-1.5 relative">
+              <Label className="text-xs">Loja <span className="text-muted-foreground font-normal">(local de trabalho)</span></Label>
+              <Input
+                placeholder="Buscar loja..."
+                value={membroLojaBusca}
+                onChange={e => { setMembroLojaBusca(e.target.value); if (!e.target.value) setMembroForm(f => ({ ...f, loja_id: '' })) }}
+                className={cn('h-8 text-sm', membroForm.loja_id && 'border-primary')}
+                autoComplete="off"
+              />
+              {membroLojaBusca && !membroForm.loja_id && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                  {todasLojas.filter(l => l.nome.toLowerCase().includes(membroLojaBusca.toLowerCase())).length === 0
+                    ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhuma loja encontrada</p>
+                    : todasLojas.filter(l => l.nome.toLowerCase().includes(membroLojaBusca.toLowerCase())).map(l => (
+                      <button key={l.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setMembroForm(f => ({ ...f, loja_id: l.id })); setMembroLojaBusca(l.nome) }}>
+                        {l.nome}
+                      </button>
+                    ))
+                  }
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Observações</Label>
@@ -1064,12 +1143,27 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             {veiculoForm.proprietario_tipo === 'membro' && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Membro</Label>
-                <Select value={veiculoForm.proprietario_id} onValueChange={v => setVeiculoForm(f => ({ ...f, proprietario_id: v }))}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar membro..." /></SelectTrigger>
-                  <SelectContent>
-                    {membros.map(m => <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Input
+                    placeholder="Buscar membro..."
+                    value={veiculoMembroBusca}
+                    onChange={e => { setVeiculoMembroBusca(e.target.value); if (!e.target.value) setVeiculoForm(f => ({ ...f, proprietario_id: '' })) }}
+                    className={cn('h-8 text-sm', veiculoForm.proprietario_id && 'border-primary')}
+                    autoComplete="off"
+                  />
+                  {veiculoMembroBusca && !veiculoForm.proprietario_id && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                      {membros.filter(m => m.nome.toLowerCase().includes(veiculoMembroBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(veiculoMembroBusca.toLowerCase())).length === 0
+                        ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum membro encontrado</p>
+                        : membros.filter(m => m.nome.toLowerCase().includes(veiculoMembroBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(veiculoMembroBusca.toLowerCase())).map(m => (
+                          <button key={m.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setVeiculoForm(f => ({ ...f, proprietario_id: m.id })); setVeiculoMembroBusca(m.nome + (m.vulgo ? ` "${m.vulgo}"` : '')) }}>
+                            {m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div className="space-y-1.5">
