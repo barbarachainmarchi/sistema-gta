@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -18,15 +18,18 @@ import { toast } from 'sonner'
 const CALC_FONTE_KEY = 'calculadora-fonte'
 
 type FonteConfig = {
-  tamanho: number           // 11–20 (col 1: lista)
-  tamanhoSelecionados: number // 11–20 (col 2: selecionados)
-  negrito: boolean
-  corNome: string           // '' = padrão do tema
-  corValor: string          // '' = usa verde/laranja padrão
-  mostrarLojas: boolean     // exibir select de loja nos selecionados
+  tamanho: number              // col 1: lista
+  tamanhoSelecionados: number  // col 2: selecionados
+  negrito: boolean             // col 1
+  negritoSelecionados: boolean // col 2
+  corNome: string              // col 1 — '' = padrão do tema
+  corNomeSelecionados: string  // col 2
+  corValor: string             // col 1 — '' = verde/laranja padrão
+  corValorSelecionados: string // col 2
+  mostrarLojas: boolean
 }
 
-const FONTE_PADRAO: FonteConfig = { tamanho: 13, tamanhoSelecionados: 13, negrito: false, corNome: '', corValor: '', mostrarLojas: true }
+const FONTE_PADRAO: FonteConfig = { tamanho: 13, tamanhoSelecionados: 13, negrito: false, negritoSelecionados: false, corNome: '', corNomeSelecionados: '', corValor: '', corValorSelecionados: '', mostrarLojas: true }
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -257,6 +260,7 @@ export function CalculadoraClient({
   const [fonte, setFonte] = useState<FonteConfig>(FONTE_PADRAO)
   const [fonteModalAberto, setFonteModalAberto] = useState(false)
   const [modoCusto, setModoCusto] = useState(false)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -430,6 +434,18 @@ export function CalculadoraClient({
   }, [])
   const removeFromBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.filter(b => b.item_id !== itemId))
+  }, [])
+  const reorderBatch = useCallback((fromId: string, toId: string) => {
+    if (fromId === toId) return
+    setBatch(prev => {
+      const fromIdx = prev.findIndex(b => b.item_id === fromId)
+      const toIdx = prev.findIndex(b => b.item_id === toId)
+      if (fromIdx === -1 || toIdx === -1) return prev
+      const next = [...prev]
+      const [item] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, item)
+      return next
+    })
   }, [])
   const setQtd = useCallback((itemId: string, qtd: number) => {
     if (qtd <= 0) { setBatch(prev => prev.filter(b => b.item_id !== itemId)); return }
@@ -867,7 +883,14 @@ export function CalculadoraClient({
                 const peso = item?.peso != null ? item.peso * entry.quantidade : null
 
                 return (
-                  <div key={entry.item_id} className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 hover:bg-white/[0.01]">
+                  <div key={entry.item_id}
+                    draggable
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', entry.item_id); setDraggingId(entry.item_id) }}
+                    onDragEnd={() => setDraggingId(null)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); const fromId = e.dataTransfer.getData('text/plain'); reorderBatch(fromId, entry.item_id) }}
+                    className={cn('flex items-center gap-2 px-2 py-2.5 border-b border-border/30 hover:bg-white/[0.01]', draggingId === entry.item_id && 'opacity-40')}>
+                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground/20 shrink-0 cursor-grab" />
                     {modoCusto && fonte.mostrarLojas && lojasItem.length > 0 && (
                       <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
                         <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
@@ -885,8 +908,8 @@ export function CalculadoraClient({
                     )}
                     <span className="flex-1 min-w-0 truncate" style={{
                       fontSize: `${fonte.tamanhoSelecionados}px`,
-                      fontWeight: fonte.negrito ? 600 : 500,
-                      ...(fonte.corNome ? { color: fonte.corNome } : {}),
+                      fontWeight: fonte.negritoSelecionados ? 600 : 500,
+                      ...(fonte.corNomeSelecionados ? { color: fonte.corNomeSelecionados } : {}),
                     }}>{item?.nome ?? '—'}</span>
                     <div className="flex items-center gap-0.5 shrink-0">
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
@@ -908,7 +931,7 @@ export function CalculadoraClient({
                       {total != null ? (
                         <span className="tabular-nums font-semibold" style={{
                           fontSize: `${fonte.tamanhoSelecionados}px`,
-                          color: fonte.corValor || (modoSujo ? '#fb923c' : '#34d399'),
+                          color: fonte.corValorSelecionados || (modoSujo ? '#fb923c' : '#34d399'),
                         }}>{fmt(total)}</span>
                       ) : (
                         <span className="text-muted-foreground/30 text-sm">—</span>
@@ -1110,119 +1133,124 @@ export function CalculadoraClient({
 
       {/* ── Modal de configuração de fonte ── */}
       <Dialog open={fonteModalAberto} onOpenChange={setFonteModalAberto}>
-        <DialogContent className="max-w-xs">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-sm">Configurar exibição</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-1">
+          <div className="space-y-5 py-1 max-h-[70vh] overflow-y-auto pr-1">
 
-            {/* Tamanho — Lista */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Letra — Lista</Label>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => salvarFonte({ ...fonte, tamanho: Math.max(10, fonte.tamanho - 1) })}
-                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Minus className="h-3 w-3" />
-                </button>
-                <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanho}px</span>
-                <button
-                  onClick={() => salvarFonte({ ...fonte, tamanho: Math.min(20, fonte.tamanho + 1) })}
-                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Plus className="h-3 w-3" />
-                </button>
-                <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanho}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
-                  Preview
-                </span>
-              </div>
-            </div>
+            {/* ── Lista (Col 1) ── */}
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border/40 pb-1">Lista</p>
 
-            {/* Tamanho — Orçamento */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Letra — Orçamento</Label>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.max(10, fonte.tamanhoSelecionados - 1) })}
-                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Minus className="h-3 w-3" />
-                </button>
-                <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanhoSelecionados}px</span>
-                <button
-                  onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.min(20, fonte.tamanhoSelecionados + 1) })}
-                  className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                  <Plus className="h-3 w-3" />
-                </button>
-                <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanhoSelecionados}px`, fontWeight: fonte.negrito ? 600 : 400 }}>
-                  Preview
-                </span>
-              </div>
-            </div>
-
-            {/* Negrito */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Negrito</Label>
-              <Switch
-                checked={fonte.negrito}
-                onCheckedChange={v => salvarFonte({ ...fonte, negrito: v })}
-              />
-            </div>
-
-            {/* Mostrar lojas nos selecionados */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Mostrar lojas nos selecionados</Label>
-              <Switch
-                checked={fonte.mostrarLojas}
-                onCheckedChange={v => salvarFonte({ ...fonte, mostrarLojas: v })}
-              />
-            </div>
-
-            {/* Cor do nome */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Cor do nome</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={fonte.corNome || '#cbd5e1'}
-                  onChange={e => salvarFonte({ ...fonte, corNome: e.target.value })}
-                  className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent"
-                />
-                {fonte.corNome && (
-                  <button
-                    onClick={() => salvarFonte({ ...fonte, corNome: '' })}
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                    Padrão
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Tamanho da letra</Label>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => salvarFonte({ ...fonte, tamanho: Math.max(10, fonte.tamanho - 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Minus className="h-3 w-3" />
                   </button>
-                )}
+                  <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanho}px</span>
+                  <button onClick={() => salvarFonte({ ...fonte, tamanho: Math.min(20, fonte.tamanho + 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanho}px`, fontWeight: fonte.negrito ? 600 : 400 }}>Preview</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Negrito</Label>
+                <Switch checked={fonte.negrito} onCheckedChange={v => salvarFonte({ ...fonte, negrito: v })} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Cor do nome</Label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={fonte.corNome || '#cbd5e1'}
+                    onChange={e => salvarFonte({ ...fonte, corNome: e.target.value })}
+                    className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent" />
+                  {fonte.corNome && (
+                    <button onClick={() => salvarFonte({ ...fonte, corNome: '' })}
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Padrão</button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Cor dos valores</Label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={fonte.corValor || '#34d399'}
+                    onChange={e => salvarFonte({ ...fonte, corValor: e.target.value })}
+                    className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent" />
+                  {fonte.corValor && (
+                    <button onClick={() => salvarFonte({ ...fonte, corValor: '' })}
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Padrão</button>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Cor dos valores */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Cor dos valores</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={fonte.corValor || '#34d399'}
-                  onChange={e => salvarFonte({ ...fonte, corValor: e.target.value })}
-                  className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent"
-                />
-                {fonte.corValor && (
-                  <button
-                    onClick={() => salvarFonte({ ...fonte, corValor: '' })}
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                    Padrão
+            {/* ── Orçamento (Col 2) ── */}
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border/40 pb-1">Orçamento</p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Tamanho da letra</Label>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.max(10, fonte.tamanhoSelecionados - 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Minus className="h-3 w-3" />
                   </button>
-                )}
+                  <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanhoSelecionados}px</span>
+                  <button onClick={() => salvarFonte({ ...fonte, tamanhoSelecionados: Math.min(20, fonte.tamanhoSelecionados + 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <span className="ml-2 truncate" style={{ fontSize: `${fonte.tamanhoSelecionados}px`, fontWeight: fonte.negritoSelecionados ? 600 : 400 }}>Preview</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Negrito</Label>
+                <Switch checked={fonte.negritoSelecionados} onCheckedChange={v => salvarFonte({ ...fonte, negritoSelecionados: v })} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Cor do nome</Label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={fonte.corNomeSelecionados || '#cbd5e1'}
+                    onChange={e => salvarFonte({ ...fonte, corNomeSelecionados: e.target.value })}
+                    className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent" />
+                  {fonte.corNomeSelecionados && (
+                    <button onClick={() => salvarFonte({ ...fonte, corNomeSelecionados: '' })}
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Padrão</button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Cor dos valores</Label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={fonte.corValorSelecionados || '#34d399'}
+                    onChange={e => salvarFonte({ ...fonte, corValorSelecionados: e.target.value })}
+                    className="h-7 w-10 rounded border border-border cursor-pointer bg-transparent" />
+                  {fonte.corValorSelecionados && (
+                    <button onClick={() => salvarFonte({ ...fonte, corValorSelecionados: '' })}
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Padrão</button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Mostrar lojas</Label>
+                <Switch checked={fonte.mostrarLojas} onCheckedChange={v => salvarFonte({ ...fonte, mostrarLojas: v })} />
               </div>
             </div>
 
             {/* Reset geral */}
-            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.tamanhoSelecionados !== FONTE_PADRAO.tamanhoSelecionados || fonte.negrito !== FONTE_PADRAO.negrito || fonte.corNome || fonte.corValor || !fonte.mostrarLojas) && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full h-7 text-xs"
-                onClick={() => salvarFonte(FONTE_PADRAO)}>
+            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.tamanhoSelecionados !== FONTE_PADRAO.tamanhoSelecionados || fonte.negrito || fonte.negritoSelecionados || fonte.corNome || fonte.corNomeSelecionados || fonte.corValor || fonte.corValorSelecionados || !fonte.mostrarLojas) && (
+              <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={() => salvarFonte(FONTE_PADRAO)}>
                 Restaurar padrões
               </Button>
             )}

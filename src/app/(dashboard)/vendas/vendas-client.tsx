@@ -156,7 +156,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -167,6 +167,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   onSolicitarCancelamento: (id: string, motivo: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
   servicos: Servico[]
+  servicoItens: ServicoItemVenda[]
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [combosColapsados, setCombosColapsados] = useState<Set<string>>(new Set())
@@ -267,6 +268,20 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                       const itensCombo = venda.itens.filter(it => it.servico_id === sid)
                       const totalCombo = itensCombo.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
                       const colapsado = combosColapsados.has(sid)
+                      // Detectar multiplicador do combo (ex: 2× Kit X)
+                      const origItems = servicoItens.filter(si => si.servico_id === sid)
+                      let comboMult: number | null = null
+                      if (origItems.length > 0 && origItems.length === itensCombo.length) {
+                        let m: number | null = null; let ok = true
+                        for (const orig of origItems) {
+                          const sv = itensCombo.find(it => it.item_id === orig.item_id)
+                          if (!sv || orig.quantidade === 0) { ok = false; break }
+                          const ratio = sv.quantidade / orig.quantidade
+                          if (!Number.isInteger(ratio) || ratio <= 0) { ok = false; break }
+                          if (m === null) m = ratio; else if (m !== ratio) { ok = false; break }
+                        }
+                        if (ok && m != null) comboMult = m
+                      }
                       return (
                         <div key={sid}>
                           <button
@@ -274,6 +289,9 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                             className="w-full flex items-center gap-1.5 px-3 py-1.5 bg-primary/[0.04] hover:bg-primary/[0.07] transition-colors text-left border-b border-border/10">
                             <Layers className="h-3 w-3 text-primary/60 shrink-0" />
                             <span className="text-xs font-medium flex-1 truncate">{nomeServico}</span>
+                            {comboMult != null && (
+                              <span className="text-[10px] font-semibold tabular-nums text-foreground/70 shrink-0">{comboMult}×</span>
+                            )}
                             <span className="text-[10px] text-muted-foreground tabular-nums">{itensCombo.length} iten{itensCombo.length !== 1 ? 's' : ''}</span>
                             <span className="text-xs font-medium tabular-nums text-primary ml-1">{fmt(totalCombo)}</span>
                             <ChevronDown className={cn('h-3 w-3 text-muted-foreground shrink-0 transition-transform', !colapsado && 'rotate-180')} />
@@ -801,14 +819,42 @@ function OrderDialog({
   const descValor = subtotal - total
 
   function buildItens(): FormItem[] {
+    // Para combos em modo 'resumo' não modificados, escalar preços dos itens para bater com o preço do combo
+    const comboScaleFactors: Record<string, number> = {}
+    const servicoIdsInCart = [...new Set(cart.filter(c => c.servico_id).map(c => c.servico_id!))]
+    for (const sid of servicoIdsInCart) {
+      if ((combosModo[sid] ?? 'resumo') !== 'resumo') continue
+      const s = servicos.find(sv => sv.id === sid)
+      const comboPreco = form.tipo_dinheiro === 'sujo' ? (s?.preco_sujo ?? s?.preco_limpo) : s?.preco_limpo
+      if (comboPreco == null) continue
+      const original = servicoItens.filter(si => si.servico_id === sid)
+      const atual = cart.filter(c => c.servico_id === sid)
+      const modificado = original.length !== atual.length || original.some(orig => {
+        const ci = atual.find(c => c.item_id === orig.item_id)
+        return !ci || ci.quantidade !== orig.quantidade
+      })
+      if (modificado) continue
+      const somaUnit = atual.reduce((acc, ci) => {
+        const p = ci.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (ci.preco_sujo ?? ci.preco_limpo ?? 0) : (ci.preco_limpo ?? 0))
+        return acc + p * ci.quantidade
+      }, 0)
+      if (somaUnit > 0 && Math.abs(somaUnit - comboPreco) > 0.001) {
+        comboScaleFactors[sid] = comboPreco / somaUnit
+      }
+    }
+
     return cart.map(c => {
       const qty = c.servico_id && combosModo[c.servico_id] === 'resumo'
         ? c.quantidade * (combosQtd[c.servico_id] ?? 1)
         : c.quantidade
+      let precoUnit = c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))
+      if (c.servico_id && comboScaleFactors[c.servico_id] != null) {
+        precoUnit = precoUnit * comboScaleFactors[c.servico_id]
+      }
       return {
         tempId: c.item_id + (c.servico_id ?? ''), item_id: c.item_id, item_nome: c.nome,
         quantidade: String(qty),
-        preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
+        preco_unit: String(precoUnit),
         origem: c.origem,
         servico_id: c.servico_id,
       }
@@ -1778,6 +1824,7 @@ export function VendasClient({
                       onSolicitarCancelamento={handleSolicitarCancelamento}
                       onDelete={handleDeletarVendaAtiva}
                       servicos={servicos}
+                      servicoItens={servicoItens}
                     />
                   </div>
                 ))}
