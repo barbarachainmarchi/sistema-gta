@@ -837,16 +837,44 @@ function OrderDialog({
       .sort((a, b) => a.nome.localeCompare(b.nome))
   }, [cart, receitas, allItems, estoqueMap, combosModo, combosQtd])
 
-  // Totals
-  const subtotal = cart.reduce((s, c) => {
-    const qty = c.servico_id && combosModo[c.servico_id] === 'resumo' ? c.quantidade * (combosQtd[c.servico_id] ?? 1) : c.quantidade
-    return s + qty * getPrecoEfetivo(c)
-  }, 0)
-  const total = cart.reduce((s, c) => {
-    const qty = c.servico_id && combosModo[c.servico_id] === 'resumo' ? c.quantidade * (combosQtd[c.servico_id] ?? 1) : c.quantidade
-    const d = c.desconto_item_pct ?? descontoPct
-    return s + qty * getPrecoEfetivo(c) * (1 - d / 100)
-  }, 0)
+  // Totals — combos em modo resumo usam preço definido do combo, não soma dos itens
+  const { subtotal, total } = (() => {
+    function comboPrecoResumo(sid: string): number | null {
+      const sv = servicos.find(s => s.id === sid)
+      const pb = form.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+      if (pb == null) return null
+      const original = servicoItens.filter(si => si.servico_id === sid)
+      const atual = cart.filter(c => c.servico_id === sid)
+      const mod = original.length !== atual.length || original.some(o => {
+        const ci = atual.find(c => c.item_id === o.item_id)
+        return !ci || ci.quantidade !== o.quantidade
+      })
+      return mod ? null : pb * (combosQtd[sid] ?? 1)
+    }
+    const comboIds = [...new Set(cart.filter(c => c.servico_id).map(c => c.servico_id!))]
+    let sub = 0, tot = 0
+    for (const sid of comboIds) {
+      const modo = combosModo[sid] ?? 'resumo'
+      const qtdMult = modo === 'resumo' ? (combosQtd[sid] ?? 1) : 1
+      const pr = modo === 'resumo' ? comboPrecoResumo(sid) : null
+      if (pr != null) {
+        sub += pr
+        tot += pr * (1 - descontoPct / 100)
+      } else {
+        for (const c of cart.filter(ci => ci.servico_id === sid)) {
+          const v = c.quantidade * qtdMult * getPrecoEfetivo(c)
+          sub += v
+          tot += v * (1 - (c.desconto_item_pct ?? descontoPct) / 100)
+        }
+      }
+    }
+    for (const c of cart.filter(ci => !ci.servico_id)) {
+      const v = c.quantidade * getPrecoEfetivo(c)
+      sub += v
+      tot += v * (1 - (c.desconto_item_pct ?? descontoPct) / 100)
+    }
+    return { subtotal: sub, total: tot }
+  })()
   const descValor = subtotal - total
 
   function buildItens(): FormItem[] {
