@@ -20,6 +20,7 @@ const CALC_FONTE_KEY = 'calculadora-fonte'
 type FonteConfig = {
   tamanho: number              // col 1: lista
   tamanhoSelecionados: number  // col 2: selecionados
+  tamanhoResumo: number        // col 3: resumo + ingredientes
   negrito: boolean             // col 1
   negritoSelecionados: boolean // col 2
   corNome: string              // col 1 — '' = padrão do tema
@@ -29,7 +30,7 @@ type FonteConfig = {
   mostrarLojas: boolean
 }
 
-const FONTE_PADRAO: FonteConfig = { tamanho: 13, tamanhoSelecionados: 13, negrito: false, negritoSelecionados: false, corNome: '', corNomeSelecionados: '', corValor: '', corValorSelecionados: '', mostrarLojas: true }
+const FONTE_PADRAO: FonteConfig = { tamanho: 13, tamanhoSelecionados: 13, tamanhoResumo: 11, negrito: false, negritoSelecionados: false, corNome: '', corNomeSelecionados: '', corValor: '', corValorSelecionados: '', mostrarLojas: true }
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -1052,8 +1053,8 @@ export function CalculadoraClient({
                 const nome = itemMap[entry.item_id]?.nome ?? '—'
                 return (
                   <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
-                    <span className="text-[11px] text-foreground/70 truncate">{nome}</span>
-                    <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{entry.quantidade}×</span>
+                    <span className="text-foreground/70 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{nome}</span>
+                    <span className="text-muted-foreground shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.quantidade}×</span>
                   </div>
                 )
               })}
@@ -1080,8 +1081,8 @@ export function CalculadoraClient({
                       return (
                         <div key={ing.ingrediente_id} className="space-y-1">
                           <div className="flex items-baseline justify-between gap-1 min-w-0">
-                            <span className="text-[11px] text-foreground/80 truncate">{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
-                            <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{fmtNum(ing.totalQty)}×</span>
+                            <span className="text-foreground/80 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{ing.ingrediente?.nome ?? ing.ingrediente_id}</span>
+                            <span className="text-muted-foreground shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{fmtNum(ing.totalQty)}×</span>
                           </div>
                           {modoCusto && (
                             <div className="flex items-center gap-1">
@@ -1115,7 +1116,7 @@ export function CalculadoraClient({
                       )
                     })}
                     {modoCusto && totais.custoIng > 0 && (
-                      <div className="pt-2 border-t border-border/40 flex justify-between text-[11px] font-semibold">
+                      <div className="pt-2 border-t border-border/40 flex justify-between font-semibold" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>
                         <span className="text-muted-foreground">Total</span>
                         <span className={cn('tabular-nums', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>
                           {fmt(totais.custoIng)}
@@ -1248,8 +1249,29 @@ export function CalculadoraClient({
               </div>
             </div>
 
+            {/* ── Resumo (Col 3) ── */}
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-border/40 pb-1">Resumo</p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Tamanho da letra</Label>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => salvarFonte({ ...fonte, tamanhoResumo: Math.max(8, fonte.tamanhoResumo - 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="text-sm tabular-nums w-12 text-center">{fonte.tamanhoResumo}px</span>
+                  <button onClick={() => salvarFonte({ ...fonte, tamanhoResumo: Math.min(18, fonte.tamanhoResumo + 1) })}
+                    className="h-7 w-7 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                    <Plus className="h-3 w-3" />
+                  </button>
+                  <span className="ml-2 truncate text-foreground/70" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>Preview</span>
+                </div>
+              </div>
+            </div>
+
             {/* Reset geral */}
-            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.tamanhoSelecionados !== FONTE_PADRAO.tamanhoSelecionados || fonte.negrito || fonte.negritoSelecionados || fonte.corNome || fonte.corNomeSelecionados || fonte.corValor || fonte.corValorSelecionados || !fonte.mostrarLojas) && (
+            {(fonte.tamanho !== FONTE_PADRAO.tamanho || fonte.tamanhoSelecionados !== FONTE_PADRAO.tamanhoSelecionados || fonte.tamanhoResumo !== FONTE_PADRAO.tamanhoResumo || fonte.negrito || fonte.negritoSelecionados || fonte.corNome || fonte.corNomeSelecionados || fonte.corValor || fonte.corValorSelecionados || !fonte.mostrarLojas) && (
               <Button variant="outline" size="sm" className="w-full h-7 text-xs" onClick={() => salvarFonte(FONTE_PADRAO)}>
                 Restaurar padrões
               </Button>

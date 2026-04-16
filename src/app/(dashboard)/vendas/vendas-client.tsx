@@ -156,7 +156,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens, onItemQtdChange }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -168,6 +168,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   onDelete: (id: string) => Promise<void>
   servicos: Servico[]
   servicoItens: ServicoItemVenda[]
+  onItemQtdChange: (itemId: string, newQtd: number) => void
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [combosColapsados, setCombosColapsados] = useState<Set<string>>(new Set())
@@ -257,16 +258,17 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
               const itensAvulsos = venda.itens.filter(it => !it.servico_id)
               return (
                 <>
-                  <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1 text-[10px] text-muted-foreground/50 border-b border-border/20">
+                  <div className="grid grid-cols-[auto_1fr_36px_66px_68px_20px] gap-x-1.5 items-center px-3 py-1 text-[10px] text-muted-foreground/50 border-b border-border/20">
                     <span /><span>Item</span><span className="text-right">Qtd</span>
-                    <span className="text-right">Unit.</span><span className="text-right">Total</span>
+                    <span className="text-right">Unit.</span><span className="text-right">Total</span><span />
                   </div>
                   <div className="divide-y divide-border/20">
                     {/* Combos agrupados */}
                     {servicoIds.map(sid => {
-                      const nomeServico = servicos.find(s => s.id === sid)?.nome ?? 'Combo'
+                      const servico = servicos.find(s => s.id === sid)
+                      const nomeServico = servico?.nome ?? 'Combo'
                       const itensCombo = venda.itens.filter(it => it.servico_id === sid)
-                      const totalCombo = itensCombo.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+                      const somaItens = itensCombo.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
                       const colapsado = combosColapsados.has(sid)
                       // Detectar multiplicador do combo (ex: 2× Kit X)
                       const origItems = servicoItens.filter(si => si.servico_id === sid)
@@ -282,6 +284,16 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                         }
                         if (ok && m != null) comboMult = m
                       }
+                      // Preço do combo definido × multiplicador
+                      const comboPrecoUnit = venda.tipo_dinheiro === 'sujo'
+                        ? (servico?.preco_sujo ?? servico?.preco_limpo)
+                        : servico?.preco_limpo
+                      const totalCombo = (comboPrecoUnit != null && comboMult != null)
+                        ? comboPrecoUnit * comboMult
+                        : somaItens
+                      const ajusteCombo = (comboPrecoUnit != null && comboMult != null && Math.abs(totalCombo - somaItens) > 0.01)
+                        ? totalCombo - somaItens
+                        : null
                       return (
                         <div key={sid}>
                           <button
@@ -297,7 +309,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                             <ChevronDown className={cn('h-3 w-3 text-muted-foreground shrink-0 transition-transform', !colapsado && 'rotate-180')} />
                           </button>
                           {!colapsado && itensCombo.map(it => (
-                            <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center pl-6 pr-3 py-1.5 bg-primary/[0.02]">
+                            <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px_20px] gap-x-1.5 items-center pl-6 pr-3 py-1.5 bg-primary/[0.02]">
                               <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
                                 it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
                               )}>{it.origem === 'fabricar' ? 'Fab' : 'Est'}</span>
@@ -305,14 +317,29 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                               <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
                               <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
                               <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
+                              {podeEditar && ativo && (
+                                <button onClick={() => onItemQtdChange(it.id, it.quantidade + 1)}
+                                  className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors text-[11px] font-bold">+</button>
+                              )}
                             </div>
                           ))}
+                          {!colapsado && ajusteCombo != null && (
+                            <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center pl-6 pr-3 py-1 bg-primary/[0.02] border-t border-border/[0.08]">
+                              <span />
+                              <span className="text-[10px] italic text-muted-foreground/60 col-span-3">
+                                {ajusteCombo < 0 ? 'Desconto combo' : 'Acréscimo combo'}
+                              </span>
+                              <span className={cn('text-xs text-right tabular-nums font-medium', ajusteCombo < 0 ? 'text-green-400' : 'text-yellow-400')}>
+                                {ajusteCombo > 0 ? '+' : ''}{fmt(ajusteCombo)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )
                     })}
                     {/* Itens avulsos */}
                     {itensAvulsos.map(it => (
-                      <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center px-3 py-1.5">
+                      <div key={it.id} className="grid grid-cols-[auto_1fr_36px_66px_68px_20px] gap-x-1.5 items-center px-3 py-1.5">
                         <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded shrink-0',
                           it.origem === 'fabricar' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'
                         )}>
@@ -322,6 +349,10 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                         <span className="text-xs text-right text-muted-foreground tabular-nums">{it.quantidade}×</span>
                         <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(it.preco_unit)}</span>
                         <span className="text-xs text-right font-medium tabular-nums">{fmt(it.quantidade * it.preco_unit)}</span>
+                        {podeEditar && ativo && (
+                          <button onClick={() => onItemQtdChange(it.id, it.quantidade + 1)}
+                            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors text-[11px] font-bold">+</button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -819,42 +850,14 @@ function OrderDialog({
   const descValor = subtotal - total
 
   function buildItens(): FormItem[] {
-    // Para combos em modo 'resumo' não modificados, escalar preços dos itens para bater com o preço do combo
-    const comboScaleFactors: Record<string, number> = {}
-    const servicoIdsInCart = [...new Set(cart.filter(c => c.servico_id).map(c => c.servico_id!))]
-    for (const sid of servicoIdsInCart) {
-      if ((combosModo[sid] ?? 'resumo') !== 'resumo') continue
-      const s = servicos.find(sv => sv.id === sid)
-      const comboPreco = form.tipo_dinheiro === 'sujo' ? (s?.preco_sujo ?? s?.preco_limpo) : s?.preco_limpo
-      if (comboPreco == null) continue
-      const original = servicoItens.filter(si => si.servico_id === sid)
-      const atual = cart.filter(c => c.servico_id === sid)
-      const modificado = original.length !== atual.length || original.some(orig => {
-        const ci = atual.find(c => c.item_id === orig.item_id)
-        return !ci || ci.quantidade !== orig.quantidade
-      })
-      if (modificado) continue
-      const somaUnit = atual.reduce((acc, ci) => {
-        const p = ci.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (ci.preco_sujo ?? ci.preco_limpo ?? 0) : (ci.preco_limpo ?? 0))
-        return acc + p * ci.quantidade
-      }, 0)
-      if (somaUnit > 0 && Math.abs(somaUnit - comboPreco) > 0.001) {
-        comboScaleFactors[sid] = comboPreco / somaUnit
-      }
-    }
-
     return cart.map(c => {
       const qty = c.servico_id && combosModo[c.servico_id] === 'resumo'
         ? c.quantidade * (combosQtd[c.servico_id] ?? 1)
         : c.quantidade
-      let precoUnit = c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))
-      if (c.servico_id && comboScaleFactors[c.servico_id] != null) {
-        precoUnit = precoUnit * comboScaleFactors[c.servico_id]
-      }
       return {
         tempId: c.item_id + (c.servico_id ?? ''), item_id: c.item_id, item_nome: c.nome,
         quantidade: String(qty),
-        preco_unit: String(precoUnit),
+        preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
         origem: c.origem,
         servico_id: c.servico_id,
       }
@@ -1659,6 +1662,15 @@ export function VendasClient({
     }
   }
 
+  async function handleItemQtdChange(vendaId: string, itemId: string, newQtd: number) {
+    if (newQtd <= 0) return
+    const { error } = await sb().from('venda_itens').update({ quantidade: newQtd }).eq('id', itemId)
+    if (error) { toast.error('Erro ao atualizar quantidade'); return }
+    setVendas(prev => prev.map(v => v.id === vendaId ? {
+      ...v, itens: v.itens.map(it => it.id === itemId ? { ...it, quantidade: newQtd } : it)
+    } : v))
+  }
+
   async function handleDeletarVendaAtiva(id: string) {
     // Só permitido quando status ainda é 'fabricando' (inicial, sem mudança)
     const venda = vendas.find(v => v.id === id)
@@ -1825,6 +1837,7 @@ export function VendasClient({
                       onDelete={handleDeletarVendaAtiva}
                       servicos={servicos}
                       servicoItens={servicoItens}
+                      onItemQtdChange={(itemId, qtd) => handleItemQtdChange(venda.id, itemId, qtd)}
                     />
                   </div>
                 ))}
