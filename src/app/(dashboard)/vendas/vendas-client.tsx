@@ -202,7 +202,32 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? null
   const empresaNome = faccaoNome ?? lojaNome
   const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
-  const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+  // Subtotal usa preço definido do combo quando disponível (igual à exibição por item)
+  const subtotal = (() => {
+    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+    let s = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    for (const sid of sids) {
+      const sv = servicos.find(x => x.id === sid)
+      const ic = venda.itens.filter(it => it.servico_id === sid)
+      const somaItens = ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+      const orig = servicoItens.filter(si => si.servico_id === sid)
+      let mult: number | null = null
+      if (orig.length > 0 && orig.length === ic.length) {
+        let m: number | null = null; let ok = true
+        for (const o of orig) {
+          const it = ic.find(x => x.item_id === o.item_id)
+          if (!it || o.quantidade === 0) { ok = false; break }
+          const r = it.quantidade / o.quantidade
+          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
+          if (m === null) m = r; else if (m !== r) { ok = false; break }
+        }
+        if (ok && m != null) mult = m
+      }
+      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+      s += (pu != null && mult != null) ? pu * mult : somaItens
+    }
+    return s
+  })()
   const total = subtotal * (1 - venda.desconto_pct / 100)
   const entregue = venda.status === 'entregue'
   const podeEntregar = venda.status === 'encomenda' || venda.status === 'pronto'
@@ -300,11 +325,13 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                             onClick={() => setCombosColapsados(prev => { const n = new Set(prev); colapsado ? n.delete(sid) : n.add(sid); return n })}
                             className="w-full flex items-center gap-1.5 px-3 py-1.5 bg-primary/[0.04] hover:bg-primary/[0.07] transition-colors text-left border-b border-border/10">
                             <Layers className="h-3 w-3 text-primary/60 shrink-0" />
-                            <span className="text-xs font-medium flex-1 truncate">{nomeServico}</span>
+                            <span className="text-xs font-medium flex-1 truncate min-w-0">
+                              {nomeServico}
+                              <span className="text-[9px] font-normal text-muted-foreground/50 ml-1">({itensCombo.length})</span>
+                            </span>
                             {comboMult != null && (
                               <span className="text-[10px] font-semibold tabular-nums text-foreground/70 shrink-0">{comboMult}×</span>
                             )}
-                            <span className="text-[10px] text-muted-foreground tabular-nums">{itensCombo.length} iten{itensCombo.length !== 1 ? 's' : ''}</span>
                             <span className="text-xs font-medium tabular-nums text-primary ml-1">{fmt(totalCombo)}</span>
                             <ChevronDown className={cn('h-3 w-3 text-muted-foreground shrink-0 transition-transform', !colapsado && 'rotate-180')} />
                           </button>
@@ -637,13 +664,13 @@ function OrderDialog({
   // Empresa autocomplete
   type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number } | { tipo: 'loja'; id: string; nome: string }
   const empresaSugestoes = useMemo((): EmpresaOpc[] => {
-    if (!empresaAberta || !empresaNome.trim()) return []
-    const q = empresaNome.toLowerCase()
-    const ff = faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q))
+    if (!empresaAberta) return []
+    const q = empresaNome.toLowerCase().trim()
+    const ff = (q ? faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q)) : faccoes)
       .slice(0, 5).map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
-    const ll = lojas.filter(l => l.nome.toLowerCase().includes(q)).slice(0, 4)
+    const ll = (q ? lojas.filter(l => l.nome.toLowerCase().includes(q)) : lojas).slice(0, 4)
       .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
-    return [...ff, ...ll].slice(0, 8)
+    return [...ff, ...ll].slice(0, 9)
   }, [faccoes, lojas, empresaNome, empresaAberta])
 
   function selecionarEmpresa(e: EmpresaOpc) {
@@ -670,13 +697,23 @@ function OrderDialog({
 
   // Membro autocomplete
   const membrosSugestoes = useMemo(() => {
-    if (!membroAberta || !membroNome.trim()) return []
-    const q = membroNome.toLowerCase()
-    // Com facção: mostra membros da facção + membros sem facção (civil)
+    if (!membroAberta) return []
+    const q = membroNome.toLowerCase().trim()
     const pool = form.faccao_id
       ? membros.filter(m => m.faccao_id === form.faccao_id || m.faccao_id === null)
       : membros
-    return pool.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)).slice(0, 8)
+    const filtered = q
+      ? pool.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q))
+      : pool
+    return filtered
+      .sort((a, b) => {
+        // membros da facção selecionada primeiro
+        const af = form.faccao_id && a.faccao_id === form.faccao_id ? 0 : 1
+        const bf = form.faccao_id && b.faccao_id === form.faccao_id ? 0 : 1
+        if (af !== bf) return af - bf
+        return a.nome.localeCompare(b.nome)
+      })
+      .slice(0, 10)
   }, [membros, membroNome, membroAberta, form.faccao_id])
 
   function selecionarMembro(m: Membro) {
@@ -786,6 +823,27 @@ function OrderDialog({
     toast.success(`Combo "${servico.nome}" adicionado`)
   }
 
+  function detalharCombo(sid: string) {
+    const qtdMult = combosQtd[sid] ?? 1
+    setCart(prev => {
+      const comboItems = prev.filter(c => c.servico_id === sid)
+      const otherItems = prev.filter(c => c.servico_id !== sid)
+      const converted: CartItem[] = comboItems.map(c => ({ ...c, quantidade: c.quantidade * qtdMult, servico_id: null }))
+      const result = [...otherItems]
+      for (const c of converted) {
+        const idx = result.findIndex(r => r.item_id === c.item_id && !r.servico_id)
+        if (idx >= 0) {
+          result[idx] = { ...result[idx], quantidade: result[idx].quantidade + c.quantidade }
+        } else {
+          result.push(c)
+        }
+      }
+      return result
+    })
+    setCombosModo(prev => { const n = { ...prev }; delete n[sid]; return n })
+    setCombosQtd(prev => { const n = { ...prev }; delete n[sid]; return n })
+  }
+
   // Mapa item_id → categoria (via allItems)
   const itemCatMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -800,7 +858,7 @@ function OrderDialog({
     return Array.from(cats).sort()
   }, [meusProdutos, itemCatMap])
 
-  // Produtos filtrados (search + categoria), favoritos primeiro
+  // Produtos filtrados (search + categoria), com qty > 0 no topo, depois favoritos
   const produtosFiltrados = useMemo(() => {
     let lista = meusProdutos
     if (filterCategoria) lista = lista.filter(p => itemCatMap[p.item_id] === filterCategoria)
@@ -809,12 +867,15 @@ function OrderDialog({
       lista = lista.filter(p => p.nome.toLowerCase().includes(q))
     }
     return [...lista].sort((a, b) => {
+      const aq = (cartMap[a.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
+      const bq = (cartMap[b.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
+      if (aq !== bq) return aq - bq
       const af = favoritos.has(a.item_id) ? 0 : 1
       const bf = favoritos.has(b.item_id) ? 0 : 1
       if (af !== bf) return af - bf
       return a.nome.localeCompare(b.nome)
     })
-  }, [meusProdutos, buscaProd, filterCategoria, itemCatMap, favoritos])
+  }, [meusProdutos, buscaProd, filterCategoria, itemCatMap, favoritos, cartMap])
 
   // Ingredients panel
   const ingredientes = useMemo(() => {
@@ -954,15 +1015,21 @@ function OrderDialog({
                   className="h-8 text-sm" />
                 {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
                   <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                    {membrosSugestoes.map(m => (
-                      <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                        <span className="font-medium">{m.nome}</span>
-                        {m.vulgo && <span className="text-muted-foreground">({m.vulgo})</span>}
-                        {m.faccao_id === null && <span className="text-[10px] text-muted-foreground/50 italic">civil</span>}
-                        {m.telefone && <span className="ml-auto text-muted-foreground text-[10px]">{m.telefone}</span>}
-                      </button>
-                    ))}
+                    {membrosSugestoes.map(m => {
+                      const fac = m.faccao_id ? faccoes.find(f => f.id === m.faccao_id) : null
+                      return (
+                        <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                          <span className="font-medium truncate min-w-0">{m.nome}</span>
+                          {m.vulgo && <span className="text-muted-foreground shrink-0">({m.vulgo})</span>}
+                          {fac
+                            ? <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary shrink-0">{fac.sigla ?? fac.nome.slice(0, 3).toUpperCase()}</span>
+                            : <span className="text-[10px] text-muted-foreground/50 italic shrink-0">civil</span>
+                          }
+                          {m.telefone && <span className="ml-auto text-muted-foreground text-[10px] shrink-0">{m.telefone}</span>}
+                        </button>
+                      )
+                    })}
                     {membroNaoEncontrado && (
                       <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
                         <p className="text-[11px] text-muted-foreground">
@@ -1100,7 +1167,7 @@ function OrderDialog({
             })()}
 
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_52px_64px_88px_72px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+            <div className="grid grid-cols-[1fr_52px_80px_88px_72px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
               <span>Produto</span>
               <span className="text-right">Estoque</span>
               <span className="text-right">Qtd</span>
@@ -1133,7 +1200,7 @@ function OrderDialog({
 
                 return (
                   <div key={p.item_id}
-                    className={cn('grid grid-cols-[1fr_52px_64px_88px_72px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
+                    className={cn('grid grid-cols-[1fr_52px_80px_88px_72px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
                       inCart ? 'bg-primary/[0.04]' : 'hover:bg-white/[0.02]'
                     )}>
                     {/* Nome + badges */}
@@ -1181,15 +1248,21 @@ function OrderDialog({
                     </div>
 
                     {/* Qtd */}
-                    <div className="flex justify-end">
+                    <div className="flex items-center justify-end gap-0.5">
                       <Input
                         type="number" min="0"
                         value={qtd === 0 ? '' : qtd}
                         placeholder="0"
                         onChange={e => setCartQtd(p.item_id, parseInt(e.target.value) || 0)}
-                        className={cn('h-7 text-xs text-right w-full tabular-nums',
+                        className={cn('h-7 text-xs text-right tabular-nums w-10',
                           inCart && 'border-primary/40 bg-primary/[0.04]'
                         )} />
+                      <button
+                        type="button"
+                        onClick={() => setCartQtd(p.item_id, qtd + 1)}
+                        className="h-6 w-5 shrink-0 flex items-center justify-center rounded text-xs font-bold text-muted-foreground/50 hover:text-primary hover:bg-primary/[0.08] transition-colors">
+                        +
+                      </button>
                     </div>
 
                     {/* Preço unit — leitura por padrão, edição manual via botão */}
@@ -1302,7 +1375,7 @@ function OrderDialog({
                                       className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">+</button>
                                     <span className="text-[11px] tabular-nums text-foreground font-medium ml-1">{fmt(totalCombo)}</span>
                                     <button
-                                      onClick={() => setCombosModo(p => ({ ...p, [sid]: 'detalhado' }))}
+                                      onClick={() => detalharCombo(sid)}
                                       className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors ml-1">
                                       detalhar
                                     </button>

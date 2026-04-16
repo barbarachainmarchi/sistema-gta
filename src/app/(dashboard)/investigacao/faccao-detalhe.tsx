@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
@@ -167,6 +167,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   const [membroExistenteId, setMembroExistenteId] = useState<string | null>(null)
   const [membroLojaBusca, setMembroLojaBusca] = useState('')
   const [todasLojas, setTodasLojas] = useState<{id: string, nome: string}[]>([])
+  const [membroVeiculoInline, setMembroVeiculoInline] = useState({ ativo: false, placa: '', modelo: '', cor: '' })
 
   function abrirNovoMembro() {
     setMembroForm(emptyMembroForm)
@@ -174,6 +175,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     setMembroSugestoes([])
     setMembroExistenteId(null)
     setMembroLojaBusca('')
+    setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' })
   }
 
   function abrirEditarMembro(m: Membro) {
@@ -183,6 +185,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     setMembroDialog({ membro: m })
     setMembroSugestoes([])
     setMembroExistenteId(null)
+    setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' })
   }
 
   async function handleMembroNomeChange(nome: string) {
@@ -220,6 +223,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       observacoes: membroForm.observacoes.trim() || null,
       faccao_id: faccao.id,
       local_trabalho_loja_id: membroForm.loja_id || null,
+      membro_proprio: false,
     }
     const isNew = !membroDialog?.membro
     let data: Membro | null = null
@@ -241,9 +245,22 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       if (res.error) { toast.error('Erro ao salvar membro'); setMembroSaving(false); return }
       data = res.data as Membro
     }
+    // Salvar veículo inline se preenchido
+    if (data && membroVeiculoInline.ativo && (membroVeiculoInline.placa || membroVeiculoInline.modelo || membroVeiculoInline.cor)) {
+      const { data: vData } = await sb().from('veiculos').insert({
+        placa: membroVeiculoInline.placa ? membroVeiculoInline.placa.toUpperCase() : null,
+        modelo: membroVeiculoInline.modelo || null,
+        cor: membroVeiculoInline.cor || null,
+        proprietario_tipo: 'membro',
+        proprietario_id: data.id,
+        observacoes: null,
+      }).select().single()
+      if (vData) onVeiculoSaved(vData as Veiculo, true)
+    }
     setMembroSaving(false)
     onMembroSaved(data!, isNew)
     setMembroDialog(null); setMembroSugestoes([]); setMembroExistenteId(null)
+    setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' })
     toast.success(isNew ? 'Membro adicionado' : 'Membro atualizado')
   }
 
@@ -1086,9 +1103,36 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               <Switch checked={membroForm.status === 'ativo'} onCheckedChange={v => setMembroForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
               <span className="text-xs text-muted-foreground">{membroForm.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
             </div>
+            {/* Veículo inline */}
+            <div className="space-y-2 border-t border-border/40 pt-3">
+              <button
+                type="button"
+                onClick={() => setMembroVeiculoInline(f => ({ ...f, ativo: !f.ativo }))}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <Car className="h-3 w-3" />
+                <span>{membroVeiculoInline.ativo ? 'Remover veículo' : '+ Veículo (opcional)'}</span>
+                <ChevronDown className={cn('h-3 w-3 transition-transform', membroVeiculoInline.ativo && 'rotate-180')} />
+              </button>
+              {membroVeiculoInline.ativo && (
+                <div className="grid grid-cols-3 gap-2 pl-2 border-l border-border/50">
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Placa</Label>
+                    <Input value={membroVeiculoInline.placa} onChange={e => setMembroVeiculoInline(f => ({ ...f, placa: e.target.value }))} className="h-7 text-xs font-mono" placeholder="ABC1234" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Modelo</Label>
+                    <Input value={membroVeiculoInline.modelo} onChange={e => setMembroVeiculoInline(f => ({ ...f, modelo: e.target.value }))} className="h-7 text-xs" placeholder="Sultan" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px]">Cor</Label>
+                    <Input value={membroVeiculoInline.cor} onChange={e => setMembroVeiculoInline(f => ({ ...f, cor: e.target.value }))} className="h-7 text-xs" placeholder="Preto" />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setMembroDialog(null)}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={() => { setMembroDialog(null); setMembroVeiculoInline({ ativo: false, placa: '', modelo: '', cor: '' }) }}>Cancelar</Button>
             <Button size="sm" onClick={handleSalvarMembro} disabled={membroSaving}>
               {membroSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
             </Button>
