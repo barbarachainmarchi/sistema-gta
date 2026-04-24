@@ -70,6 +70,7 @@ interface Props {
 }
 
 type BatchEntry = { item_id: string; quantidade: number; loja_id: string }
+type ComboEntry = { servico_id: string; quantidade: number }
 type Aba = 'favoritos' | 'meus' | 'todos'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,7 +254,6 @@ export function CalculadoraClient({
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [favoritosServicos, setFavoritosServicos] = useState<Set<string>>(new Set(favoritosServicosIniciais))
   const [lojasPorIng, setLojasPorIng] = useState<Record<string, string>>({})
-  const [servicosSelecionados, setServicosSelecionados] = useState<Servico[]>([])
   const [modoSujo, setModoSujo] = useState(false)
   const [copied, setCopied] = useState(false)
   const [imgbbLoading, setImgbbLoading] = useState(false)
@@ -264,6 +264,8 @@ export function CalculadoraClient({
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [sortBatch, setSortBatch] = useState<'none' | 'name' | 'qty'>('none')
   const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({})
+  const [comboBatch, setComboBatch] = useState<ComboEntry[]>([])
+  const [comboQtdInputs, setComboQtdInputs] = useState<Record<string, string>>({})
 
   useEffect(() => {
     try {
@@ -484,25 +486,63 @@ export function CalculadoraClient({
   const addServico = useCallback((servico: Servico) => {
     const itens = servicoItens.filter(si => si.servico_id === servico.id)
     if (itens.length === 0 && !servico.eh_meu_servico) { toast.info('Serviço sem itens configurados'); return }
+    setComboBatch(prev => {
+      const existing = prev.find(c => c.servico_id === servico.id)
+      if (existing) {
+        const newQty = existing.quantidade + 1
+        setComboQtdInputs(pq => ({ ...pq, [servico.id]: String(newQty) }))
+        return prev.map(c => c.servico_id === servico.id ? { ...c, quantidade: newQty } : c)
+      }
+      setComboQtdInputs(pq => ({ ...pq, [servico.id]: '1' }))
+      return [...prev, { servico_id: servico.id, quantidade: 1 }]
+    })
+    toast.success(`Kit "${servico.nome}" adicionado`)
+  }, [servicoItens])
+
+  const explodir = useCallback((servicoId: string) => {
+    const combo = comboBatch.find(c => c.servico_id === servicoId)
+    if (!combo) return
+    const itens = servicoItens.filter(si => si.servico_id === servicoId)
     if (itens.length > 0) {
       setBatch(prev => {
         let next = [...prev]
         for (const si of itens) {
+          const qtdTotal = si.quantidade * combo.quantidade
           const exists = next.find(b => b.item_id === si.item_id)
           if (exists) {
-            next = next.map(b => b.item_id === si.item_id ? { ...b, quantidade: b.quantidade + si.quantidade } : b)
+            next = next.map(b => b.item_id === si.item_id ? { ...b, quantidade: b.quantidade + qtdTotal } : b)
           } else {
-            next.push({ item_id: si.item_id, quantidade: si.quantidade, loja_id: '' })
+            next.push({ item_id: si.item_id, quantidade: qtdTotal, loja_id: '' })
           }
         }
         return next
       })
+      setQtdInputs(prev => {
+        const n = { ...prev }
+        for (const si of itens) {
+          if (n[si.item_id] === undefined) n[si.item_id] = String(si.quantidade * combo.quantidade)
+        }
+        return n
+      })
     }
-    setServicosSelecionados(prev => prev.some(s => s.id === servico.id) ? prev : [...prev, servico])
-    toast.success(itens.length > 0
-      ? `${itens.length} iten${itens.length !== 1 ? 's' : ''} do kit "${servico.nome}" adicionados`
-      : `Kit "${servico.nome}" adicionado`)
-  }, [servicoItens])
+    setComboBatch(prev => prev.filter(c => c.servico_id !== servicoId))
+    setComboQtdInputs(prev => { const n = { ...prev }; delete n[servicoId]; return n })
+  }, [comboBatch, servicoItens])
+
+  const setComboQtd = useCallback((servicoId: string, qtd: number) => {
+    if (qtd <= 0) {
+      setComboBatch(prev => prev.filter(c => c.servico_id !== servicoId))
+      setComboQtdInputs(prev => { const n = { ...prev }; delete n[servicoId]; return n })
+      return
+    }
+    setComboBatch(prev => prev.map(c => c.servico_id === servicoId ? { ...c, quantidade: qtd } : c))
+    setComboQtdInputs(prev => ({ ...prev, [servicoId]: String(qtd) }))
+  }, [])
+
+  const removeFromComboBatch = useCallback((servicoId: string) => {
+    setComboBatch(prev => prev.filter(c => c.servico_id !== servicoId))
+    setComboQtdInputs(prev => { const n = { ...prev }; delete n[servicoId]; return n })
+  }, [])
 
   // ── Ingredientes agregados ────────────────────────────────────────────────
 
@@ -513,9 +553,9 @@ export function CalculadoraClient({
       totalPeso: number
       lojasDisponiveis: LojaPreco[]
     }> = {}
-    for (const { item_id, quantidade } of batch) {
+    const addIngredientes = (item_id: string, quantidade: number) => {
       const item = itemMap[item_id]
-      if (!item?.item_receita?.length) continue
+      if (!item?.item_receita?.length) return
       for (const r of item.item_receita) {
         const qtd = r.quantidade * quantidade
         if (!map[r.ingrediente_id]) {
@@ -529,20 +569,37 @@ export function CalculadoraClient({
         map[r.ingrediente_id].totalPeso += (itemMap[r.ingrediente_id]?.peso ?? 0) * qtd
       }
     }
+    for (const { item_id, quantidade } of batch) addIngredientes(item_id, quantidade)
+    for (const combo of comboBatch) {
+      for (const si of servicoItens.filter(s => s.servico_id === combo.servico_id)) {
+        addIngredientes(si.item_id, si.quantidade * combo.quantidade)
+      }
+    }
     return Object.entries(map)
       .map(([id, v]) => ({ ingrediente_id: id, ...v }))
       .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? ''))
-  }, [batch, itemMap, lojaPrecoPorItem])
+  }, [batch, comboBatch, itemMap, lojaPrecoPorItem, servicoItens])
 
   // ── Totais ────────────────────────────────────────────────────────────────
 
   const totais = useMemo(() => {
-    let custoItens = 0, pesoProdutos = 0, custoItensCompleto = batch.length > 0
+    let custoItens = 0, pesoProdutos = 0, custoItensCompleto = (batch.length + comboBatch.length) > 0
     for (const entry of batch) {
       const preco = getPrecoItem(entry)
       if (preco == null) custoItensCompleto = false
       else custoItens += preco * entry.quantidade
       pesoProdutos += (itemMap[entry.item_id]?.peso ?? 0) * entry.quantidade
+    }
+    for (const combo of comboBatch) {
+      const srv = servicos.find(s => s.id === combo.servico_id)
+      if (srv) {
+        const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
+        if (kitPreco == null) custoItensCompleto = false
+        else custoItens += kitPreco * combo.quantidade
+        for (const si of servicoItens.filter(s => s.servico_id === combo.servico_id)) {
+          pesoProdutos += (itemMap[si.item_id]?.peso ?? 0) * si.quantidade * combo.quantidade
+        }
+      } else { custoItensCompleto = false }
     }
 
     let custoIng = 0, custoIngCompleto = ingredientesAgregados.length > 0
@@ -555,7 +612,7 @@ export function CalculadoraClient({
     }
 
     return { custoItens, pesoProdutos, custoItensCompleto, custoIng, custoIngCompleto }
-  }, [batch, getPrecoItem, itemMap, ingredientesAgregados, lojasPorIng, modoSujo])
+  }, [batch, comboBatch, getPrecoItem, itemMap, servicos, servicoItens, ingredientesAgregados, lojasPorIng, modoSujo])
 
   // ── Copiar / Imagem ───────────────────────────────────────────────────────
 
@@ -573,6 +630,13 @@ export function CalculadoraClient({
       const total = preco != null ? fmt(preco * entry.quantidade) : '—'
       const prefix = lojaNome ? `[${lojaNome}] ` : ''
       linhas.push({ text: `${prefix}${item.nome}  ×${entry.quantidade}  ${total}` })
+    }
+    for (const combo of comboBatch) {
+      const srv = servicos.find(s => s.id === combo.servico_id)
+      if (!srv) continue
+      const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
+      const total = kitPreco != null ? fmt(kitPreco * combo.quantidade) : '—'
+      linhas.push({ text: `[Kit] ${srv.nome}  ×${combo.quantidade}  ${total}` })
     }
 
     linhas.push({ text: '' })
@@ -604,7 +668,7 @@ export function CalculadoraClient({
     }
 
     return linhas
-  }, [batch, itemMap, lojaMap, getPrecoItem, totais, ingredientesAgregados, lojasPorIng, modoSujo])
+  }, [batch, comboBatch, servicos, itemMap, lojaMap, getPrecoItem, totais, ingredientesAgregados, lojasPorIng, modoSujo])
 
   const gerarLinhasResumoCompacto = useCallback(() => {
     const linhas: { text: string; indent?: boolean; bold?: boolean; dim?: boolean; color?: string }[] = []
@@ -616,6 +680,11 @@ export function CalculadoraClient({
       const item = itemMap[entry.item_id]
       if (!item) continue
       linhas.push({ text: `${item.nome}  ×${entry.quantidade}` })
+    }
+    for (const combo of comboBatch) {
+      const srv = servicos.find(s => s.id === combo.servico_id)
+      if (!srv) continue
+      linhas.push({ text: `[Kit] ${srv.nome}  ×${combo.quantidade}` })
     }
 
     if (ingredientesAgregados.length > 0) {
@@ -639,7 +708,7 @@ export function CalculadoraClient({
     }
 
     return linhas
-  }, [batch, itemMap, ingredientesAgregados, lojasPorIng, modoSujo, totais])
+  }, [batch, comboBatch, servicos, itemMap, ingredientesAgregados, lojasPorIng, modoSujo, totais])
 
   // Apenas o pedido (Col 2 imgbb) — sem ingredientes
   const gerarLinhasPedido = useCallback(() => {
@@ -656,11 +725,18 @@ export function CalculadoraClient({
       const prefix = lojaNome ? `[${lojaNome}] ` : ''
       linhas.push({ text: `${prefix}${item.nome}  ×${entry.quantidade}  ${total}` })
     }
+    for (const combo of comboBatch) {
+      const srv = servicos.find(s => s.id === combo.servico_id)
+      if (!srv) continue
+      const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
+      const total = kitPreco != null ? fmt(kitPreco * combo.quantidade) : '—'
+      linhas.push({ text: `[Kit] ${srv.nome}  ×${combo.quantidade}  ${total}` })
+    }
     linhas.push({ text: '' })
     if (totais.custoItens > 0) linhas.push({ text: `TOTAL: ${fmt(totais.custoItens)}`, bold: true })
     if (totais.pesoProdutos > 0) linhas.push({ text: `Peso: ${fmtKg(totais.pesoProdutos)}`, dim: true })
     return linhas
-  }, [batch, itemMap, lojaMap, getPrecoItem, totais])
+  }, [batch, comboBatch, servicos, itemMap, lojaMap, getPrecoItem, totais, modoSujo])
 
   const copiarTexto = useCallback(() => {
     const linhas = gerarLinhasResumo()
@@ -838,7 +914,7 @@ export function CalculadoraClient({
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            Orçamento{batch.length > 0 && <span className="text-foreground ml-1">({batch.length})</span>}
+            Orçamento{(batch.length + comboBatch.length) > 0 && <span className="text-foreground ml-1">({batch.length + comboBatch.length})</span>}
           </h3>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -874,8 +950,8 @@ export function CalculadoraClient({
                 </button>
               </div>
             )}
-            {batch.length > 0 && (
-              <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
+            {(batch.length + comboBatch.length) > 0 && (
+              <button onClick={() => { setBatch([]); setLojasPorIng({}); setComboBatch([]); setComboQtdInputs({}); setQtdInputs({}) }}
                 className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
                 <X className="h-3 w-3" /> Limpar
               </button>
@@ -884,7 +960,7 @@ export function CalculadoraClient({
               <Label className="text-[11px] text-muted-foreground">Sujo</Label>
               <Switch checked={modoSujo} onCheckedChange={setModoSujo} />
             </div>
-            {batch.length > 0 && (
+            {(batch.length + comboBatch.length) > 0 && (
               <>
                 <button onClick={copiarTexto}
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1 rounded hover:bg-white/[0.06]">
@@ -900,7 +976,7 @@ export function CalculadoraClient({
           </div>
         </div>
 
-        {batch.length === 0 ? (
+        {(batch.length + comboBatch.length) === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
             <Package className="h-10 w-10 text-muted-foreground/20" />
             <p className="text-sm text-muted-foreground">Adicione itens da lista</p>
@@ -970,9 +1046,12 @@ export function CalculadoraClient({
                         <Plus className="h-3 w-3" />
                       </button>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0 min-w-[120px] justify-end">
+                    <div className="flex flex-col items-end shrink-0 min-w-[130px]">
+                      {preco != null && entry.quantidade > 1 && (
+                        <span className="text-[9px] text-muted-foreground/40 tabular-nums">{entry.quantidade} × {fmt(preco)}</span>
+                      )}
                       {peso != null && peso > 0 && (
-                        <span className="text-[10px] text-muted-foreground/50 tabular-nums">{fmtKg(peso)}</span>
+                        <span className="text-[9px] text-muted-foreground/40 tabular-nums">{fmtKg(peso)}</span>
                       )}
                       {total != null ? (
                         <span className="tabular-nums font-semibold" style={{
@@ -1013,58 +1092,70 @@ export function CalculadoraClient({
               )}
             </div>
 
-            {/* Kits selecionados */}
-            {servicosSelecionados.length > 0 && (
-              <div className="px-4 py-3 border-t border-border/60 space-y-3 shrink-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Kits selecionados</p>
-                {servicosSelecionados.map(servico => {
-                  const itensKit = servicoItens.filter(si => si.servico_id === servico.id)
-                  let somaItens = 0; let completo = itensKit.length > 0
-                  for (const si of itensKit) {
-                    const batchEntry = batch.find(b => b.item_id === si.item_id)
-                    if (!batchEntry) { completo = false; continue }
-                    const preco = getPrecoItem(batchEntry)
-                    if (preco == null) { completo = false; continue }
-                    somaItens += preco * si.quantidade
-                  }
-                  const kitPreco = modoSujo ? (servico.preco_sujo ?? servico.preco_limpo) : (servico.preco_limpo ?? servico.preco_sujo)
-                  const diferenca = kitPreco != null && completo && somaItens > 0 ? kitPreco - somaItens : null
-                  const pct = diferenca != null && somaItens > 0 ? (diferenca / somaItens * 100) : null
-                  return (
-                    <div key={servico.id} className="space-y-1 text-xs">
-                      <div className="flex items-center gap-1 font-semibold text-foreground/80">
-                        <Layers className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{servico.nome}</span>
-                        <button onClick={() => setServicosSelecionados(prev => prev.filter(s => s.id !== servico.id))}
-                          className="ml-auto shrink-0 text-muted-foreground/40 hover:text-destructive transition-colors">
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                      {itensKit.length > 0 && completo && (
-                        <div className="flex justify-between text-muted-foreground">
-                          <span>Soma dos itens</span><span className="tabular-nums">{fmt(somaItens)}</span>
-                        </div>
-                      )}
-                      {kitPreco != null && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Preço do kit</span>
-                          <span className={cn('tabular-nums font-semibold', modoSujo ? 'text-orange-400' : 'text-emerald-400')}>{fmt(kitPreco)}</span>
-                        </div>
-                      )}
-                      {diferenca != null && pct != null && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">{diferenca < 0 ? 'Desconto' : 'Acréscimo'}</span>
-                          <span className={cn('tabular-nums font-semibold', diferenca < 0 ? 'text-green-400' : 'text-red-400')}>
-                            {diferenca < 0 ? '-' : '+'}{fmt(Math.abs(diferenca))} ({Math.abs(pct).toFixed(1)}%)
-                          </span>
-                        </div>
-                      )}
-                      {itensKit.length === 0 && <p className="text-muted-foreground/50 italic">Serviço sem itens</p>}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            {/* Combos (não explodidos) */}
+            {comboBatch.map(combo => {
+              const srv = servicos.find(s => s.id === combo.servico_id)
+              if (!srv) return null
+              const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
+              const total = kitPreco != null ? kitPreco * combo.quantidade : null
+              const itensKit = servicoItens.filter(si => si.servico_id === combo.servico_id)
+              return (
+                <div key={combo.servico_id} className="flex items-center gap-2 px-2 py-2.5 border-b border-border/30 hover:bg-white/[0.01] bg-primary/[0.015]">
+                  <Layers className="h-3.5 w-3.5 text-primary/30 shrink-0" />
+                  <span className="flex-1 min-w-0 truncate" style={{
+                    fontSize: `${fonte.tamanhoSelecionados}px`,
+                    fontWeight: fonte.negritoSelecionados ? 600 : 500,
+                    ...(fonte.corNomeSelecionados ? { color: fonte.corNomeSelecionados } : {}),
+                  }}>{srv.nome}</span>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade - 1)}
+                      className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <Input type="number"
+                      value={comboQtdInputs[combo.servico_id] ?? String(combo.quantidade)}
+                      onChange={e => setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: e.target.value }))}
+                      onBlur={() => {
+                        const raw = comboQtdInputs[combo.servico_id]
+                        if (raw === undefined) return
+                        const v = parseInt(raw)
+                        if (!raw.trim() || isNaN(v)) {
+                          setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: String(combo.quantidade) }))
+                        } else { setComboQtd(combo.servico_id, v) }
+                      }}
+                      className="h-7 w-16 text-center text-sm px-0.5" />
+                    <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade + 1)}
+                      className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="flex flex-col items-end shrink-0 min-w-[130px]">
+                    {kitPreco != null && combo.quantidade > 1 && (
+                      <span className="text-[9px] text-muted-foreground/40 tabular-nums">{combo.quantidade} × {fmt(kitPreco)}</span>
+                    )}
+                    {total != null ? (
+                      <span className="tabular-nums font-semibold" style={{
+                        fontSize: `${fonte.tamanhoSelecionados}px`,
+                        color: fonte.corValorSelecionados || (modoSujo ? '#fb923c' : '#34d399'),
+                      }}>{fmt(total)}</span>
+                    ) : (
+                      <span className="text-muted-foreground/30 text-sm">—</span>
+                    )}
+                  </div>
+                  {itensKit.length > 0 && (
+                    <button onClick={() => explodir(combo.servico_id)}
+                      title={`Explodir em ${itensKit.length} iten${itensKit.length !== 1 ? 's' : ''}`}
+                      className="shrink-0 h-6 rounded px-1.5 flex items-center justify-center text-[10px] text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors border border-border/30 font-mono">
+                      ↗
+                    </button>
+                  )}
+                  <button onClick={() => removeFromComboBatch(combo.servico_id)}
+                    className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })}
 
           </div>
         )}
@@ -1076,7 +1167,7 @@ export function CalculadoraClient({
         {/* Header */}
         <div className="px-3 py-3 border-b border-border shrink-0 flex items-center justify-between">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
-          {batch.length > 0 && (
+          {(batch.length + comboBatch.length) > 0 && (
             <button onClick={enviarImgbbResumo} disabled={imgbbResumoLoading}
               title="Gerar imagem do resumo + materiais (copia URL)"
               className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
@@ -1085,21 +1176,40 @@ export function CalculadoraClient({
           )}
         </div>
 
-        {batch.length === 0 ? (
+        {(batch.length + comboBatch.length) === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-[11px] text-muted-foreground/40 text-center px-3">Vazio</p>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto flex flex-col">
 
-            {/* Itens resumidos */}
+            {/* Itens resumidos (segue ordenação do orçamento + combos explodidos) */}
             <div className="px-3 py-3 space-y-1 border-b border-border/50">
-              {batch.map(entry => {
+              {sortedBatch.map(entry => {
                 const nome = itemMap[entry.item_id]?.nome ?? '—'
                 return (
                   <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
                     <span className="text-foreground/70 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{nome}</span>
                     <span className="text-muted-foreground shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.quantidade}×</span>
+                  </div>
+                )
+              })}
+              {comboBatch.map(combo => {
+                const srv = servicos.find(s => s.id === combo.servico_id)
+                if (!srv) return null
+                const itens = servicoItens.filter(si => si.servico_id === combo.servico_id)
+                return (
+                  <div key={combo.servico_id} className="mt-1 space-y-0.5">
+                    <div className="flex items-center gap-1 opacity-50" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>
+                      <Layers className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate">{srv.nome} ×{combo.quantidade}</span>
+                    </div>
+                    {itens.map(si => (
+                      <div key={si.item_id} className="flex items-baseline justify-between gap-1 min-w-0 pl-3">
+                        <span className="text-foreground/60 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{itemMap[si.item_id]?.nome ?? si.item_nome}</span>
+                        <span className="text-muted-foreground/70 shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{si.quantidade * combo.quantidade}×</span>
+                      </div>
+                    ))}
                   </div>
                 )
               })}
