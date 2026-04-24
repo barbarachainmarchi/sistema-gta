@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical, ArrowDownUp } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical, ArrowDownUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -266,6 +266,7 @@ export function CalculadoraClient({
   const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({})
   const [comboBatch, setComboBatch] = useState<ComboEntry[]>([])
   const [comboQtdInputs, setComboQtdInputs] = useState<Record<string, string>>({})
+  const [combosExpandidos, setCombosExpandidos] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     try {
@@ -378,11 +379,43 @@ export function CalculadoraClient({
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
 
-  const sortedBatch = useMemo(() => {
-    if (sortBatch === 'name') return [...batch].sort((a, b) => (itemMap[a.item_id]?.nome ?? '').localeCompare(itemMap[b.item_id]?.nome ?? ''))
-    if (sortBatch === 'qty') return [...batch].sort((a, b) => b.quantidade - a.quantidade)
-    return batch
-  }, [batch, sortBatch, itemMap])
+  // Lista unificada de itens + combos para o Orçamento (Col 2), ordenada junto
+  const unifiedDisplayList = useMemo(() => {
+    type UE =
+      | { tipo: 'item'; id: string; nome: string; quantidade: number; data: BatchEntry }
+      | { tipo: 'combo'; id: string; nome: string; quantidade: number; data: ComboEntry; servico: Servico }
+    const items: UE[] = batch.map(b => ({ tipo: 'item' as const, id: b.item_id, nome: itemMap[b.item_id]?.nome ?? '', quantidade: b.quantidade, data: b }))
+    const combos: UE[] = comboBatch.flatMap(c => {
+      const srv = servicos.find(s => s.id === c.servico_id)
+      if (!srv) return []
+      return [{ tipo: 'combo' as const, id: c.servico_id, nome: srv.nome, quantidade: c.quantidade, data: c, servico: srv }]
+    })
+    const all: UE[] = [...items, ...combos]
+    if (sortBatch === 'name') return all.sort((a, b) => a.nome.localeCompare(b.nome))
+    if (sortBatch === 'qty') return all.sort((a, b) => b.quantidade - a.quantidade)
+    return all
+  }, [batch, comboBatch, itemMap, servicos, sortBatch])
+
+  // Resumo (Col 3): quantidades somadas — itens avulsos + componentes de combos
+  const resumoItens = useMemo(() => {
+    const map = new Map<string, { nome: string; quantidade: number }>()
+    for (const entry of batch) {
+      const nome = itemMap[entry.item_id]?.nome ?? entry.item_id
+      const cur = map.get(entry.item_id) ?? { nome, quantidade: 0 }
+      map.set(entry.item_id, { nome, quantidade: cur.quantidade + entry.quantidade })
+    }
+    for (const combo of comboBatch) {
+      for (const si of servicoItens.filter(s => s.servico_id === combo.servico_id)) {
+        const nome = itemMap[si.item_id]?.nome ?? si.item_nome
+        const cur = map.get(si.item_id) ?? { nome, quantidade: 0 }
+        map.set(si.item_id, { nome, quantidade: cur.quantidade + si.quantidade * combo.quantidade })
+      }
+    }
+    const result = Array.from(map.entries()).map(([id, v]) => ({ item_id: id, ...v }))
+    if (sortBatch === 'name') result.sort((a, b) => a.nome.localeCompare(b.nome))
+    else if (sortBatch === 'qty') result.sort((a, b) => b.quantidade - a.quantidade)
+    return result
+  }, [batch, comboBatch, sortBatch, itemMap, servicoItens])
 
   const servicosFiltrados = useMemo(() => {
     if (filterLoja) return []  // combos não têm loja; ocultar quando filtro de loja ativo
@@ -932,7 +965,7 @@ export function CalculadoraClient({
                 )}>Custo</button>
             </div>
             {/* Ordenação */}
-            {batch.length > 0 && (
+            {(batch.length + comboBatch.length) > 0 && (
               <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30">
                 <button
                   onClick={() => setSortBatch(sortBatch === 'name' ? 'none' : 'name')}
@@ -984,35 +1017,119 @@ export function CalculadoraClient({
         ) : (
           <div className="flex-1 overflow-y-auto flex flex-col">
 
-            {/* Itens editáveis */}
+            {/* Lista unificada: itens avulsos + combos, ordenados juntos */}
             <div className="flex-1">
-              {sortedBatch.map(entry => {
-                const item = itemMap[entry.item_id]
-                const lojasItem = lojaPrecoPorItem[entry.item_id] ?? []
-                const preco = getPrecoItem(entry)
-                const total = preco != null ? preco * entry.quantidade : null
-                const peso = item?.peso != null ? item.peso * entry.quantidade : null
+              {unifiedDisplayList.map(entry => {
 
+                if (entry.tipo === 'combo') {
+                  const combo = entry.data
+                  const srv = entry.servico
+                  const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
+                  const total = kitPreco != null ? kitPreco * combo.quantidade : null
+                  const itensKit = servicoItens.filter(si => si.servico_id === combo.servico_id)
+                  const expandido = combosExpandidos.has(combo.servico_id)
+                  return (
+                    <div key={`combo-${combo.servico_id}`} className="border-b border-border/30">
+                      <div className="flex items-center gap-2 px-2 py-2.5 hover:bg-white/[0.01] bg-primary/[0.015]">
+                        <Layers className="h-3.5 w-3.5 text-primary/30 shrink-0" />
+                        <span className="flex-1 min-w-0 truncate" style={{
+                          fontSize: `${fonte.tamanhoSelecionados}px`,
+                          fontWeight: fonte.negritoSelecionados ? 600 : 500,
+                          ...(fonte.corNomeSelecionados ? { color: fonte.corNomeSelecionados } : {}),
+                        }}>{srv.nome}</span>
+                        {/* Expand/collapse conteúdo */}
+                        {itensKit.length > 0 && (
+                          <button
+                            onClick={() => setCombosExpandidos(prev => { const n = new Set(prev); expandido ? n.delete(combo.servico_id) : n.add(combo.servico_id); return n })}
+                            title={expandido ? 'Ocultar itens' : 'Ver itens do kit'}
+                            className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                            {expandido ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                        )}
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade - 1)}
+                            className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <Input type="number"
+                            value={comboQtdInputs[combo.servico_id] ?? String(combo.quantidade)}
+                            onChange={e => setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: e.target.value }))}
+                            onBlur={() => {
+                              const raw = comboQtdInputs[combo.servico_id]
+                              if (raw === undefined) return
+                              const v = parseInt(raw)
+                              if (!raw.trim() || isNaN(v)) setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: String(combo.quantidade) }))
+                              else setComboQtd(combo.servico_id, v)
+                            }}
+                            className="h-7 w-16 text-center text-sm px-0.5" />
+                          <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade + 1)}
+                            className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <div className="flex flex-col items-end shrink-0 min-w-[130px]">
+                          {kitPreco != null && combo.quantidade > 1 && (
+                            <span className="text-[9px] text-muted-foreground/40 tabular-nums">{combo.quantidade} × {fmt(kitPreco)}</span>
+                          )}
+                          {total != null ? (
+                            <span className="tabular-nums font-semibold" style={{
+                              fontSize: `${fonte.tamanhoSelecionados}px`,
+                              color: fonte.corValorSelecionados || (modoSujo ? '#fb923c' : '#34d399'),
+                            }}>{fmt(total)}</span>
+                          ) : <span className="text-muted-foreground/30 text-sm">—</span>}
+                        </div>
+                        {itensKit.length > 0 && (
+                          <button onClick={() => explodir(combo.servico_id)}
+                            title={`Converter em ${itensKit.length} iten${itensKit.length !== 1 ? 's' : ''} avulsos`}
+                            className="shrink-0 h-6 rounded px-1.5 flex items-center justify-center text-[10px] text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors border border-border/30 font-mono">
+                            ↗
+                          </button>
+                        )}
+                        <button onClick={() => removeFromComboBatch(combo.servico_id)}
+                          className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      {/* Conteúdo expandido do kit */}
+                      {expandido && itensKit.map(si => (
+                        <div key={si.item_id} className="flex items-center gap-2 pl-8 pr-2 py-1.5 bg-white/[0.01] border-t border-border/20">
+                          <span className="flex-1 min-w-0 truncate text-muted-foreground/70" style={{ fontSize: `${fonte.tamanhoSelecionados - 1}px` }}>
+                            {itemMap[si.item_id]?.nome ?? si.item_nome}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground/40 tabular-nums shrink-0">
+                            {si.quantidade * combo.quantidade}×
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+
+                // item avulso
+                const bEntry = entry.data
+                const item = itemMap[bEntry.item_id]
+                const lojasItem = lojaPrecoPorItem[bEntry.item_id] ?? []
+                const preco = getPrecoItem(bEntry)
+                const total = preco != null ? preco * bEntry.quantidade : null
+                const peso = item?.peso != null ? item.peso * bEntry.quantidade : null
                 return (
-                  <div key={entry.item_id}
-                    draggable
-                    onDragStart={e => { e.dataTransfer.setData('text/plain', entry.item_id); setDraggingId(entry.item_id) }}
+                  <div key={`item-${bEntry.item_id}`}
+                    draggable={sortBatch === 'none'}
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', bEntry.item_id); setDraggingId(bEntry.item_id) }}
                     onDragEnd={() => setDraggingId(null)}
                     onDragOver={e => e.preventDefault()}
-                    onDrop={e => { e.preventDefault(); const fromId = e.dataTransfer.getData('text/plain'); reorderBatch(fromId, entry.item_id) }}
-                    className={cn('flex items-center gap-2 px-2 py-2.5 border-b border-border/30 hover:bg-white/[0.01]', draggingId === entry.item_id && 'opacity-40')}>
-                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground/20 shrink-0 cursor-grab" />
+                    onDrop={e => { e.preventDefault(); const fromId = e.dataTransfer.getData('text/plain'); reorderBatch(fromId, bEntry.item_id) }}
+                    className={cn('flex items-center gap-2 px-2 py-2.5 border-b border-border/30 hover:bg-white/[0.01]', draggingId === bEntry.item_id && 'opacity-40')}>
+                    <GripVertical className={cn('h-3.5 w-3.5 shrink-0', sortBatch === 'none' ? 'text-muted-foreground/20 cursor-grab' : 'text-transparent')} />
                     {modoCusto && fonte.mostrarLojas && lojasItem.length > 0 && (
-                      <Select value={entry.loja_id || 'sem'} onValueChange={v => setLoja(entry.item_id, v)}>
+                      <Select value={bEntry.loja_id || 'sem'} onValueChange={v => setLoja(bEntry.item_id, v)}>
                         <SelectTrigger className="h-7 text-[10px] border-border/50 px-1.5 w-[88px] shrink-0">
                           <SelectValue placeholder="— loja —" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="sem">— sem —</SelectItem>
                           {lojasItem.map(l => (
-                            <SelectItem key={l.loja_id} value={l.loja_id}>
-                              {lojaMap[l.loja_id]?.nome ?? l.loja_id}
-                            </SelectItem>
+                            <SelectItem key={l.loja_id} value={l.loja_id}>{lojaMap[l.loja_id]?.nome ?? l.loja_id}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1023,32 +1140,29 @@ export function CalculadoraClient({
                       ...(fonte.corNomeSelecionados ? { color: fonte.corNomeSelecionados } : {}),
                     }}>{item?.nome ?? '—'}</span>
                     <div className="flex items-center gap-0.5 shrink-0">
-                      <button onClick={() => setQtd(entry.item_id, entry.quantidade - 1)}
+                      <button onClick={() => setQtd(bEntry.item_id, bEntry.quantidade - 1)}
                         className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                         <Minus className="h-3 w-3" />
                       </button>
                       <Input type="number"
-                        value={qtdInputs[entry.item_id] ?? String(entry.quantidade)}
-                        onChange={e => setQtdInputs(prev => ({ ...prev, [entry.item_id]: e.target.value }))}
+                        value={qtdInputs[bEntry.item_id] ?? String(bEntry.quantidade)}
+                        onChange={e => setQtdInputs(prev => ({ ...prev, [bEntry.item_id]: e.target.value }))}
                         onBlur={() => {
-                          const raw = qtdInputs[entry.item_id]
+                          const raw = qtdInputs[bEntry.item_id]
                           if (raw === undefined) return
                           const v = parseInt(raw)
-                          if (!raw.trim() || isNaN(v)) {
-                            setQtdInputs(prev => ({ ...prev, [entry.item_id]: String(entry.quantidade) }))
-                          } else {
-                            setQtd(entry.item_id, v)
-                          }
+                          if (!raw.trim() || isNaN(v)) setQtdInputs(prev => ({ ...prev, [bEntry.item_id]: String(bEntry.quantidade) }))
+                          else setQtd(bEntry.item_id, v)
                         }}
                         className="h-7 w-16 text-center text-sm px-0.5" />
-                      <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
+                      <button onClick={() => setQtd(bEntry.item_id, bEntry.quantidade + 1)}
                         className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                         <Plus className="h-3 w-3" />
                       </button>
                     </div>
                     <div className="flex flex-col items-end shrink-0 min-w-[130px]">
-                      {preco != null && entry.quantidade > 1 && (
-                        <span className="text-[9px] text-muted-foreground/40 tabular-nums">{entry.quantidade} × {fmt(preco)}</span>
+                      {preco != null && bEntry.quantidade > 1 && (
+                        <span className="text-[9px] text-muted-foreground/40 tabular-nums">{bEntry.quantidade} × {fmt(preco)}</span>
                       )}
                       {peso != null && peso > 0 && (
                         <span className="text-[9px] text-muted-foreground/40 tabular-nums">{fmtKg(peso)}</span>
@@ -1058,11 +1172,9 @@ export function CalculadoraClient({
                           fontSize: `${fonte.tamanhoSelecionados}px`,
                           color: fonte.corValorSelecionados || (modoSujo ? '#fb923c' : '#34d399'),
                         }}>{fmt(total)}</span>
-                      ) : (
-                        <span className="text-muted-foreground/30 text-sm">—</span>
-                      )}
+                      ) : <span className="text-muted-foreground/30 text-sm">—</span>}
                     </div>
-                    <button onClick={() => removeFromBatch(entry.item_id)}
+                    <button onClick={() => removeFromBatch(bEntry.item_id)}
                       className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
                       <X className="h-3 w-3" />
                     </button>
@@ -1092,71 +1204,6 @@ export function CalculadoraClient({
               )}
             </div>
 
-            {/* Combos (não explodidos) */}
-            {comboBatch.map(combo => {
-              const srv = servicos.find(s => s.id === combo.servico_id)
-              if (!srv) return null
-              const kitPreco = modoSujo ? (srv.preco_sujo ?? srv.preco_limpo) : (srv.preco_limpo ?? srv.preco_sujo)
-              const total = kitPreco != null ? kitPreco * combo.quantidade : null
-              const itensKit = servicoItens.filter(si => si.servico_id === combo.servico_id)
-              return (
-                <div key={combo.servico_id} className="flex items-center gap-2 px-2 py-2.5 border-b border-border/30 hover:bg-white/[0.01] bg-primary/[0.015]">
-                  <Layers className="h-3.5 w-3.5 text-primary/30 shrink-0" />
-                  <span className="flex-1 min-w-0 truncate" style={{
-                    fontSize: `${fonte.tamanhoSelecionados}px`,
-                    fontWeight: fonte.negritoSelecionados ? 600 : 500,
-                    ...(fonte.corNomeSelecionados ? { color: fonte.corNomeSelecionados } : {}),
-                  }}>{srv.nome}</span>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade - 1)}
-                      className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                      <Minus className="h-3 w-3" />
-                    </button>
-                    <Input type="number"
-                      value={comboQtdInputs[combo.servico_id] ?? String(combo.quantidade)}
-                      onChange={e => setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: e.target.value }))}
-                      onBlur={() => {
-                        const raw = comboQtdInputs[combo.servico_id]
-                        if (raw === undefined) return
-                        const v = parseInt(raw)
-                        if (!raw.trim() || isNaN(v)) {
-                          setComboQtdInputs(prev => ({ ...prev, [combo.servico_id]: String(combo.quantidade) }))
-                        } else { setComboQtd(combo.servico_id, v) }
-                      }}
-                      className="h-7 w-16 text-center text-sm px-0.5" />
-                    <button onClick={() => setComboQtd(combo.servico_id, combo.quantidade + 1)}
-                      className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="flex flex-col items-end shrink-0 min-w-[130px]">
-                    {kitPreco != null && combo.quantidade > 1 && (
-                      <span className="text-[9px] text-muted-foreground/40 tabular-nums">{combo.quantidade} × {fmt(kitPreco)}</span>
-                    )}
-                    {total != null ? (
-                      <span className="tabular-nums font-semibold" style={{
-                        fontSize: `${fonte.tamanhoSelecionados}px`,
-                        color: fonte.corValorSelecionados || (modoSujo ? '#fb923c' : '#34d399'),
-                      }}>{fmt(total)}</span>
-                    ) : (
-                      <span className="text-muted-foreground/30 text-sm">—</span>
-                    )}
-                  </div>
-                  {itensKit.length > 0 && (
-                    <button onClick={() => explodir(combo.servico_id)}
-                      title={`Explodir em ${itensKit.length} iten${itensKit.length !== 1 ? 's' : ''}`}
-                      className="shrink-0 h-6 rounded px-1.5 flex items-center justify-center text-[10px] text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors border border-border/30 font-mono">
-                      ↗
-                    </button>
-                  )}
-                  <button onClick={() => removeFromComboBatch(combo.servico_id)}
-                    className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors">
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              )
-            })}
-
           </div>
         )}
       </div>
@@ -1183,36 +1230,14 @@ export function CalculadoraClient({
         ) : (
           <div className="flex-1 overflow-y-auto flex flex-col">
 
-            {/* Itens resumidos (segue ordenação do orçamento + combos explodidos) */}
+            {/* Itens resumidos — quantidades somadas (avulsos + componentes de combos) */}
             <div className="px-3 py-3 space-y-1 border-b border-border/50">
-              {sortedBatch.map(entry => {
-                const nome = itemMap[entry.item_id]?.nome ?? '—'
-                return (
-                  <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
-                    <span className="text-foreground/70 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{nome}</span>
-                    <span className="text-muted-foreground shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.quantidade}×</span>
-                  </div>
-                )
-              })}
-              {comboBatch.map(combo => {
-                const srv = servicos.find(s => s.id === combo.servico_id)
-                if (!srv) return null
-                const itens = servicoItens.filter(si => si.servico_id === combo.servico_id)
-                return (
-                  <div key={combo.servico_id} className="mt-1 space-y-0.5">
-                    <div className="flex items-center gap-1 opacity-50" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>
-                      <Layers className="h-2.5 w-2.5 shrink-0" />
-                      <span className="truncate">{srv.nome} ×{combo.quantidade}</span>
-                    </div>
-                    {itens.map(si => (
-                      <div key={si.item_id} className="flex items-baseline justify-between gap-1 min-w-0 pl-3">
-                        <span className="text-foreground/60 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{itemMap[si.item_id]?.nome ?? si.item_nome}</span>
-                        <span className="text-muted-foreground/70 shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{si.quantidade * combo.quantidade}×</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
+              {resumoItens.map(entry => (
+                <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
+                  <span className="text-foreground/70 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.nome}</span>
+                  <span className="text-muted-foreground shrink-0 tabular-nums" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.quantidade}×</span>
+                </div>
+              ))}
             </div>
 
             {/* Ingredientes — sempre visíveis */}
