@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical } from 'lucide-react'
+import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical, ArrowDownUp } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -262,6 +262,8 @@ export function CalculadoraClient({
   const [fonteModalAberto, setFonteModalAberto] = useState(false)
   const [modoCusto, setModoCusto] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [sortBatch, setSortBatch] = useState<'none' | 'name' | 'qty'>('none')
+  const [qtdInputs, setQtdInputs] = useState<Record<string, string>>({})
 
   useEffect(() => {
     try {
@@ -374,6 +376,12 @@ export function CalculadoraClient({
 
   const batchIds = useMemo(() => new Set(batch.map(b => b.item_id)), [batch])
 
+  const sortedBatch = useMemo(() => {
+    if (sortBatch === 'name') return [...batch].sort((a, b) => (itemMap[a.item_id]?.nome ?? '').localeCompare(itemMap[b.item_id]?.nome ?? ''))
+    if (sortBatch === 'qty') return [...batch].sort((a, b) => b.quantidade - a.quantidade)
+    return batch
+  }, [batch, sortBatch, itemMap])
+
   const servicosFiltrados = useMemo(() => {
     if (filterLoja) return []  // combos não têm loja; ocultar quando filtro de loja ativo
     let lista = servicos
@@ -432,9 +440,11 @@ export function CalculadoraClient({
 
   const addToBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.some(b => b.item_id === itemId) ? prev : [...prev, { item_id: itemId, quantidade: 1, loja_id: '' }])
+    setQtdInputs(prev => prev[itemId] !== undefined ? prev : { ...prev, [itemId]: '1' })
   }, [])
   const removeFromBatch = useCallback((itemId: string) => {
     setBatch(prev => prev.filter(b => b.item_id !== itemId))
+    setQtdInputs(prev => { const n = { ...prev }; delete n[itemId]; return n })
   }, [])
   const reorderBatch = useCallback((fromId: string, toId: string) => {
     if (fromId === toId) return
@@ -449,8 +459,13 @@ export function CalculadoraClient({
     })
   }, [])
   const setQtd = useCallback((itemId: string, qtd: number) => {
-    if (qtd <= 0) { setBatch(prev => prev.filter(b => b.item_id !== itemId)); return }
+    if (qtd <= 0) {
+      setBatch(prev => prev.filter(b => b.item_id !== itemId))
+      setQtdInputs(prev => { const n = { ...prev }; delete n[itemId]; return n })
+      return
+    }
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, quantidade: qtd } : b))
+    setQtdInputs(prev => ({ ...prev, [itemId]: String(qtd) }))
   }, [])
   const setLoja = useCallback((itemId: string, lojaId: string) => {
     setBatch(prev => prev.map(b => b.item_id === itemId ? { ...b, loja_id: lojaId === 'sem' ? '' : lojaId } : b))
@@ -840,6 +855,25 @@ export function CalculadoraClient({
                   modoCusto ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
                 )}>Custo</button>
             </div>
+            {/* Ordenação */}
+            {batch.length > 0 && (
+              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30">
+                <button
+                  onClick={() => setSortBatch(sortBatch === 'name' ? 'none' : 'name')}
+                  title="Ordenar por nome"
+                  className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors',
+                    sortBatch === 'name' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+                  )}>A‑Z</button>
+                <button
+                  onClick={() => setSortBatch(sortBatch === 'qty' ? 'none' : 'qty')}
+                  title="Ordenar por quantidade"
+                  className={cn('p-0.5 rounded transition-colors',
+                    sortBatch === 'qty' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                  )}>
+                  <ArrowDownUp className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             {batch.length > 0 && (
               <button onClick={() => { setBatch([]); setLojasPorIng({}); setServicosSelecionados([]) }}
                 className="text-xs text-muted-foreground hover:text-destructive transition-colors flex items-center gap-1">
@@ -876,7 +910,7 @@ export function CalculadoraClient({
 
             {/* Itens editáveis */}
             <div className="flex-1">
-              {batch.map(entry => {
+              {sortedBatch.map(entry => {
                 const item = itemMap[entry.item_id]
                 const lojasItem = lojaPrecoPorItem[entry.item_id] ?? []
                 const preco = getPrecoItem(entry)
@@ -917,8 +951,19 @@ export function CalculadoraClient({
                         className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
                         <Minus className="h-3 w-3" />
                       </button>
-                      <Input type="number" value={entry.quantidade}
-                        onChange={e => setQtd(entry.item_id, Math.max(1, parseInt(e.target.value) || 1))}
+                      <Input type="number"
+                        value={qtdInputs[entry.item_id] ?? String(entry.quantidade)}
+                        onChange={e => setQtdInputs(prev => ({ ...prev, [entry.item_id]: e.target.value }))}
+                        onBlur={() => {
+                          const raw = qtdInputs[entry.item_id]
+                          if (raw === undefined) return
+                          const v = parseInt(raw)
+                          if (!raw.trim() || isNaN(v)) {
+                            setQtdInputs(prev => ({ ...prev, [entry.item_id]: String(entry.quantidade) }))
+                          } else {
+                            setQtd(entry.item_id, v)
+                          }
+                        }}
                         className="h-7 w-16 text-center text-sm px-0.5" />
                       <button onClick={() => setQtd(entry.item_id, entry.quantidade + 1)}
                         className="h-7 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">

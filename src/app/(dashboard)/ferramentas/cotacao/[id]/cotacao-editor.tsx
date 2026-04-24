@@ -23,8 +23,8 @@ type Cotacao = {
   fornecedor_nome: string; modo_preco: 'sujo' | 'limpo'; status: 'rascunho' | 'finalizada' | 'cancelada'
   criado_por_nome: string | null; created_by: string | null
 }
-type Pessoa  = { id: string; cotacao_id: string; nome: string; membro_id: string | null }
-type Item    = { id: string; cotacao_id: string; pessoa_id: string | null; item_nome: string; item_id: string | null; quantidade: number; preco_unit: number; adicionado_por_nome: string | null }
+type Pessoa  = { id: string; cotacao_id: string; nome: string; membro_id: string | null; pago?: boolean; pago_por?: string | null }
+type Item    = { id: string; cotacao_id: string; pessoa_id: string | null; item_nome: string; item_id: string | null; quantidade: number; preco_unit: number; adicionado_por_nome: string | null; tipo_preco?: 'sujo' | 'limpo' | null }
 type Faccao  = { id: string; nome: string; cor_tag: string }
 type Loja    = { id: string; nome: string }
 type Membro  = { id: string; nome: string; vulgo: string | null }
@@ -195,9 +195,25 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   // Collapse pessoas
   const [colapsadas, setColapsadas] = useState<Set<string>>(new Set())
 
+  // Tipo de preço ao adicionar itens (sujo/limpo)
+  const [addItemTipoPreco, setAddItemTipoPreco] = useState<'sujo' | 'limpo'>(cotacao.modo_preco)
+
+  // Edição inline de pago_por
+  const [pagoEditId, setPagoEditId] = useState<string | null>(null)
+  const [pagoEditValue, setPagoEditValue] = useState('')
+
   // ── Mapa de itens por id (para peso) ──────────────────────────────────────
 
   const itemPesoMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i.peso])), [allItems])
+
+  // ── Membros filtrados para o dialog de adicionar pessoa ───────────────────
+
+  const membrosDialog = useMemo(() => {
+    const q = novaPessoaForm.nome.toLowerCase().trim()
+    return q ? membros.filter(m =>
+      m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)
+    ) : membros
+  }, [membros, novaPessoaForm.nome])
 
   // ── Catálogo do fornecedor ────────────────────────────────────────────────
 
@@ -212,14 +228,14 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     return map
   }, [faixasPrecos])
 
-  function resolverPrecoComFaixas(fp: FaccaoPreco, quantidade: number): number {
+  function resolverPrecoComFaixas(fp: FaccaoPreco, quantidade: number, tipo: 'sujo' | 'limpo'): number {
     const key = `${fp.faccao_id}:${fp.item_id}`
     const faixas = (faixasMap[key] ?? []).sort((a, b) => b.quantidade_min - a.quantidade_min)
     const faixa = faixas.find(f => quantidade >= f.quantidade_min)
     if (faixa) {
-      return cotacao.modo_preco === 'sujo' ? (faixa.preco_sujo ?? faixa.preco_limpo ?? 0) : (faixa.preco_limpo ?? 0)
+      return tipo === 'sujo' ? (faixa.preco_sujo ?? faixa.preco_limpo ?? 0) : (faixa.preco_limpo ?? 0)
     }
-    return cotacao.modo_preco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0)
+    return tipo === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0)
   }
 
   const catalogo = useMemo(() => {
@@ -227,21 +243,20 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
       return faccaoPrecos.filter(fp => fp.faccao_id === cotacao.fornecedor_id).map(fp => ({
         item_id: fp.item_id,
         nome: (fp.items as { nome: string } | null)?.nome ?? fp.item_id,
-        preco: cotacao.modo_preco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0),
-        fp, // referência para resolução de faixa
+        preco: addItemTipoPreco === 'sujo' ? (fp.preco_sujo ?? fp.preco_limpo ?? 0) : (fp.preco_limpo ?? 0),
+        fp,
       }))
     }
     if (cotacao.fornecedor_tipo === 'loja' && cotacao.fornecedor_id) {
       return lojaPrecos.filter(lp => lp.loja_id === cotacao.fornecedor_id).map(lp => ({
         item_id: lp.item_id,
         nome: (lp.items as { nome: string } | null)?.nome ?? lp.item_id,
-        preco: cotacao.modo_preco === 'sujo' ? (lp.preco_sujo ?? lp.preco) : lp.preco,
+        preco: addItemTipoPreco === 'sujo' ? (lp.preco_sujo ?? lp.preco) : lp.preco,
         fp: null,
       }))
     }
     return []
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cotacao, faccaoPrecos, lojaPrecos])
+  }, [cotacao, faccaoPrecos, lojaPrecos, addItemTipoPreco])
 
   const catalogoFiltrado = useMemo(() => {
     if (!itemBusca.trim()) return catalogo
@@ -315,12 +330,13 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
       const cat = catalogo.find(c => c.item_id === item_id)
       if (!cat) continue
       // Resolve preço considerando faixas por quantidade
-      const preco_unit = cat.fp ? resolverPrecoComFaixas(cat.fp as FaccaoPreco, qty) : cat.preco
+      const preco_unit = cat.fp ? resolverPrecoComFaixas(cat.fp as FaccaoPreco, qty, addItemTipoPreco) : cat.preco
       const { data, error } = await sb().from('cotacao_itens').insert({
         cotacao_id: cotacao.id, pessoa_id: addItemPessoa,
         item_nome: cat.nome, item_id,
         quantidade: qty, preco_unit,
         adicionado_por: userId, adicionado_por_nome: userNome,
+        tipo_preco: addItemTipoPreco,
       }).select().single()
       if (error) { toast.error('Erro ao adicionar: ' + error.message); setSalvandoItem(false); return }
       adicionados.push(data as Item)
@@ -346,6 +362,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
       item_nome: itemForm.nome.trim(), item_id: itemForm.item_id || null,
       quantidade: qty, preco_unit: preco,
       adicionado_por: userId, adicionado_por_nome: userNome,
+      tipo_preco: addItemTipoPreco,
     }).select().single()
     setSalvandoItem(false)
     if (error) { toast.error('Erro ao adicionar item'); return }
@@ -370,6 +387,29 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     if (error) { toast.error('Erro ao salvar'); return }
     setItens(prev => prev.map(it => it.id === id ? data as Item : it))
     setEditandoItemId(null)
+  }
+
+  async function handleTogglePago(pessoaId: string, pago: boolean) {
+    setPessoas(prev => prev.map(p => p.id === pessoaId ? { ...p, pago } : p))
+    await sb().from('cotacao_pessoas').update({ pago }).eq('id', pessoaId)
+  }
+
+  async function handleSalvarPagoPor(pessoaId: string, pago_por: string) {
+    const v = pago_por.trim() || null
+    setPessoas(prev => prev.map(p => p.id === pessoaId ? { ...p, pago_por: v } : p))
+    await sb().from('cotacao_pessoas').update({ pago_por: v }).eq('id', pessoaId)
+  }
+
+  async function handleAddMembro(m: Membro) {
+    setSalvandoPessoa(true)
+    const { data, error } = await sb().from('cotacao_pessoas').insert({
+      cotacao_id: cotacao.id, nome: m.nome, membro_id: m.id,
+    }).select().single()
+    setSalvandoPessoa(false)
+    if (error) { toast.error('Erro ao adicionar pessoa'); return }
+    setPessoas(prev => [...prev, data as Pessoa])
+    setNovaPessoaForm({ nome: '', membro_id: '' })
+    setNovaPessoaOpen(false)
   }
 
   async function handleFinalizar() {
@@ -520,17 +560,54 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
             return (
               <div key={pessoa.id} className="rounded-lg border border-border overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-border">
-                  <button onClick={() => setColapsadas(prev => { const n = new Set(prev); colapsada ? n.delete(pessoa.id) : n.add(pessoa.id); return n })}
-                    className="text-muted-foreground hover:text-foreground transition-colors">
-                    {colapsada ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                  </button>
-                  <span className="text-sm font-semibold flex-1">{pessoa.nome}</span>
-                  <span className="text-sm font-semibold tabular-nums text-primary">{fmt(subtotal)}</span>
-                  {podeEditar && (
-                    <button onClick={() => handleDeletePessoa(pessoa.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] border-b border-border">
+                    <button onClick={() => setColapsadas(prev => { const n = new Set(prev); colapsada ? n.delete(pessoa.id) : n.add(pessoa.id); return n })}
+                      className="text-muted-foreground hover:text-foreground transition-colors">
+                      {colapsada ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
                     </button>
+                    <span className="text-sm font-semibold flex-1">{pessoa.nome}</span>
+                    {/* Pago toggle */}
+                    <button
+                      onClick={() => handleTogglePago(pessoa.id, !(pessoa.pago ?? false))}
+                      title={pessoa.pago ? 'Marcar como pendente' : 'Marcar como pago'}
+                      className={cn('flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors',
+                        (pessoa.pago ?? false)
+                          ? 'bg-green-400/10 text-green-400 hover:bg-green-400/20'
+                          : 'text-muted-foreground/40 hover:text-muted-foreground hover:bg-white/[0.04]'
+                      )}>
+                      {(pessoa.pago ?? false) ? <Check className="h-2.5 w-2.5" /> : <span>$</span>}
+                      {(pessoa.pago ?? false) ? 'Pago' : 'Pendente'}
+                    </button>
+                    <span className="text-sm font-semibold tabular-nums text-primary">{fmt(subtotal)}</span>
+                    {podeEditar && (
+                      <button onClick={() => handleDeletePessoa(pessoa.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {/* Linha de pago_por (quando pago = true) */}
+                  {(pessoa.pago ?? false) && (
+                    <div className="flex items-center gap-2 px-4 py-1.5 bg-green-400/[0.03] border-b border-border text-[10px]">
+                      <span className="text-muted-foreground shrink-0">Recebido por:</span>
+                      {pagoEditId === pessoa.id ? (
+                        <input
+                          value={pagoEditValue}
+                          onChange={e => setPagoEditValue(e.target.value)}
+                          onBlur={() => { handleSalvarPagoPor(pessoa.id, pagoEditValue); setPagoEditId(null) }}
+                          onKeyDown={e => { if (e.key === 'Enter') { handleSalvarPagoPor(pessoa.id, pagoEditValue); setPagoEditId(null) } if (e.key === 'Escape') setPagoEditId(null) }}
+                          placeholder="Nome de quem recebeu..."
+                          className="flex-1 bg-transparent border-b border-border outline-none text-foreground placeholder:text-muted-foreground/40"
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          onClick={() => { setPagoEditId(pessoa.id); setPagoEditValue(pessoa.pago_por ?? '') }}
+                          className="flex-1 text-left text-muted-foreground hover:text-foreground transition-colors truncate">
+                          {pessoa.pago_por ?? <span className="italic opacity-50">clique para informar</span>}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -545,6 +622,11 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                           <div key={it.id} className="grid grid-cols-[1fr_70px_100px_100px_64px] gap-2 items-center px-4 py-2.5">
                             <div>
                               <span className="text-sm font-medium">{it.item_nome}</span>
+                              {it.tipo_preco && (
+                                <span className={cn('ml-1.5 px-1 rounded text-[9px] font-semibold', it.tipo_preco === 'sujo' ? 'bg-orange-400/20 text-orange-400' : 'bg-emerald-400/20 text-emerald-400')}>
+                                  {it.tipo_preco === 'sujo' ? 'S' : 'L'}
+                                </span>
+                              )}
                               {it.adicionado_por_nome && (
                                 <span className="block text-[10px] text-muted-foreground/60">por {it.adicionado_por_nome}</span>
                               )}
@@ -584,8 +666,16 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                         catalogo.length > 0 ? (
                           /* ── Cardápio ── */
                           <div className="border-t border-border/40">
-                            <div className="px-3 py-2 border-b border-border/40">
-                              <Input placeholder="Filtrar itens..." value={itemBusca} onChange={e => setItemBusca(e.target.value)} className="h-7 text-xs" autoFocus />
+                            <div className="px-3 py-2 border-b border-border/40 flex items-center gap-2">
+                              <Input placeholder="Filtrar itens..." value={itemBusca} onChange={e => setItemBusca(e.target.value)} className="h-7 text-xs flex-1" autoFocus />
+                              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30 shrink-0">
+                                <button
+                                  onClick={() => setAddItemTipoPreco('limpo')}
+                                  className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors', addItemTipoPreco === 'limpo' ? 'bg-emerald-400/20 text-emerald-400' : 'text-muted-foreground hover:text-foreground')}>L</button>
+                                <button
+                                  onClick={() => setAddItemTipoPreco('sujo')}
+                                  className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors', addItemTipoPreco === 'sujo' ? 'bg-orange-400/20 text-orange-400' : 'text-muted-foreground hover:text-foreground')}>S</button>
+                              </div>
                             </div>
                             <div className="max-h-60 overflow-y-auto">
                               <div className="grid grid-cols-[1fr_80px_100px] text-[10px] text-muted-foreground font-medium px-3 py-1.5 bg-white/[0.03] sticky top-0 border-b border-border/20">
@@ -814,48 +904,39 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
       {/* ── Dialog: Adicionar pessoa ── */}
       <Dialog open={novaPessoaOpen} onOpenChange={v => { if (!v) { setNovaPessoaOpen(false); setNovaPessoaForm({ nome: '', membro_id: '' }) } }}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-xs">
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm">
           <DialogHeader><DialogTitle className="text-sm">Adicionar pessoa</DialogTitle></DialogHeader>
-          <div className="py-1 space-y-1.5">
-            <Label className="text-xs">Nome</Label>
-            <div className="relative">
-              <Input
-                value={novaPessoaForm.nome}
-                onChange={e => setNovaPessoaForm({ nome: e.target.value, membro_id: '' })}
-                placeholder="Digite o nome..."
-                className="h-8 text-sm"
-                onKeyDown={e => e.key === 'Enter' && handleAddPessoa()}
-                autoFocus
-              />
-              {novaPessoaForm.nome.trim().length > 0 && (() => {
-                const sugs = membros.filter(m =>
-                  m.nome.toLowerCase().includes(novaPessoaForm.nome.toLowerCase()) ||
-                  (m.vulgo?.toLowerCase().includes(novaPessoaForm.nome.toLowerCase()))
-                ).slice(0, 6)
-                return sugs.length > 0 ? (
-                  <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
-                    {sugs.map(m => (
-                      <button key={m.id} type="button"
-                        onMouseDown={e => { e.preventDefault(); setNovaPessoaForm({ nome: m.nome, membro_id: m.id }) }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
-                        <span className="font-medium">{m.nome}</span>
-                        {m.vulgo && <span className="text-muted-foreground">"{m.vulgo}"</span>}
-                      </button>
-                    ))}
-                  </div>
-                ) : null
-              })()}
-            </div>
-            {novaPessoaForm.membro_id && (
-              <p className="text-[10px] text-muted-foreground pl-0.5">
-                Vinculado: {membros.find(m => m.id === novaPessoaForm.membro_id)?.nome}
-              </p>
+          <div className="py-1 space-y-2">
+            <Input
+              value={novaPessoaForm.nome}
+              onChange={e => setNovaPessoaForm({ nome: e.target.value, membro_id: '' })}
+              placeholder="Buscar ou digitar nome..."
+              className="h-8 text-sm"
+              onKeyDown={e => e.key === 'Enter' && handleAddPessoa()}
+              autoFocus
+            />
+            {membros.length > 0 && (
+              <div className="rounded-md border border-border max-h-52 overflow-y-auto">
+                {membrosDialog.length > 0 ? membrosDialog.map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => handleAddMembro(m)}
+                    disabled={salvandoPessoa}
+                    className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left border-b border-border/30 last:border-0 transition-colors',
+                      novaPessoaForm.membro_id === m.id && 'bg-primary/10'
+                    )}>
+                    <span className="font-medium flex-1">{m.nome}</span>
+                    {m.vulgo && <span className="text-muted-foreground">"{m.vulgo}"</span>}
+                  </button>
+                )) : (
+                  <p className="text-xs text-muted-foreground text-center py-3">Nenhum membro encontrado</p>
+                )}
+              </div>
             )}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => { setNovaPessoaOpen(false); setNovaPessoaForm({ nome: '', membro_id: '' }) }}>Cancelar</Button>
-            <Button size="sm" onClick={handleAddPessoa} disabled={salvandoPessoa}>
-              {salvandoPessoa ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Adicionar'}
+            <Button size="sm" onClick={handleAddPessoa} disabled={salvandoPessoa || !novaPessoaForm.nome.trim()}>
+              {salvandoPessoa ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Adicionar nome digitado'}
             </Button>
           </div>
         </DialogContent>
