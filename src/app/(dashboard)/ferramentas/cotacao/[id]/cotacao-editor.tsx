@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, Minus, Trash2, Edit2, Check, X, Users, ArrowLeft,
-  ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye, XCircle,
+  ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye, XCircle, Layers,
 } from 'lucide-react'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 
@@ -34,6 +34,8 @@ type FaccaoPreco = { faccao_id: string; item_id: string; preco_sujo: number | nu
 type LojaPreco   = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null; items: any }
 type SimpleItem  = { id: string; nome: string; peso: number | null }
 type FaixaPreco  = { faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
+type Servico     = { id: string; nome: string }
+type ServicoItem = { servico_id: string; item_id: string; quantidade: number; item_nome: string }
 
 interface Props {
   userId: string
@@ -45,6 +47,8 @@ interface Props {
   faccaoPrecos: FaccaoPreco[]; lojaPrecos: LojaPreco[]
   allItems: SimpleItem[]
   faixasPrecos: FaixaPreco[]
+  servicos: Servico[]
+  servicoItens: ServicoItem[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,7 +149,7 @@ function gerarImagemCotacao(params: {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pessoasIniciais, itensIniciais, faccoes, lojas, membros, faccaoPrecos, lojaPrecos, allItems, faixasPrecos }: Props) {
+export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pessoasIniciais, itensIniciais, faccoes, lojas, membros, faccaoPrecos, lojaPrecos, allItems, faixasPrecos, servicos, servicoItens }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -197,6 +201,11 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
   // Tipo de preço ao adicionar itens (sujo/limpo)
   const [addItemTipoPreco, setAddItemTipoPreco] = useState<'sujo' | 'limpo'>(cotacao.modo_preco)
+
+  // Aba do catálogo: itens individuais ou kits/serviços
+  const [catalogoTab, setCatalogoTab] = useState<'itens' | 'kits'>('itens')
+  const [kitQtds, setKitQtds] = useState<Record<string, number>>({})
+  const [kitBusca, setKitBusca] = useState('')
 
   // Edição inline de pago_por
   const [pagoEditId, setPagoEditId] = useState<string | null>(null)
@@ -318,7 +327,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   }
 
   function abrirAddItem(pessoaId: string) {
-    setAddItemPessoa(pessoaId); setItemForm({ nome: '', item_id: '', qty: '1', preco: '' }); setItemBusca(''); setCardapioQtds({})
+    setAddItemPessoa(pessoaId); setItemForm({ nome: '', item_id: '', qty: '1', preco: '' }); setItemBusca(''); setCardapioQtds({}); setCatalogoTab('itens'); setKitQtds({}); setKitBusca('')
   }
 
   async function handleAddCardapio() {
@@ -344,6 +353,39 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
     setSalvandoItem(false)
     setItens(prev => [...prev, ...adicionados])
     setCardapioQtds({}); setAddItemPessoa(null)
+  }
+
+  async function handleAddKits() {
+    const toAdd = Object.entries(kitQtds).filter(([, qty]) => qty > 0)
+    if (toAdd.length === 0) return
+    setSalvandoItem(true)
+    const adicionados: Item[] = []
+    // Mapa item_id → preço do catálogo atual
+    const precoMap: Record<string, number> = {}
+    for (const c of catalogo) precoMap[c.item_id] = c.fp ? resolverPrecoComFaixas(c.fp as FaccaoPreco, 1, addItemTipoPreco) : c.preco
+    for (const [servico_id, kitQty] of toAdd) {
+      const srv = servicos.find(s => s.id === servico_id)
+      if (!srv) continue
+      const itensDoKit = servicoItens.filter(si => si.servico_id === servico_id)
+      for (const si of itensDoKit) {
+        const qty = si.quantidade * kitQty
+        const preco_unit = precoMap[si.item_id] ?? 0
+        const { data, error } = await sb().from('cotacao_itens').insert({
+          cotacao_id: cotacao.id, pessoa_id: addItemPessoa,
+          item_nome: si.item_nome || allItems.find(i => i.id === si.item_id)?.nome || si.item_id,
+          item_id: si.item_id,
+          quantidade: qty, preco_unit,
+          adicionado_por: userId, adicionado_por_nome: userNome,
+          tipo_preco: addItemTipoPreco,
+        }).select().single()
+        if (error) { toast.error('Erro ao adicionar: ' + error.message); setSalvandoItem(false); return }
+        adicionados.push(data as Item)
+      }
+    }
+    setSalvandoItem(false)
+    setItens(prev => [...prev, ...adicionados])
+    setKitQtds({}); setAddItemPessoa(null)
+    toast.success('Kit(s) adicionado(s)')
   }
 
   function selecionarCatalogo(cat: { item_id: string; nome: string; preco: number }) {
@@ -666,60 +708,136 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                         catalogo.length > 0 ? (
                           /* ── Cardápio ── */
                           <div className="border-t border-border/40">
+                            {/* Cabeçalho com abas + filtro L/S */}
                             <div className="px-3 py-2 border-b border-border/40 flex items-center gap-2">
-                              <Input placeholder="Filtrar itens..." value={itemBusca} onChange={e => setItemBusca(e.target.value)} className="h-7 text-xs flex-1" autoFocus />
                               <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30 shrink-0">
-                                <button
-                                  onClick={() => setAddItemTipoPreco('limpo')}
+                                <button onClick={() => setCatalogoTab('itens')}
+                                  className={cn('px-2 py-0.5 rounded text-[10px] font-medium transition-colors', catalogoTab === 'itens' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}>
+                                  Itens
+                                </button>
+                                <button onClick={() => setCatalogoTab('kits')}
+                                  className={cn('flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium transition-colors', catalogoTab === 'kits' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground')}>
+                                  <Layers className="h-2.5 w-2.5" />Kits
+                                </button>
+                              </div>
+                              {catalogoTab === 'itens' ? (
+                                <Input placeholder="Filtrar itens..." value={itemBusca} onChange={e => setItemBusca(e.target.value)} className="h-7 text-xs flex-1" autoFocus />
+                              ) : (
+                                <Input placeholder="Filtrar kits..." value={kitBusca} onChange={e => setKitBusca(e.target.value)} className="h-7 text-xs flex-1" autoFocus />
+                              )}
+                              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30 shrink-0">
+                                <button onClick={() => setAddItemTipoPreco('limpo')}
                                   className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors', addItemTipoPreco === 'limpo' ? 'bg-emerald-400/20 text-emerald-400' : 'text-muted-foreground hover:text-foreground')}>L</button>
-                                <button
-                                  onClick={() => setAddItemTipoPreco('sujo')}
+                                <button onClick={() => setAddItemTipoPreco('sujo')}
                                   className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors', addItemTipoPreco === 'sujo' ? 'bg-orange-400/20 text-orange-400' : 'text-muted-foreground hover:text-foreground')}>S</button>
                               </div>
                             </div>
-                            <div className="max-h-60 overflow-y-auto">
-                              <div className="grid grid-cols-[1fr_80px_100px] text-[10px] text-muted-foreground font-medium px-3 py-1.5 bg-white/[0.03] sticky top-0 border-b border-border/20">
-                                <span>Item</span><span className="text-right">Preço</span><span className="text-right">Quantidade</span>
-                              </div>
-                              {catalogoFiltrado.map(cat => {
-                                const qty = cardapioQtds[cat.item_id] ?? 0
-                                return (
-                                  <div key={cat.item_id} className={cn('grid grid-cols-[1fr_80px_100px] items-center px-3 py-1.5 border-b border-border/20 last:border-0', qty > 0 && 'bg-primary/[0.04]')}>
-                                    <span className="text-xs truncate pr-2">{cat.nome}</span>
-                                    <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(cat.preco)}</span>
-                                    <div className="flex items-center gap-0.5 justify-end">
-                                      {qty > 0 && (
-                                        <button onClick={() => setCardapioQtds(prev => { const n = {...prev}; n[cat.item_id] <= 1 ? delete n[cat.item_id] : (n[cat.item_id] -= 1); return n })}
-                                          className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
-                                          <Minus className="h-2.5 w-2.5" />
-                                        </button>
-                                      )}
-                                      <input type="number" min="0" value={qty || ''} placeholder="0"
-                                        onChange={e => { const v = parseInt(e.target.value) || 0; setCardapioQtds(prev => { const n = {...prev}; v <= 0 ? delete n[cat.item_id] : (n[cat.item_id] = v); return n }) }}
-                                        className="h-5 w-9 text-center text-xs bg-transparent border border-border/40 rounded outline-none focus:border-ring" />
-                                      <button onClick={() => setCardapioQtds(prev => ({ ...prev, [cat.item_id]: (prev[cat.item_id] ?? 0) + 1 }))}
-                                        className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
-                                        <Plus className="h-2.5 w-2.5" />
-                                      </button>
-                                    </div>
+
+                            {catalogoTab === 'itens' ? (
+                              <>
+                                <div className="max-h-60 overflow-y-auto">
+                                  <div className="grid grid-cols-[1fr_80px_100px] text-[10px] text-muted-foreground font-medium px-3 py-1.5 bg-white/[0.03] sticky top-0 border-b border-border/20">
+                                    <span>Item</span><span className="text-right">Preço</span><span className="text-right">Quantidade</span>
                                   </div>
-                                )
-                              })}
-                              {catalogoFiltrado.length === 0 && (
-                                <p className="text-xs text-muted-foreground text-center py-4">Nenhum item encontrado</p>
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between px-3 py-2 border-t border-border/40 bg-white/[0.01]">
-                              <span className="text-xs text-muted-foreground">
-                                {Object.keys(cardapioQtds).length > 0 ? `${Object.keys(cardapioQtds).length} item(s) selecionado(s)` : 'Nenhum item selecionado'}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => { setAddItemPessoa(null); setCardapioQtds({}) }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
-                                <Button size="sm" className="h-7 text-xs" onClick={handleAddCardapio} disabled={salvandoItem || Object.keys(cardapioQtds).length === 0}>
-                                  {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar pedido'}
-                                </Button>
-                              </div>
-                            </div>
+                                  {catalogoFiltrado.map(cat => {
+                                    const qty = cardapioQtds[cat.item_id] ?? 0
+                                    return (
+                                      <div key={cat.item_id} className={cn('grid grid-cols-[1fr_80px_100px] items-center px-3 py-1.5 border-b border-border/20 last:border-0', qty > 0 && 'bg-primary/[0.04]')}>
+                                        <span className="text-xs truncate pr-2">{cat.nome}</span>
+                                        <span className="text-xs text-right text-muted-foreground tabular-nums">{fmt(cat.preco)}</span>
+                                        <div className="flex items-center gap-0.5 justify-end">
+                                          {qty > 0 && (
+                                            <button onClick={() => setCardapioQtds(prev => { const n = {...prev}; n[cat.item_id] <= 1 ? delete n[cat.item_id] : (n[cat.item_id] -= 1); return n })}
+                                              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                                              <Minus className="h-2.5 w-2.5" />
+                                            </button>
+                                          )}
+                                          <input type="number" min="0" value={qty || ''} placeholder="0"
+                                            onChange={e => { const v = parseInt(e.target.value) || 0; setCardapioQtds(prev => { const n = {...prev}; v <= 0 ? delete n[cat.item_id] : (n[cat.item_id] = v); return n }) }}
+                                            className="h-5 w-9 text-center text-xs bg-transparent border border-border/40 rounded outline-none focus:border-ring" />
+                                          <button onClick={() => setCardapioQtds(prev => ({ ...prev, [cat.item_id]: (prev[cat.item_id] ?? 0) + 1 }))}
+                                            className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                                            <Plus className="h-2.5 w-2.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                  {catalogoFiltrado.length === 0 && (
+                                    <p className="text-xs text-muted-foreground text-center py-4">Nenhum item encontrado</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-2 border-t border-border/40 bg-white/[0.01]">
+                                  <span className="text-xs text-muted-foreground">
+                                    {Object.keys(cardapioQtds).length > 0 ? `${Object.keys(cardapioQtds).length} item(s) selecionado(s)` : 'Nenhum item selecionado'}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => { setAddItemPessoa(null); setCardapioQtds({}) }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
+                                    <Button size="sm" className="h-7 text-xs" onClick={handleAddCardapio} disabled={salvandoItem || Object.keys(cardapioQtds).length === 0}>
+                                      {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar pedido'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              /* ── Aba Kits ── */
+                              <>
+                                <div className="max-h-60 overflow-y-auto">
+                                  {servicos.filter(s => !kitBusca.trim() || s.nome.toLowerCase().includes(kitBusca.toLowerCase())).map(srv => {
+                                    const qty = kitQtds[srv.id] ?? 0
+                                    const itensDoKit = servicoItens.filter(si => si.servico_id === srv.id)
+                                    return (
+                                      <div key={srv.id} className={cn('px-3 py-2 border-b border-border/20 last:border-0', qty > 0 && 'bg-primary/[0.04]')}>
+                                        <div className="flex items-center gap-2">
+                                          <Layers className="h-3 w-3 text-muted-foreground shrink-0" />
+                                          <span className="text-xs flex-1 truncate">{srv.nome}</span>
+                                          <span className="text-[10px] text-muted-foreground shrink-0">{itensDoKit.length} item(s)</span>
+                                          <div className="flex items-center gap-0.5">
+                                            {qty > 0 && (
+                                              <button onClick={() => setKitQtds(prev => { const n = {...prev}; n[srv.id] <= 1 ? delete n[srv.id] : (n[srv.id] -= 1); return n })}
+                                                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors">
+                                                <Minus className="h-2.5 w-2.5" />
+                                              </button>
+                                            )}
+                                            <input type="number" min="0" value={qty || ''} placeholder="0"
+                                              onChange={e => { const v = parseInt(e.target.value) || 0; setKitQtds(prev => { const n = {...prev}; v <= 0 ? delete n[srv.id] : (n[srv.id] = v); return n }) }}
+                                              className="h-5 w-9 text-center text-xs bg-transparent border border-border/40 rounded outline-none focus:border-ring" />
+                                            <button onClick={() => setKitQtds(prev => ({ ...prev, [srv.id]: (prev[srv.id] ?? 0) + 1 }))}
+                                              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+                                              <Plus className="h-2.5 w-2.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                        {qty > 0 && itensDoKit.length > 0 && (
+                                          <div className="mt-1 pl-5 space-y-0.5">
+                                            {itensDoKit.map(si => (
+                                              <div key={si.item_id} className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                                <span className="truncate">{si.item_nome || allItems.find(i => i.id === si.item_id)?.nome || si.item_id}</span>
+                                                <span className="shrink-0 tabular-nums ml-2">{si.quantidade * qty}×</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                  {servicos.filter(s => !kitBusca.trim() || s.nome.toLowerCase().includes(kitBusca.toLowerCase())).length === 0 && (
+                                    <p className="text-xs text-muted-foreground text-center py-4">Nenhum kit encontrado</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between px-3 py-2 border-t border-border/40 bg-white/[0.01]">
+                                  <span className="text-xs text-muted-foreground">
+                                    {Object.keys(kitQtds).length > 0 ? `${Object.keys(kitQtds).length} kit(s) selecionado(s)` : 'Nenhum kit selecionado'}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => { setAddItemPessoa(null); setKitQtds({}) }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cancelar</button>
+                                    <Button size="sm" className="h-7 text-xs" onClick={handleAddKits} disabled={salvandoItem || Object.keys(kitQtds).length === 0}>
+                                      {salvandoItem ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Adicionar kits'}
+                                    </Button>
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         ) : (
                           /* ── Form manual (sem catálogo) ── */

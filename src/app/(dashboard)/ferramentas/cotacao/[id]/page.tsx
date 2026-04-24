@@ -21,6 +21,8 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
     { data: allItems },
     { data: userRow },
     { data: faixasData },
+    { data: servicosData },
+    { data: servicoItensData },
   ] = await Promise.all([
     supabase.from('cotacoes').select('*').eq('id', id).single(),
     supabase.from('cotacao_pessoas').select('*').eq('cotacao_id', id).order('criado_at'),
@@ -33,7 +35,17 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
     supabase.from('items').select('id, nome, peso').eq('status', 'ativo'),
     supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
     supabase.from('faccao_item_preco_faixas').select('faccao_id, item_id, quantidade_min, preco_sujo, preco_limpo'),
+    supabase.from('servicos').select('id, nome').eq('status', 'ativo').order('nome'),
+    supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome)'),
   ])
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const servicoItensMapped = (servicoItensData ?? []).map((si: any) => ({
+    servico_id: si.servico_id,
+    item_id: si.item_id,
+    quantidade: si.quantidade,
+    item_nome: Array.isArray(si.items) ? (si.items[0]?.nome ?? '') : (si.items?.nome ?? ''),
+  }))
 
   if (!cotacao) notFound()
 
@@ -53,6 +65,8 @@ export default async function CotacaoEditorPage({ params }: { params: Promise<{ 
         lojaPrecos={lojaPrecos ?? []}
         allItems={allItems ?? []}
         faixasPrecos={faixasData ?? []}
+        servicos={servicosData ?? []}
+        servicoItens={servicoItensMapped}
       />
     </>
   )
