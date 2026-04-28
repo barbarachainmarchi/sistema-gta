@@ -267,6 +267,9 @@ export function CalculadoraClient({
   const [comboBatch, setComboBatch] = useState<ComboEntry[]>([])
   const [comboQtdInputs, setComboQtdInputs] = useState<Record<string, string>>({})
   const [combosExpandidos, setCombosExpandidos] = useState<Set<string>>(new Set())
+  const [modoServico, setModoServico] = useState<'faccao' | 'loja'>(
+    meuFaccaoId && !meuLojaId ? 'faccao' : 'loja'
+  )
 
   useEffect(() => {
     try {
@@ -293,32 +296,36 @@ export function CalculadoraClient({
   const meuPrecoMap = useMemo(() => {
     const map: Record<string, { preco_limpo: number | null; preco_sujo: number | null }> = {}
     precosVigentes.forEach(p => { map[p.item_id] = { preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo } })
-    if (meuLojaId) {
+    const ambos = Boolean(meuLojaId && meuFaccaoId)
+    const mostrarLoja = meuLojaId && (!ambos || modoServico === 'loja')
+    const mostrarFaccao = meuFaccaoId && (!ambos || modoServico === 'faccao')
+    if (mostrarLoja) {
       lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => {
         map[lp.item_id] = { preco_limpo: lp.preco, preco_sujo: lp.preco_sujo }
       })
     }
-    if (meuFaccaoId) {
+    if (mostrarFaccao) {
       faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => {
-        if (!meuLojaId || !lojaPrecos.some(lp => lp.loja_id === meuLojaId && lp.item_id === fp.item_id)) {
+        if (!mostrarLoja || !lojaPrecos.some(lp => lp.loja_id === meuLojaId && lp.item_id === fp.item_id)) {
           map[fp.item_id] = { preco_limpo: fp.preco_limpo, preco_sujo: fp.preco_sujo }
         }
       })
     }
     return map
-  }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId])
+  }, [precosVigentes, lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, modoServico])
 
   const meusItemIds = useMemo(() => {
     const ids = new Set<string>()
-    if (meuLojaId) {
+    const ambos = Boolean(meuLojaId && meuFaccaoId)
+    if (meuLojaId && (!ambos || modoServico === 'loja')) {
       lojaPrecos.filter(lp => lp.loja_id === meuLojaId).forEach(lp => ids.add(lp.item_id))
-    } else if (meuFaccaoId) {
+    } else if (meuFaccaoId && (!ambos || modoServico === 'faccao')) {
       faccaoPrecos.filter(fp => fp.faccao_id === meuFaccaoId).forEach(fp => ids.add(fp.item_id))
     } else {
       items.forEach(i => { if (i.eh_meu_produto || i.meu_produto_usuario_id === userId) ids.add(i.id) })
     }
     return ids
-  }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, items, userId])
+  }, [lojaPrecos, faccaoPrecos, meuLojaId, meuFaccaoId, items, userId, modoServico])
 
   const lojaPrecoPorItem = useMemo(() => {
     const map: Record<string, LojaPreco[]> = {}
@@ -830,6 +837,24 @@ export function CalculadoraClient({
 
         {/* Filtros */}
         <div className="p-2.5 border-b border-border space-y-2">
+          {/* Toggle Facção / Loja */}
+          {meuLojaId && meuFaccaoId && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-muted-foreground shrink-0">Em serviço como:</span>
+              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30">
+                <button
+                  onClick={() => setModoServico('faccao')}
+                  className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+                    modoServico === 'faccao' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+                  )}>Facção</button>
+                <button
+                  onClick={() => setModoServico('loja')}
+                  className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
+                    modoServico === 'loja' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
+                  )}>Loja</button>
+              </div>
+            </div>
+          )}
           {/* Busca */}
           <div className="flex gap-1.5">
             <div className="relative flex-1">
