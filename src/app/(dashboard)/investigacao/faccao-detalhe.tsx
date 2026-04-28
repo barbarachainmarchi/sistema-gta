@@ -227,23 +227,24 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     }
     const isNew = !membroDialog?.membro
     let data: Membro | null = null
+    const faccaoEmbutida = { id: faccao.id, nome: faccao.nome, cor_tag: faccao.cor_tag }
     if (isNew && membroExistenteId) {
-      const res = await sb().from('membros').update(payload).eq('id', membroExistenteId).select('*, faccoes(id, nome, cor_tag)').single()
+      const res = await sb().from('membros').update(payload).eq('id', membroExistenteId).select('*').single()
       setMembroSaving(false)
       if (res.error) { toast.error('Erro ao vincular membro'); return }
-      onMembroSaved(res.data as Membro, true)
+      onMembroSaved({ ...res.data, faccoes: faccaoEmbutida } as Membro, true)
       setMembroDialog(null); setMembroSugestoes([]); setMembroExistenteId(null)
       toast.success('Membro vinculado à facção')
       return
     }
     if (isNew) {
-      const res = await sb().from('membros').insert(payload).select('*, faccoes(id, nome, cor_tag)').single()
+      const res = await sb().from('membros').insert(payload).select('*').single()
       if (res.error) { toast.error('Erro ao criar membro'); setMembroSaving(false); return }
-      data = res.data as Membro
+      data = { ...res.data, faccoes: faccaoEmbutida } as Membro
     } else {
-      const res = await sb().from('membros').update(payload).eq('id', membroDialog!.membro!.id).select('*, faccoes(id, nome, cor_tag)').single()
+      const res = await sb().from('membros').update(payload).eq('id', membroDialog!.membro!.id).select('*').single()
       if (res.error) { toast.error('Erro ao salvar membro'); setMembroSaving(false); return }
-      data = res.data as Membro
+      data = { ...res.data, faccoes: faccaoEmbutida } as Membro
     }
     // Salvar veículo inline se preenchido
     if (data && membroVeiculoInline.ativo && (membroVeiculoInline.placa || membroVeiculoInline.modelo || membroVeiculoInline.cor)) {
@@ -1175,7 +1176,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Proprietário</Label>
-              <Select value={veiculoForm.proprietario_tipo} onValueChange={v => setVeiculoForm(f => ({ ...f, proprietario_tipo: v as typeof f.proprietario_tipo, proprietario_id: '' }))}>
+              <Select value={veiculoForm.proprietario_tipo} onValueChange={v => { setVeiculoForm(f => ({ ...f, proprietario_tipo: v as typeof f.proprietario_tipo, proprietario_id: '' })); setVeiculoMembroBusca('') }}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="faccao">Facção ({faccao.nome})</SelectItem>
@@ -1191,7 +1192,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                   <Input
                     placeholder="Buscar membro..."
                     value={veiculoMembroBusca}
-                    onChange={e => { setVeiculoMembroBusca(e.target.value); if (!e.target.value) setVeiculoForm(f => ({ ...f, proprietario_id: '' })) }}
+                    onChange={e => { setVeiculoMembroBusca(e.target.value); setVeiculoForm(f => ({ ...f, proprietario_id: '' })) }}
                     className={cn('h-8 text-sm', veiculoForm.proprietario_id && 'border-primary')}
                     autoComplete="off"
                   />
