@@ -2,43 +2,71 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-// Garante que só usuários autenticados chamam esta rota
 async function getAuthUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   return { supabase, user }
 }
 
-// POST → convidar novo usuário
+// POST → criar usuário diretamente (com senha) ou via convite
 export async function POST(req: NextRequest) {
   const { user } = await getAuthUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { email, nome, cargo, perfil_id } = await req.json()
-  if (!email || !nome) return NextResponse.json({ error: 'Email e nome são obrigatórios' }, { status: 400 })
-
+  const body = await req.json()
   const admin = createAdminClient()
+
+  // Criação direta com senha (novo fluxo)
+  if (body.senha !== undefined) {
+    const { apelido, senha, perfil_id, membro_id } = body
+    if (!apelido || !senha) return NextResponse.json({ error: 'Apelido e senha são obrigatórios' }, { status: 400 })
+    if (senha.length < 6) return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
+
+    const email = `${apelido}@gta.local`
+
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password: senha,
+      email_confirm: true,
+    })
+
+    if (createError) return NextResponse.json({ error: createError.message }, { status: 400 })
+
+    const { error: insertError } = await admin.from('usuarios').insert({
+      id: created.user.id,
+      nome: apelido,
+      perfil_id: perfil_id || null,
+      membro_id: membro_id || null,
+      status: 'ativo',
+    })
+
+    if (insertError) {
+      await admin.auth.admin.deleteUser(created.user.id)
+      return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ id: created.user.id, email })
+  }
+
+  // Convite por e-mail (fluxo legado)
+  const { email, nome, cargo, perfil_id } = body
+  if (!email || !nome) return NextResponse.json({ error: 'Email e nome são obrigatórios' }, { status: 400 })
 
   const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/login`,
   })
 
-  if (inviteError) {
-    return NextResponse.json({ error: inviteError.message }, { status: 400 })
-  }
+  if (inviteError) return NextResponse.json({ error: inviteError.message }, { status: 400 })
 
-  const { error: insertError } = await admin
-    .from('usuarios')
-    .insert({
-      id: invited.user.id,
-      nome,
-      cargo: cargo || null,
-      perfil_id: perfil_id || null,
-      status: 'ativo',
-    })
+  const { error: insertError } = await admin.from('usuarios').insert({
+    id: invited.user.id,
+    nome,
+    cargo: cargo || null,
+    perfil_id: perfil_id || null,
+    status: 'ativo',
+  })
 
   if (insertError) {
-    // Desfaz o usuário criado se o insert falhar
     await admin.auth.admin.deleteUser(invited.user.id)
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
@@ -56,7 +84,6 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Monta o objeto de upsert — inclui id para garantir que a linha seja criada se não existir
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: Record<string, any> = { id }
   if (cargo !== undefined) updates.cargo = cargo || null
@@ -67,7 +94,6 @@ export async function PATCH(req: NextRequest) {
   if (membro_id !== undefined) updates.membro_id = membro_id || null
   if (trabalho_principal !== undefined) updates.trabalho_principal = trabalho_principal || null
 
-  // nome é NOT NULL na tabela — se não foi enviado, busca o existente (ou usa email do auth)
   if (nome !== undefined) {
     updates.nome = nome
   } else {
@@ -94,7 +120,6 @@ export async function DELETE(req: NextRequest) {
   const { id } = await req.json()
   if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
-  // Impede remover a si mesmo
   if (id === user.id) return NextResponse.json({ error: 'Você não pode remover sua própria conta' }, { status: 400 })
 
   const admin = createAdminClient()

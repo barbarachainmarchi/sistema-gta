@@ -8,7 +8,7 @@ async function getAuthUser() {
   return user
 }
 
-type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean; pode_excluir: boolean }
+type Permissao = { modulo: string; pode_ver: boolean; pode_criar: boolean; pode_editar: boolean; pode_excluir: boolean }
 
 // POST → criar perfil
 export async function POST(req: NextRequest) {
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
         perfil_id: novo.id,
         modulo: p.modulo,
         pode_ver: p.pode_ver,
+        pode_criar: p.pode_criar ?? false,
         pode_editar: p.pode_editar,
         pode_excluir: p.pode_excluir ?? false,
       }))
@@ -73,6 +74,7 @@ export async function PATCH(req: NextRequest) {
         perfil_id: id,
         modulo: p.modulo,
         pode_ver: p.pode_ver,
+        pode_criar: p.pode_criar ?? false,
         pode_editar: p.pode_editar,
         pode_excluir: p.pode_excluir ?? false,
       }))

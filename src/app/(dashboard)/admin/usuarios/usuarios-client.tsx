@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Link2, Shield, Check, Copy, Clock, X, Crown, Lock } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Link2, Shield, Check, Copy, Clock, X, Crown, Lock, UserPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Módulos ──────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ type MembroInvestigacao = {
   status: string; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null
 }
 
-type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean; pode_excluir: boolean }
+type Permissao = { modulo: string; pode_ver: boolean; pode_criar: boolean; pode_editar: boolean; pode_excluir: boolean }
 
 type Perfil = {
   id: string
@@ -97,6 +97,8 @@ interface Props {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function loginDisplay(email: string) { return email.split('@')[0] }
 
 function formatDate(iso: string | null) {
   if (!iso) return '—'
@@ -146,6 +148,10 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [busca, setBusca] = useState('')
   const [donoSecundarioId, setDonoSecundarioId] = useState<string | null>(initialDonoSecundarioId)
   const [salvandoDono, setSalvandoDono] = useState(false)
+  const [infoUsuario, setInfoUsuario] = useState<Usuario | null>(null)
+  const [novoUsuarioOpen, setNovoUsuarioOpen] = useState(false)
+  const [novoUsuarioForm, setNovoUsuarioForm] = useState({ membro_id: '', apelido: '', senha: '', perfil_id: '' })
+  const [novoUsuarioSaving, setNovoUsuarioSaving] = useState(false)
 
   // ── Dono secundário ───────────────────────────────────────────────────────
   async function handleDefinirDono(userId: string | null) {
@@ -157,6 +163,28 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     if (error) { toast.error('Erro ao salvar dono secundário'); return }
     setDonoSecundarioId(userId)
     toast.success(userId ? 'Dono secundário definido!' : 'Dono secundário removido')
+    router.refresh()
+  }
+
+  // ── Novo Usuário ──────────────────────────────────────────────────────────
+  async function handleNovoUsuario() {
+    if (!novoUsuarioForm.apelido || !novoUsuarioForm.senha) { toast.error('Apelido e senha são obrigatórios'); return }
+    setNovoUsuarioSaving(true)
+    const res = await fetch('/api/admin/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apelido: novoUsuarioForm.apelido,
+        senha: novoUsuarioForm.senha,
+        perfil_id: novoUsuarioForm.perfil_id || null,
+        membro_id: novoUsuarioForm.membro_id || null,
+      }),
+    })
+    const json = await res.json()
+    setNovoUsuarioSaving(false)
+    if (!res.ok) { toast.error(json.error ?? 'Erro ao criar usuário'); return }
+    toast.success(`Usuário ${novoUsuarioForm.apelido} criado!`)
+    setNovoUsuarioOpen(false)
     router.refresh()
   }
 
@@ -403,7 +431,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [perfilOpen, setPerfilOpen] = useState(false)
   const [editPerfil, setEditPerfil] = useState<Perfil | null>(null)
   const [perfilForm, setPerfilForm] = useState({ nome: '', descricao: '' })
-  const [perfilPerms, setPerfilPerms] = useState<Record<string, { ver: boolean; editar: boolean; excluir: boolean }>>({})
+  const [perfilPerms, setPerfilPerms] = useState<Record<string, { ver: boolean; criar: boolean; editar: boolean; excluir: boolean }>>({})
   const [perfilSaving, setPerfilSaving] = useState(false)
   const [confirmRemoverPerfil, setConfirmRemoverPerfil] = useState<Perfil | null>(null)
   const [removendoPerfil, setRemovendoPerfil] = useState(false)
@@ -411,7 +439,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   function buildPermsMap(permissoes: Permissao[]) {
     return Object.fromEntries(MODULOS.map(m => {
       const p = permissoes.find(pm => pm.modulo === m.key)
-      return [m.key, { ver: p?.pode_ver ?? false, editar: p?.pode_editar ?? false, excluir: p?.pode_excluir ?? false }]
+      return [m.key, { ver: p?.pode_ver ?? false, criar: p?.pode_criar ?? false, editar: p?.pode_editar ?? false, excluir: p?.pode_excluir ?? false }]
     }))
   }
 
@@ -429,18 +457,21 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setPerfilOpen(true)
   }
 
-  function togglePerm(modulo: string, campo: 'ver' | 'editar' | 'excluir') {
+  function togglePerm(modulo: string, campo: 'ver' | 'criar' | 'editar' | 'excluir') {
     setPerfilPerms(prev => {
       const curr = prev[modulo]
       if (campo === 'ver') {
         const v = !curr.ver
-        return { ...prev, [modulo]: { ver: v, editar: v ? curr.editar : false, excluir: v ? curr.excluir : false } }
+        return { ...prev, [modulo]: { ver: v, criar: v ? curr.criar : false, editar: v ? curr.editar : false, excluir: v ? curr.excluir : false } }
+      } else if (campo === 'criar') {
+        const c = !curr.criar
+        return { ...prev, [modulo]: { ver: c ? true : curr.ver, criar: c, editar: curr.editar, excluir: curr.excluir } }
       } else if (campo === 'editar') {
         const e = !curr.editar
-        return { ...prev, [modulo]: { ver: e ? true : curr.ver, editar: e, excluir: e ? curr.excluir : false } }
+        return { ...prev, [modulo]: { ver: e ? true : curr.ver, criar: curr.criar, editar: e, excluir: e ? curr.excluir : false } }
       } else {
         const x = !curr.excluir
-        return { ...prev, [modulo]: { ver: x ? true : curr.ver, editar: x ? true : curr.editar, excluir: x } }
+        return { ...prev, [modulo]: { ver: x ? true : curr.ver, criar: curr.criar, editar: x ? true : curr.editar, excluir: x } }
       }
     })
   }
@@ -452,6 +483,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const permissoes = MODULOS.map(m => ({
       modulo: m.key,
       pode_ver: perfilPerms[m.key]?.ver ?? false,
+      pode_criar: perfilPerms[m.key]?.criar ?? false,
       pode_editar: perfilPerms[m.key]?.editar ?? false,
       pode_excluir: perfilPerms[m.key]?.excluir ?? false,
     }))
@@ -470,7 +502,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setPerfilSaving(false)
     if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar perfil'); return }
 
-    const permsEstado = permissoes.map(p => ({ modulo: p.modulo, pode_ver: p.pode_ver, pode_editar: p.pode_editar, pode_excluir: p.pode_excluir }))
+    const permsEstado = permissoes.map(p => ({ modulo: p.modulo, pode_ver: p.pode_ver, pode_criar: p.pode_criar, pode_editar: p.pode_editar, pode_excluir: p.pode_excluir }))
     if (editPerfil) {
       setPerfis(prev => prev.map(p => p.id === editPerfil.id
         ? { ...p, nome: perfilForm.nome, descricao: perfilForm.descricao || null, permissoes: permsEstado }
@@ -575,9 +607,13 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-8 h-8 text-sm" />
               </div>
-              <Button size="sm" className="h-8 gap-1.5" onClick={openGerarLink}>
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={openGerarLink}>
                 <Link2 className="h-3.5 w-3.5" />
-                Gerar Link de Convite
+                Gerar Convite
+              </Button>
+              <Button size="sm" className="h-8 gap-1.5" onClick={() => { setNovoUsuarioForm({ membro_id: '', apelido: '', senha: '', perfil_id: '' }); setNovoUsuarioOpen(true) }}>
+                <UserPlus className="h-3.5 w-3.5" />
+                Novo Usuário
               </Button>
             </div>
 
@@ -585,9 +621,8 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs">Apelido</TableHead>
-                    <TableHead className="text-xs">Cargo</TableHead>
-                    <TableHead className="text-xs">Perfil</TableHead>
+                    <TableHead className="text-xs">Usuário</TableHead>
+                    <TableHead className="text-xs">Local</TableHead>
                     <TableHead className="text-xs">Status</TableHead>
                     <TableHead className="text-xs">Último acesso</TableHead>
                     <TableHead className="text-xs w-20" />
@@ -596,42 +631,42 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <TableBody>
                   {ativos.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground text-sm py-10">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-10">
                         Nenhum usuário encontrado
                       </TableCell>
                     </TableRow>
                   ) : ativos.map(u => (
-                    <TableRow key={u.id}>
-                      <TableCell className="text-sm font-medium">
-                        <div className="flex items-center gap-1.5">
-                          {u.nome}
-                          {u.id === currentUserId && <span className="text-[10px] text-muted-foreground">(você)</span>}
+                    <TableRow key={u.id} className="cursor-pointer" onClick={() => setInfoUsuario(u)}>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium">{u.nome}</span>
+                            {u.id === currentUserId && <span className="text-[10px] text-muted-foreground">(você)</span>}
+                            {u.perfil_nome && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">{u.perfil_nome}</span>}
+                          </div>
+                          <span className="text-xs text-muted-foreground font-mono">{loginDisplay(u.email)}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{u.cargo ?? '—'}</TableCell>
                       <TableCell>
-                        {u.perfil_nome
-                          ? <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{u.perfil_nome}</span>
-                          : <span className="text-xs text-muted-foreground">—</span>
-                        }
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {u.local_trabalho_loja_id && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">{lojas.find(l => l.id === u.local_trabalho_loja_id)?.nome ?? 'Loja'}</span>}
+                          {u.local_trabalho_faccao_id && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccoes.find(f => f.id === u.local_trabalho_faccao_id)?.nome ?? 'Facção'}</span>}
+                          {!u.local_trabalho_loja_id && !u.local_trabalho_faccao_id && <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
                       </TableCell>
                       <TableCell><StatusBadge status={u.status} /></TableCell>
                       <TableCell className="text-xs text-muted-foreground">{formatDate(u.ultimo_acesso)}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                           {isDono && (
                             <Button
                               variant="ghost" size="icon" className={cn('h-7 w-7', u.id === donoSecundarioId ? 'text-yellow-400 hover:text-yellow-300' : 'text-muted-foreground hover:text-yellow-400')}
                               onClick={() => handleDefinirDono(u.id === donoSecundarioId ? null : u.id)}
                               disabled={salvandoDono}
-                              title={u.id === donoSecundarioId ? 'Remover dono secundário' : 'Definir como dono secundário'}
                             >
                               <Crown className="h-3.5 w-3.5" />
                             </Button>
                           )}
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(u)}>
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
                           <Button
                             variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
                             onClick={() => setConfirmRemover(u)}
@@ -1046,42 +1081,6 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <Switch checked={editForm.status === 'ativo'} onCheckedChange={v => setEditForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
               </div>
             </div>
-            <div className="space-y-2 pt-1 border-t border-border">
-              <Label className="text-xs text-muted-foreground">Local de Trabalho (Meus Produtos)</Label>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Loja de Trabalho</Label>
-                <Select value={editForm.local_trabalho_loja_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_loja_id: v === '_none' ? '' : v }))}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Nenhuma</SelectItem>
-                    {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Facção de Trabalho</Label>
-                <Select value={editForm.local_trabalho_faccao_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_faccao_id: v === '_none' ? '' : v }))}>
-                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Nenhuma</SelectItem>
-                    {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              {editForm.local_trabalho_loja_id && editForm.local_trabalho_faccao_id && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Trabalho Principal</Label>
-                  <Select value={editForm.trabalho_principal || '_none'} onValueChange={v => setEditForm(f => ({ ...f, trabalho_principal: v === '_none' ? '' : v as 'loja' | 'faccao' }))}>
-                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">Não definido</SelectItem>
-                      <SelectItem value="faccao">Facção</SelectItem>
-                      <SelectItem value="loja">Loja</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setEditUsuario(null)}>Cancelar</Button>
@@ -1112,6 +1111,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <Label className="text-xs">Permissões</Label>
                 <div className="flex gap-4 text-[11px] text-muted-foreground pr-2">
                   <span className="w-12 text-center">Ver</span>
+                  <span className="w-12 text-center">Criar</span>
                   <span className="w-12 text-center">Editar</span>
                   <span className="w-12 text-center">Excluir</span>
                 </div>
@@ -1124,7 +1124,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                       <div key={m.key} className={cn('flex items-center justify-between px-3 py-2 hover:bg-white/[0.02]', idx < arr.length - 1 && 'border-b border-border/60')}>
                         <span className="text-sm">{m.label}</span>
                         <div className="flex gap-4">
-                          {(['ver', 'editar', 'excluir'] as const).map(campo => (
+                          {(['ver', 'criar', 'editar', 'excluir'] as const).map(campo => (
                             <div key={campo} className="w-12 flex justify-center">
                               <button
                                 onClick={() => togglePerm(m.key, campo)}
@@ -1168,6 +1168,166 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Modal: Info Usuário ────────────────────────────────────────────── */}
+      <Dialog open={!!infoUsuario} onOpenChange={v => !v && setInfoUsuario(null)}>
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {infoUsuario?.nome}
+              {infoUsuario?.id === currentUserId && <span className="text-xs font-normal text-muted-foreground">(você)</span>}
+            </DialogTitle>
+          </DialogHeader>
+          {infoUsuario && (
+            <div className="space-y-3 py-1">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Login</span>
+                  <span className="text-xs font-mono">{loginDisplay(infoUsuario.email)}</span>
+                </div>
+                {infoUsuario.cargo && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Cargo</span>
+                    <span className="text-xs">{infoUsuario.cargo}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Perfil</span>
+                  {infoUsuario.perfil_nome
+                    ? <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{infoUsuario.perfil_nome}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>
+                  }
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Local</span>
+                  <div className="flex items-center gap-1">
+                    {infoUsuario.local_trabalho_loja_id && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">{lojas.find(l => l.id === infoUsuario.local_trabalho_loja_id)?.nome ?? 'Loja'}</span>}
+                    {infoUsuario.local_trabalho_faccao_id && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccoes.find(f => f.id === infoUsuario.local_trabalho_faccao_id)?.nome ?? 'Facção'}</span>}
+                    {!infoUsuario.local_trabalho_loja_id && !infoUsuario.local_trabalho_faccao_id && <span className="text-xs text-muted-foreground">—</span>}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <StatusBadge status={infoUsuario.status} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Último acesso</span>
+                  <span className="text-xs text-muted-foreground">{formatDate(infoUsuario.ultimo_acesso)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Cadastrado em</span>
+                  <span className="text-xs text-muted-foreground">{formatDate(infoUsuario.created_at)}</span>
+                </div>
+              </div>
+              {infoUsuario.id !== currentUserId && (
+                <div className="flex items-center gap-2 pt-2 border-t border-border">
+                  <Button
+                    variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1.5"
+                    onClick={() => { openEdit(infoUsuario); setInfoUsuario(null) }}
+                  >
+                    <Edit2 className="h-3 w-3" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" className="flex-1 h-8 text-xs"
+                    onClick={async () => {
+                      const novoStatus = infoUsuario.status === 'ativo' ? 'inativo' : 'ativo'
+                      const res = await fetch('/api/admin/usuarios', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: infoUsuario.id, status: novoStatus }),
+                      })
+                      if (res.ok) {
+                        setUsuarios(prev => prev.map(u => u.id === infoUsuario.id ? { ...u, status: novoStatus } : u))
+                        setInfoUsuario(prev => prev ? { ...prev, status: novoStatus } : null)
+                        toast.success(novoStatus === 'ativo' ? 'Usuário ativado' : 'Usuário desativado')
+                      }
+                    }}
+                  >
+                    {infoUsuario.status === 'ativo' ? 'Desativar' : 'Ativar'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal: Novo Usuário ─────────────────────────────────────────────── */}
+      <Dialog open={novoUsuarioOpen} onOpenChange={setNovoUsuarioOpen}>
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Novo Usuário</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Vincular a Pessoa (Investigação)</Label>
+              <Select
+                value={novoUsuarioForm.membro_id || '_none'}
+                onValueChange={v => {
+                  const membro = membrosState.find(m => m.id === v)
+                  setNovoUsuarioForm(f => ({
+                    ...f,
+                    membro_id: v === '_none' ? '' : v,
+                    apelido: membro ? (membro.vulgo ?? membro.nome) : f.apelido,
+                  }))
+                }}
+              >
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem vínculo..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sem vínculo</SelectItem>
+                  {membrosState
+                    .filter(m => m.membro_proprio && !usuarios.some(u => u.membro_id === m.id))
+                    .map(m => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}
+                      </SelectItem>
+                    ))
+                  }
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Apelido / Login *</Label>
+              <Input
+                placeholder="sem espaços..."
+                value={novoUsuarioForm.apelido}
+                onChange={e => setNovoUsuarioForm(f => ({ ...f, apelido: e.target.value.replace(/\s/g, '') }))}
+                className="h-8 text-sm font-mono"
+              />
+              {novoUsuarioForm.apelido && (
+                <p className="text-[11px] text-muted-foreground">Login: {novoUsuarioForm.apelido}@gta.local</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Senha *</Label>
+              <Input
+                type="password"
+                placeholder="Mínimo 6 caracteres..."
+                value={novoUsuarioForm.senha}
+                onChange={e => setNovoUsuarioForm(f => ({ ...f, senha: e.target.value }))}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Perfil de Acesso</Label>
+              <Select value={novoUsuarioForm.perfil_id || '_none'} onValueChange={v => setNovoUsuarioForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem perfil..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sem perfil</SelectItem>
+                  {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setNovoUsuarioOpen(false)}>Cancelar</Button>
+            <Button size="sm" onClick={handleNovoUsuario} disabled={novoUsuarioSaving}>
+              {novoUsuarioSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar usuário'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!confirmRemoverPerfil} onOpenChange={v => !v && setConfirmRemoverPerfil(null)}>
         <AlertDialogContent>

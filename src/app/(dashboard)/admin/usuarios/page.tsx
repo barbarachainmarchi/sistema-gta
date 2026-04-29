@@ -38,7 +38,7 @@ export default async function UsuariosPage() {
     admin.auth.admin.listUsers({ perPage: 1000 }),
     admin.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao, is_sistema').order('nome'),
-    supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar, pode_excluir'),
+    supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
     supabase.from('membros').select('id, nome, vulgo, cargo_faccao, status, membro_proprio, data_entrada, data_saida').eq('membro_proprio', true).order('nome'),
     supabase.from('lojas').select('id, nome').order('nome'),
@@ -74,7 +74,7 @@ export default async function UsuariosPage() {
     is_sistema: p.is_sistema ?? false,
     permissoes: (permissoes ?? [])
       .filter(pm => pm.perfil_id === p.id)
-      .map(pm => ({ modulo: pm.modulo, pode_ver: pm.pode_ver, pode_editar: pm.pode_editar, pode_excluir: pm.pode_excluir ?? false })),
+      .map(pm => ({ modulo: pm.modulo, pode_ver: pm.pode_ver, pode_criar: (pm as { pode_criar?: boolean }).pode_criar ?? false, pode_editar: pm.pode_editar, pode_excluir: pm.pode_excluir ?? false })),
   }))
 
   const convites = (convitesData ?? []).map(c => ({
