@@ -30,7 +30,6 @@ export default async function UsuariosPage() {
     { data: perfis },
     { data: permissoes },
     { data: convitesData },
-    { data: membrosData },
     { data: lojasData },
     { data: faccoesData },
     { data: donoConfig },
@@ -40,7 +39,6 @@ export default async function UsuariosPage() {
     supabase.from('perfis_acesso').select('id, nome, descricao, is_sistema').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
-    supabase.from('membros').select('id, nome, vulgo, faccao_id, cargo_faccao, status, membro_proprio, data_entrada, data_saida, faccoes(nome, cor_tag)').eq('membro_proprio', true).order('nome'),
     supabase.from('lojas').select('id, nome').order('nome'),
     supabase.from('faccoes').select('id, nome, tag').order('nome'),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
@@ -49,8 +47,6 @@ export default async function UsuariosPage() {
   const authUsers = authResult.data?.users ?? []
 
   const usuariosMap = new Map((usuariosData ?? []).map(u => [u.id, u]))
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const membros = (membrosData ?? []) as any[]
 
   const usuarios = (authUsers ?? []).map(au => {
     const perfil = usuariosMap.get(au.id)
@@ -96,7 +92,6 @@ export default async function UsuariosPage() {
       perfis={perfisCompletos}
       convites={convites}
       currentUserId={user.id}
-      membros={membros}
       lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}
       faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: f.tag ?? null }))}
       defaultLojaId={defaultLojaId}

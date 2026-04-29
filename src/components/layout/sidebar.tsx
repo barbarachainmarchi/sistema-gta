@@ -32,6 +32,7 @@ const navGroups = [
       { href: '/admin/logs',        label: 'Logs',         icon: FileText,     perm: 'admin_logs' },
       { href: '/admin/integracoes',  label: 'Integrações',  icon: Activity,     perm: 'admin_integracoes' },
       { href: '/admin/backup',      label: 'Backup',       icon: HardDriveDownload, perm: 'admin_backup' },
+      { href: '/admin/membros',     label: 'Membros',      icon: Users,            perm: 'admin_membros' },
     ],
   },
   {
