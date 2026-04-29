@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Link2, Shield, Check, Copy, Clock, X } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Link2, Shield, Check, Copy, Clock, X, Crown, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Módulos ──────────────────────────────────────────────────────────────────
@@ -80,6 +80,7 @@ type Perfil = {
   id: string
   nome: string
   descricao: string | null
+  is_sistema: boolean
   permissoes: Permissao[]
 }
 
@@ -99,6 +100,7 @@ interface Props {
   faccoes: FaccaoSimples[]
   defaultLojaId: string | null
   defaultFaccaoId: string | null
+  donoSecundarioId: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,7 +142,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros, lojas, faccoes, defaultLojaId, defaultFaccaoId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -149,6 +151,21 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [perfis, setPerfis] = useState(initialPerfis)
   const [convites, setConvites] = useState(initialConvites)
   const [busca, setBusca] = useState('')
+  const [donoSecundarioId, setDonoSecundarioId] = useState<string | null>(initialDonoSecundarioId)
+  const [salvandoDono, setSalvandoDono] = useState(false)
+
+  // ── Dono secundário ───────────────────────────────────────────────────────
+  async function handleDefinirDono(userId: string | null) {
+    setSalvandoDono(true)
+    const { error } = await sb()
+      .from('config_sistema')
+      .upsert({ chave: 'dono_secundario_id', valor: userId ?? '' }, { onConflict: 'chave' })
+    setSalvandoDono(false)
+    if (error) { toast.error('Erro ao salvar dono secundário'); return }
+    setDonoSecundarioId(userId)
+    toast.success(userId ? 'Dono secundário definido!' : 'Dono secundário removido')
+    router.refresh()
+  }
 
   // ── Vínculo e gestão membro <-> usuário ───────────────────────────────────
   const [membrosState, setMembrosState] = useState<MembroInvestigacao[]>(membros)
@@ -432,7 +449,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       ))
       toast.success('Perfil atualizado')
     } else {
-      setPerfis(prev => [...prev, { id: json.id, nome: json.nome, descricao: json.descricao, permissoes: permsEstado }])
+      setPerfis(prev => [...prev, { id: json.id, nome: json.nome, descricao: json.descricao, is_sistema: false, permissoes: permsEstado }])
       toast.success('Perfil criado')
     }
     setPerfilOpen(false)
@@ -455,6 +472,10 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setConfirmRemoverPerfil(null)
     router.refresh()
   }
+
+  // ── Permissões do usuário atual ───────────────────────────────────────────
+  const currentUserPerfilNome = usuarios.find(u => u.id === currentUserId)?.perfil_nome ?? null
+  const isDono = currentUserPerfilNome === 'Dono'
 
   // ── Filtro ─────────────────────────────────────────────────────────────────
   const pendentes = usuarios.filter(u => u.status === 'pendente')
@@ -553,8 +574,10 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   ) : ativos.map(u => (
                     <TableRow key={u.id}>
                       <TableCell className="text-sm font-medium">
-                        {u.nome}
-                        {u.id === currentUserId && <span className="ml-1.5 text-[10px] text-muted-foreground">(você)</span>}
+                        <div className="flex items-center gap-1.5">
+                          {u.nome}
+                          {u.id === currentUserId && <span className="text-[10px] text-muted-foreground">(você)</span>}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{u.cargo ?? '—'}</TableCell>
                       <TableCell>
@@ -567,6 +590,16 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                       <TableCell className="text-xs text-muted-foreground">{formatDate(u.ultimo_acesso)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          {isDono && (
+                            <Button
+                              variant="ghost" size="icon" className={cn('h-7 w-7', u.id === donoSecundarioId ? 'text-yellow-400 hover:text-yellow-300' : 'text-muted-foreground hover:text-yellow-400')}
+                              onClick={() => handleDefinirDono(u.id === donoSecundarioId ? null : u.id)}
+                              disabled={salvandoDono}
+                              title={u.id === donoSecundarioId ? 'Remover dono secundário' : 'Definir como dono secundário'}
+                            >
+                              <Crown className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(u)}>
                             <Edit2 className="h-3.5 w-3.5" />
                           </Button>
@@ -652,13 +685,21 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   const totalEditar = p.permissoes.filter(pm => pm.pode_editar).length
                   const totalExcluir = p.permissoes.filter(pm => pm.pode_excluir).length
                   return (
-                    <div key={p.id} className="rounded-lg border border-border bg-card p-4 flex items-center justify-between gap-4">
+                    <div key={p.id} className={cn('rounded-lg border bg-card p-4 flex items-center justify-between gap-4', p.is_sistema ? 'border-yellow-500/30' : 'border-border')}>
                       <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                          <Shield className="h-4 w-4 text-primary" />
+                        <div className={cn('h-8 w-8 rounded flex items-center justify-center shrink-0', p.is_sistema ? 'bg-yellow-500/10' : 'bg-primary/10')}>
+                          {p.is_sistema
+                            ? <Lock className="h-4 w-4 text-yellow-400" />
+                            : <Shield className="h-4 w-4 text-primary" />
+                          }
                         </div>
                         <div>
-                          <p className="text-sm font-medium">{p.nome}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-medium">{p.nome}</p>
+                            {p.is_sistema && (
+                              <span className="text-[10px] bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 rounded font-medium">Sistema</span>
+                            )}
+                          </div>
                           {p.descricao && <p className="text-xs text-muted-foreground">{p.descricao}</p>}
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             {totalVer} visível{totalVer !== 1 ? 'is' : ''} · {totalEditar} com edição · {totalExcluir} com exclusão
@@ -666,13 +707,17 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => openEditPerfil(p)}>
-                          <Edit2 className="h-3 w-3" />
-                          Editar
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmRemoverPerfil(p)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {!p.is_sistema && (
+                          <>
+                            <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => openEditPerfil(p)}>
+                              <Edit2 className="h-3 w-3" />
+                              Editar
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmRemoverPerfil(p)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </div>
                   )
@@ -887,7 +932,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Sem perfil</SelectItem>
-                  {perfis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                  {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -924,7 +969,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Sem perfil</SelectItem>
-                  {perfis.map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                  {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

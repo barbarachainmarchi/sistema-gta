@@ -9,7 +9,7 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon
+  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon, UserCircle2
 } from 'lucide-react'
 import { TEMA_KEY } from '@/components/layout/theme-provider'
 
@@ -19,6 +19,7 @@ const navGroups = [
     label: 'Início',
     items: [
       { href: '/', label: 'Dashboard', icon: Home, perm: 'dashboard', exact: true, alwaysShow: true },
+      { href: '/meu-perfil', label: 'Meu Perfil', icon: UserCircle2, perm: 'meu_perfil', exact: true, alwaysShow: true },
     ],
   },
   {

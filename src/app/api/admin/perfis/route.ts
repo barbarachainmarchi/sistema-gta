@@ -55,6 +55,9 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient()
 
+  const { data: perfilExistente } = await admin.from('perfis_acesso').select('is_sistema').eq('id', id).single()
+  if (perfilExistente?.is_sistema) return NextResponse.json({ error: 'Perfil do sistema não pode ser modificado' }, { status: 403 })
+
   const { error } = await admin
     .from('perfis_acesso')
     .update({ nome, descricao: descricao || null })
@@ -89,6 +92,10 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
   const admin = createAdminClient()
+
+  const { data: perfilExistente } = await admin.from('perfis_acesso').select('is_sistema').eq('id', id).single()
+  if (perfilExistente?.is_sistema) return NextResponse.json({ error: 'Perfil do sistema não pode ser removido' }, { status: 403 })
+
   const { error } = await admin.from('perfis_acesso').delete().eq('id', id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

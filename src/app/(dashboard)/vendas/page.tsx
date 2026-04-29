@@ -24,6 +24,7 @@ export default async function VendasPage() {
     { data: servicosData },
     { data: servicoItensData },
     { data: favoritosData },
+    { data: donoConfig },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*, servico_id'),
@@ -40,6 +41,7 @@ export default async function VendasPage() {
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, categoria').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
+    supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
   ])
 
   // Calcular saldo de estoque por item a partir das movimentações
@@ -65,8 +67,19 @@ export default async function VendasPage() {
     estoqueCalculado.push({ item_id: itemId, quantidade: Math.max(0, saldo) })
   }
 
-  const meuLojaId   = usuarioRow?.local_trabalho_loja_id ?? null
-  const meuFaccaoId = usuarioRow?.local_trabalho_faccao_id ?? null
+  const donoId = donoConfig?.valor || null
+  let workspaceRow: { local_trabalho_loja_id: string | null; local_trabalho_faccao_id: string | null } | null = usuarioRow ?? null
+  if (donoId && donoId !== user.id) {
+    const { data: donoRow } = await supabase
+      .from('usuarios')
+      .select('local_trabalho_loja_id, local_trabalho_faccao_id')
+      .eq('id', donoId)
+      .maybeSingle()
+    if (donoRow) workspaceRow = donoRow
+  }
+
+  const meuLojaId   = workspaceRow?.local_trabalho_loja_id ?? null
+  const meuFaccaoId = workspaceRow?.local_trabalho_faccao_id ?? null
 
   const meuLoja   = meuLojaId   ? (lojasData   ?? []).find(l => l.id === meuLojaId)   ?? null : null
   const meuFaccao = meuFaccaoId ? (faccoesData  ?? []).find(f => f.id === meuFaccaoId) ?? null : null
