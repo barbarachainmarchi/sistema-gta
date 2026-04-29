@@ -43,6 +43,8 @@ type DispMembro = { nome: string; hora_inicio: string | null; hora_fim: string |
 interface Props {
   userId: string
   userNome: string | null
+  lojaNome: string | null
+  faccaoNome: string | null
   conta: Conta | null
   metaAtual: MetaAtual | null
   vendasSemana: Venda[]
@@ -78,7 +80,7 @@ function saudacao(nome: string | null) {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function DashboardClient({
-  userId, userNome, conta, metaAtual, vendasSemana,
+  userId, userNome, lojaNome, faccaoNome, conta, metaAtual, vendasSemana,
   disponibilidade: dispInicial, hoje, dispTodos,
 }: Props) {
   const sb = useCallback(() => createClient(), [])
@@ -145,7 +147,19 @@ export function DashboardClient({
       {/* Saudação */}
       <div>
         <h2 className="text-lg font-semibold">{saudacao(userNome)}</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Aqui está o seu resumo da semana.</p>
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          <p className="text-xs text-muted-foreground">Aqui está o seu resumo da semana.</p>
+          {lojaNome && (
+            <span className="text-[11px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
+              {lojaNome}
+            </span>
+          )}
+          {faccaoNome && (
+            <span className="text-[11px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20">
+              {faccaoNome}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Cards principais */}

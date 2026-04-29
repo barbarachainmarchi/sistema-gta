@@ -62,6 +62,11 @@ type Usuario = {
 type LojaSimples = { id: string; nome: string }
 type FaccaoSimples = { id: string; nome: string; tag: string | null }
 
+type MembroInvestigacao = {
+  id: string; nome: string; vulgo: string | null; cargo_faccao: string | null
+  status: string; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null
+}
+
 type Permissao = { modulo: string; pode_ver: boolean; pode_editar: boolean; pode_excluir: boolean }
 
 type Perfil = {
@@ -83,6 +88,7 @@ interface Props {
   perfis: Perfil[]
   convites: Convite[]
   currentUserId: string
+  membros: MembroInvestigacao[]
   lojas: LojaSimples[]
   faccoes: FaccaoSimples[]
   defaultLojaId: string | null
@@ -129,7 +135,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -151,6 +157,86 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     if (error) { toast.error('Erro ao salvar dono secundário'); return }
     setDonoSecundarioId(userId)
     toast.success(userId ? 'Dono secundário definido!' : 'Dono secundário removido')
+    router.refresh()
+  }
+
+  // ── Membros ────────────────────────────────────────────────────────────────
+  const [membrosState, setMembrosState] = useState<MembroInvestigacao[]>(initialMembros)
+  const [membroLoading, setMembroLoading] = useState<string | null>(null)
+  const [editMembroId, setEditMembroId] = useState<string | null>(null)
+  const [editMembroForm, setEditMembroForm] = useState({ perfil_id: '', loja_id: '', faccao_id: '', trabalho_principal: '' as '' | 'loja' | 'faccao' })
+  const [editMembroSaving, setEditMembroSaving] = useState(false)
+
+  function openEditMembro(m: MembroInvestigacao) {
+    const u = usuarios.find(u => u.membro_id === m.id)
+    setEditMembroId(m.id)
+    setEditMembroForm({
+      perfil_id: u?.perfil_id ?? '',
+      loja_id: u?.local_trabalho_loja_id ?? '',
+      faccao_id: u?.local_trabalho_faccao_id ?? '',
+      trabalho_principal: u?.trabalho_principal ?? '',
+    })
+  }
+
+  async function handleSalvarMembro() {
+    const m = membrosState.find(m => m.id === editMembroId)
+    if (!m) return
+    const u = usuarios.find(u => u.membro_id === m.id)
+    if (!u) { toast.error('Membro sem usuário vinculado'); return }
+    setEditMembroSaving(true)
+    const lojaId = editMembroForm.loja_id || null
+    const faccaoId = editMembroForm.faccao_id || null
+    const res = await fetch('/api/admin/usuarios', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: u.id,
+        perfil_id: editMembroForm.perfil_id || null,
+        local_trabalho_loja_id: lojaId,
+        local_trabalho_faccao_id: faccaoId,
+        trabalho_principal: lojaId && faccaoId ? (editMembroForm.trabalho_principal || null) : null,
+      }),
+    })
+    const json = await res.json()
+    setEditMembroSaving(false)
+    if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar'); return }
+    const perfilNome = perfis.find(p => p.id === editMembroForm.perfil_id)?.nome ?? null
+    setUsuarios(prev => prev.map(us => us.id === u.id ? {
+      ...us,
+      perfil_id: editMembroForm.perfil_id || null,
+      perfil_nome: perfilNome,
+      local_trabalho_loja_id: lojaId,
+      local_trabalho_faccao_id: faccaoId,
+      trabalho_principal: (lojaId && faccaoId ? (editMembroForm.trabalho_principal || null) : null) as 'loja' | 'faccao' | null,
+    } : us))
+    toast.success('Membro atualizado')
+    setEditMembroId(null)
+    router.refresh()
+  }
+
+  async function handleDesativarMembro(m: MembroInvestigacao) {
+    setMembroLoading(m.id)
+    const hoje = new Date().toISOString().slice(0, 10)
+    const { error } = await sb().from('membros').update({ status: 'inativo', faccao_id: null, data_saida: hoje }).eq('id', m.id)
+    if (error) { toast.error('Erro ao desativar'); setMembroLoading(null); return }
+    const u = usuarios.find(u => u.membro_id === m.id)
+    if (u) {
+      await fetch('/api/admin/usuarios', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: u.id, status: 'inativo' }) })
+      setUsuarios(prev => prev.map(us => us.id === u.id ? { ...us, status: 'inativo' } : us))
+    }
+    setMembrosState(prev => prev.map(mb => mb.id === m.id ? { ...mb, status: 'inativo', data_saida: hoje } : mb))
+    setMembroLoading(null)
+    toast.success(`${m.nome} desativado`)
+    router.refresh()
+  }
+
+  async function handleReativarMembro(m: MembroInvestigacao) {
+    setMembroLoading(m.id)
+    const { error } = await sb().from('membros').update({ status: 'ativo', data_saida: null }).eq('id', m.id)
+    setMembroLoading(null)
+    if (error) { toast.error('Erro ao reativar'); return }
+    setMembrosState(prev => prev.map(mb => mb.id === m.id ? { ...mb, status: 'ativo', data_saida: null } : mb))
+    toast.success(`${m.nome} reativado`)
     router.refresh()
   }
 
@@ -451,6 +537,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               )}
             </TabsTrigger>
             <TabsTrigger value="perfis">Perfis de Acesso</TabsTrigger>
+            <TabsTrigger value="membros">Membros</TabsTrigger>
           </TabsList>
 
           {/* ── Aba Usuários ─────────────────────────────────────────────── */}
@@ -668,8 +755,172 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
             )}
           </TabsContent>
 
+          {/* ── Aba Membros ──────────────────────────────────────────────── */}
+          <TabsContent value="membros" className="space-y-6">
+            {(() => {
+              const ativos  = membrosState.filter(m => m.membro_proprio && m.status === 'ativo')
+              const inativos = membrosState.filter(m => m.membro_proprio && m.status === 'inativo')
+              const fmtData = (d: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+              return (
+                <>
+                  <section className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-primary/80 px-1">Equipe ativa ({ativos.length})</p>
+                    {ativos.length === 0 ? (
+                      <div className="rounded-lg border border-border py-8 text-center text-muted-foreground text-sm">Nenhum membro ativo</div>
+                    ) : (
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <div className="grid grid-cols-[1fr_120px_110px_1fr_100px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                          <span>Nome</span><span>Cargo</span><span>Entrada</span><span>Usuário / Perfil / Local</span><span />
+                        </div>
+                        {ativos.map((m, idx) => {
+                          const u = usuarios.find(u => u.membro_id === m.id)
+                          return (
+                            <div key={m.id} className={cn('grid grid-cols-[1fr_120px_110px_1fr_100px] gap-3 items-start px-4 py-3', idx < ativos.length - 1 && 'border-b border-border/40')}>
+                              <div>
+                                <span className="text-sm font-medium">{m.nome}</span>
+                                {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                              </div>
+                              <span className="text-xs text-muted-foreground pt-0.5">{m.cargo_faccao ?? '—'}</span>
+                              <span className="text-xs text-muted-foreground pt-0.5">{fmtData(m.data_entrada)}</span>
+                              <div className="space-y-0.5">
+                                {u ? (
+                                  <>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', u.status === 'ativo' ? 'bg-green-400' : 'bg-zinc-500')} />
+                                      <span className="text-sm">{u.nome}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-wrap pl-3">
+                                      {u.perfil_nome && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">{u.perfil_nome}</span>}
+                                      {u.local_trabalho_loja_id && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded">{lojas.find(l => l.id === u.local_trabalho_loja_id)?.nome ?? 'Loja'}</span>}
+                                      {u.local_trabalho_faccao_id && <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccoes.find(f => f.id === u.local_trabalho_faccao_id)?.nome ?? 'Facção'}</span>}
+                                    </div>
+                                  </>
+                                ) : <span className="text-xs text-muted-foreground">Sem usuário vinculado</span>}
+                              </div>
+                              <div className="flex justify-end items-start gap-1">
+                                {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground mt-1" /> : (
+                                  <>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMembro(m)} disabled={!u}>
+                                      <Edit2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleDesativarMembro(m)}>
+                                      Desativar
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+
+                  {inativos.length > 0 && (
+                    <section className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 px-1">Ex-membros ({inativos.length})</p>
+                      <div className="rounded-lg border border-border/50 overflow-hidden">
+                        <div className="grid grid-cols-[1fr_120px_110px_110px_100px] gap-3 px-4 py-2 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                          <span>Nome</span><span>Cargo</span><span>Entrada</span><span>Saída</span><span />
+                        </div>
+                        {inativos.map((m, idx) => (
+                          <div key={m.id} className={cn('grid grid-cols-[1fr_120px_110px_110px_100px] gap-3 items-center px-4 py-3 opacity-70', idx < inativos.length - 1 && 'border-b border-border/40')}>
+                            <div>
+                              <span className="text-sm font-medium">{m.nome}</span>
+                              {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                            </div>
+                            <span className="text-xs text-muted-foreground">{m.cargo_faccao ?? '—'}</span>
+                            <span className="text-xs text-muted-foreground">{fmtData(m.data_entrada)}</span>
+                            <span className="text-xs text-muted-foreground">{fmtData(m.data_saida)}</span>
+                            <div className="flex justify-end">
+                              {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
+                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleReativarMembro(m)}>Reativar</Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )
+            })()}
+          </TabsContent>
+
         </Tabs>
       </div>
+
+      {/* ── Modal: Editar Membro ──────────────────────────────────────────── */}
+      {(() => {
+        const m = membrosState.find(m => m.id === editMembroId)
+        const temDois = !!editMembroForm.loja_id && !!editMembroForm.faccao_id
+        return (
+          <Dialog open={!!editMembroId} onOpenChange={v => !v && setEditMembroId(null)}>
+            <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+              <DialogHeader>
+                <DialogTitle>
+                  {m?.nome}
+                  {m?.vulgo && <span className="ml-1.5 text-sm font-normal text-muted-foreground">"{m.vulgo}"</span>}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Perfil de acesso</Label>
+                  <Select value={editMembroForm.perfil_id || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem perfil..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Sem perfil</SelectItem>
+                      {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="pt-1 border-t border-border space-y-3">
+                  <p className="text-xs text-muted-foreground">Local de trabalho</p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Loja</Label>
+                    <Select value={editMembroForm.loja_id || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, loja_id: v === '_none' ? '' : v }))}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Nenhuma</SelectItem>
+                        {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Facção</Label>
+                    <Select value={editMembroForm.faccao_id || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, faccao_id: v === '_none' ? '' : v }))}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">Nenhuma</SelectItem>
+                        {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {temDois && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Trabalho principal</Label>
+                      <Select value={editMembroForm.trabalho_principal || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, trabalho_principal: v === '_none' ? '' : v as 'loja' | 'faccao' }))}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Não definido..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Não definido</SelectItem>
+                          <SelectItem value="loja">Loja</SelectItem>
+                          <SelectItem value="faccao">Facção</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setEditMembroId(null)}>Cancelar</Button>
+                <Button size="sm" onClick={handleSalvarMembro} disabled={editMembroSaving}>
+                  {editMembroSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
       {/* ── Modal: Gerar Link ───────────────────────────────────────────────── */}
       <Dialog open={linkOpen} onOpenChange={v => { setLinkOpen(v); if (!v) setLinkGerado(null) }}>

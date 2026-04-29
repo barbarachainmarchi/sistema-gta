@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase
       .from('usuarios')
-      .select('nome, membro_id')
+      .select('nome, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id')
       .eq('id', user.id)
       .maybeSingle(),
     supabase
@@ -40,11 +40,15 @@ export default async function DashboardPage() {
   ])
 
   const membroId = usuarioRow?.membro_id ?? null
+  const lojaId   = usuarioRow?.local_trabalho_loja_id ?? null
+  const faccaoId = usuarioRow?.local_trabalho_faccao_id ?? null
 
   const [
     { data: contaRow },
     { data: metaAtualRow },
     { data: vendasSemana },
+    { data: lojaRow },
+    { data: faccaoRow },
   ] = await Promise.all([
     membroId
       ? supabase
@@ -71,6 +75,8 @@ export default async function DashboardPage() {
       .eq('criado_por', user.id)
       .gte('created_at', `${inicioSemana}T00:00:00`)
       .order('created_at', { ascending: false }),
+    lojaId   ? supabase.from('lojas').select('nome').eq('id', lojaId).maybeSingle()   : Promise.resolve({ data: null }),
+    faccaoId ? supabase.from('faccoes').select('nome').eq('id', faccaoId).maybeSingle() : Promise.resolve({ data: null }),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,6 +92,8 @@ export default async function DashboardPage() {
       <DashboardClient
         userId={user.id}
         userNome={usuarioRow?.nome ?? null}
+        lojaNome={lojaRow?.nome ?? null}
+        faccaoNome={faccaoRow?.nome ?? null}
         conta={contaRow ?? null}
         metaAtual={metaAtualRow ?? null}
         vendasSemana={vendasSemana ?? []}
