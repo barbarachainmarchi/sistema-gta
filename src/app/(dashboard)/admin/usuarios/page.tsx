@@ -41,8 +41,8 @@ export default async function UsuariosPage() {
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
     supabase.from('membros').select('id, nome, vulgo, cargo_faccao, status, membro_proprio, data_entrada, data_saida').eq('membro_proprio', true).order('nome'),
-    supabase.from('lojas').select('id, nome').order('nome'),
-    supabase.from('faccoes').select('id, nome, tag').order('nome'),
+    admin.from('lojas').select('id, nome').order('nome'),
+    admin.from('faccoes').select('id, nome, tag').order('nome'),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
   ])
 

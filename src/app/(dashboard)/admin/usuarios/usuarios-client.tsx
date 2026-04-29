@@ -1081,6 +1081,42 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <Switch checked={editForm.status === 'ativo'} onCheckedChange={v => setEditForm(f => ({ ...f, status: v ? 'ativo' : 'inativo' }))} />
               </div>
             </div>
+            <div className="space-y-2 pt-1 border-t border-border">
+              <Label className="text-xs text-muted-foreground">Local de Trabalho</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Loja</Label>
+                <Select value={editForm.local_trabalho_loja_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_loja_id: v === '_none' ? '' : v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Nenhuma</SelectItem>
+                    {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Facção</Label>
+                <Select value={editForm.local_trabalho_faccao_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, local_trabalho_faccao_id: v === '_none' ? '' : v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Nenhuma</SelectItem>
+                    {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {editForm.local_trabalho_loja_id && editForm.local_trabalho_faccao_id && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Trabalho principal</Label>
+                  <Select value={editForm.trabalho_principal || '_none'} onValueChange={v => setEditForm(f => ({ ...f, trabalho_principal: v === '_none' ? '' : v as 'loja' | 'faccao' }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Não definido..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Não definido</SelectItem>
+                      <SelectItem value="faccao">Facção</SelectItem>
+                      <SelectItem value="loja">Loja</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setEditUsuario(null)}>Cancelar</Button>
