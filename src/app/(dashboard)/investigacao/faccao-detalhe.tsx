@@ -38,6 +38,7 @@ export type FaccaoPreco = {
 export type FaixaPreco   = { id: string; faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 export type Produto      = { id: string; nome: string; categoria?: string | null }
 export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
+type FaccaoProdutoExtra = { id: string; faccao_id: string; nome: string; valor_sujo: number | null; valor_limpo: number | null; created_at: string }
 
 function fmt(v: number | null) {
   if (v == null) return '—'
@@ -375,6 +376,25 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, faccao.id])
 
+  const [produtosExpandidos, setProdutosExpandidos] = useState<Set<string>>(new Set())
+  const [produtosExtras, setProdutosExtras] = useState<FaccaoProdutoExtra[]>([])
+  const [loadingExtras, setLoadingExtras] = useState(false)
+  const [novoDescontoModal, setNovoDescontoModal] = useState(false)
+  const [novoDescontoTab, setNovoDescontoTab] = useState<'lote' | 'manual'>('lote')
+  const [loteSelecao, setLoteSelecao] = useState<Record<string, string>>({})
+  const [loteSaving, setLoteSaving] = useState(false)
+  const [manualForm, setManualForm] = useState({ nome: '', valor_sujo: '', valor_limpo: '' })
+  const [manualSaving, setManualSaving] = useState(false)
+  const [editandoExtra, setEditandoExtra] = useState<FaccaoProdutoExtra | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setLoadingExtras(true)
+    sb().from('faccao_produto_extra').select('*').eq('faccao_id', faccao.id).order('nome')
+      .then(({ data }) => { setProdutosExtras((data ?? []) as FaccaoProdutoExtra[]); setLoadingExtras(false) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, faccao.id])
+
   useEffect(() => {
     if (!open) return
     sb().from('lojas').select('id, nome').eq('status', 'ativo').order('nome')
@@ -389,6 +409,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     const nome = todosProdutos.find(p => p.id === d.item_id)?.nome ?? ''
     return nome.toLowerCase().includes(buscaDesconto.toLowerCase())
   }), [descontosItem, buscaDesconto, todosProdutos])
+
+  const extrasFiltrados = useMemo(() => produtosExtras.filter(e => {
+    if (!buscaDesconto) return true
+    return e.nome.toLowerCase().includes(buscaDesconto.toLowerCase())
+  }), [produtosExtras, buscaDesconto])
 
   function abrirNovoDesconto() {
     setDescontoForm({ item_id: '', desconto_pct: '' })
@@ -419,6 +444,57 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     if (error) { toast.error('Erro ao remover'); return }
     setDescontosItem(prev => prev.filter(x => x.id !== d.id))
     toast.success('Desconto removido')
+  }
+
+  async function handleSalvarLote() {
+    const itens = Object.entries(loteSelecao).filter(([, v]) => v !== '')
+    if (itens.length === 0) { toast.error('Selecione pelo menos um produto'); return }
+    setLoteSaving(true)
+    const rows = itens.map(([item_id, pct]) => ({ faccao_id: faccao.id, item_id, desconto_pct: parseFloat(pct) || 0 }))
+    const { error } = await sb().from('faccao_desconto_por_item').upsert(rows, { onConflict: 'faccao_id,item_id' })
+    setLoteSaving(false)
+    if (error) { toast.error('Erro ao salvar'); return }
+    const { data } = await sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id)
+    setDescontosItem((data ?? []) as DescontoItem[])
+    setNovoDescontoModal(false)
+    setLoteSelecao({})
+    toast.success(`${itens.length} produto(s) salvo(s)`)
+  }
+
+  async function handleSalvarManual() {
+    if (!manualForm.nome.trim()) { toast.error('Nome obrigatório'); return }
+    setManualSaving(true)
+    const row = { faccao_id: faccao.id, nome: manualForm.nome.trim(), valor_sujo: manualForm.valor_sujo ? parseFloat(manualForm.valor_sujo) : null, valor_limpo: manualForm.valor_limpo ? parseFloat(manualForm.valor_limpo) : null }
+    if (editandoExtra) {
+      const { error } = await sb().from('faccao_produto_extra').update(row).eq('id', editandoExtra.id)
+      setManualSaving(false)
+      if (error) { toast.error('Erro ao salvar'); return }
+      setProdutosExtras(prev => prev.map(e => e.id === editandoExtra.id ? { ...e, ...row } : e))
+      setEditandoExtra(null)
+    } else {
+      const { data, error } = await sb().from('faccao_produto_extra').insert(row).select().single()
+      setManualSaving(false)
+      if (error) { toast.error('Erro ao salvar'); return }
+      setProdutosExtras(prev => [...prev, data as FaccaoProdutoExtra])
+    }
+    setNovoDescontoModal(false)
+    setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
+    toast.success('Salvo')
+  }
+
+  async function handleRemoverExtra(id: string) {
+    const { error } = await sb().from('faccao_produto_extra').delete().eq('id', id)
+    if (error) { toast.error('Erro ao remover'); return }
+    setProdutosExtras(prev => prev.filter(e => e.id !== id))
+    toast.success('Removido')
+  }
+
+  function abrirNovoDescontoModal() {
+    setLoteSelecao({})
+    setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
+    setEditandoExtra(null)
+    setNovoDescontoTab('lote')
+    setNovoDescontoModal(true)
   }
 
   function openEditPreco(produto: Produto) {
@@ -689,10 +765,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           {/* ── Produtos + Descontos — lado a lado ── */}
           <div className="grid grid-cols-2 gap-8 items-start border-t border-border pt-4">
 
-          {/* ── Coluna esquerda: Produtos da facção ── */}
+          {/* ── Coluna esquerda: Produto deles ── */}
           <section className="space-y-2">
             <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produtos ({precosFiltrados.length})</p>
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produto deles ({precosFiltrados.length})</p>
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar produto..." value={buscaProduto} onChange={e => setBuscaProduto(e.target.value)} className="pl-7 h-7 text-xs" />
@@ -707,42 +783,39 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                {/* Header */}
-                <div className="grid grid-cols-[1fr_180px_180px_44px] gap-4 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Produto</span>
-                  <span className="text-right">Sujo</span>
-                  <span className="text-right">Limpo</span>
-                  <span />
-                </div>
                 {precosFiltrados.map((preco, idx) => {
                   const produto = todosProdutos.find(p => p.id === preco.item_id)
                   const temParceria = preco.parceria_pct != null || preco.preco_sujo_parceria != null || preco.preco_limpo_parceria != null
                   const faixas = (faixasPrecos[preco.item_id] ?? []).sort((a, b) => a.quantidade_min - b.quantidade_min)
                   const minFaixa = faixas[0]?.quantidade_min
+                  const expandido = produtosExpandidos.has(preco.item_id)
+                  const tipoIcone = temParceria ? '⭐' : faixas.length > 0 ? '📦' : '🟢'
+                  const tipoTitulo = temParceria ? 'Parceria' : faixas.length > 0 ? 'Por quantidade' : 'Normal'
                   return (
-                    <div key={preco.item_id} className={cn('px-4 py-3', idx < precosFiltrados.length - 1 && 'border-b border-border/40')}>
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          {/* Nome + tipo */}
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
-                            {preco.tipo === 'percentual' && (
-                              <span className="text-[10px] text-muted-foreground/60 bg-white/[0.04] px-1 rounded">{preco.percentual}% ref.</span>
-                            )}
-                            {temParceria && (
-                              <span className="text-[10px] text-sky-400/80 bg-sky-500/[0.08] px-1.5 py-0.5 rounded">parceria</span>
-                            )}
-                          </div>
-
-                          {/* Tabela de faixas */}
+                    <div key={preco.item_id} className={cn(idx < precosFiltrados.length - 1 && 'border-b border-border/40')}>
+                      {/* Linha compacta */}
+                      <div
+                        className={cn('flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/[0.03] transition-colors', expandido && 'bg-white/[0.02]')}
+                        onClick={() => setProdutosExpandidos(prev => { const n = new Set(prev); expandido ? n.delete(preco.item_id) : n.add(preco.item_id); return n })}>
+                        <span className="text-sm leading-none shrink-0" title={tipoTitulo}>{tipoIcone}</span>
+                        <span className="text-xs font-medium flex-1 min-w-0 truncate">{produto?.nome ?? '—'}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(preco.preco_sujo)}</span>
+                        <span className="text-xs tabular-nums font-medium shrink-0">{fmt(preco.preco_limpo)}</span>
+                        <ChevronDown className={cn('h-3 w-3 text-muted-foreground/50 shrink-0 transition-transform', expandido && 'rotate-180')} />
+                        <div className="flex gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]" title="Editar preço"><Edit2 className="h-3 w-3" /></button>
+                          <button onClick={() => handleRemoverPreco(preco.item_id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]" title="Remover"><X className="h-3 w-3" /></button>
+                        </div>
+                      </div>
+                      {/* Detalhe expandido */}
+                      {expandido && (
+                        <div className="px-4 pb-3 bg-white/[0.01]">
                           <div className="rounded border border-border/40 overflow-hidden text-xs">
                             <div className="grid grid-cols-[110px_1fr_1fr] divide-x divide-border/30">
-                              {/* Cabeçalho */}
                               <div className="px-2 py-1 bg-white/[0.02] text-[10px] text-muted-foreground/60 font-medium">Faixa</div>
                               <div className="px-2 py-1 bg-white/[0.02] text-[10px] text-muted-foreground/60 font-medium text-right">Sujo</div>
                               <div className="px-2 py-1 bg-white/[0.02] text-[10px] text-muted-foreground/60 font-medium text-right">Limpo</div>
                             </div>
-                            {/* Preço base */}
                             <div className="grid grid-cols-[110px_1fr_1fr] divide-x divide-border/30 border-t border-border/30">
                               <div className="px-2 py-1.5 text-muted-foreground/70 tabular-nums text-[11px]">
                                 {faixas.length > 0 ? `1 – ${minFaixa - 1} un.` : '1+ un.'}
@@ -750,7 +823,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                               <div className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(preco.preco_sujo)}</div>
                               <div className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(preco.preco_limpo)}</div>
                             </div>
-                            {/* Faixas de quantidade */}
                             {faixas.map((f, i) => (
                               <div key={i} className="grid grid-cols-[110px_1fr_1fr] divide-x divide-border/30 border-t border-border/20 bg-emerald-500/[0.04]">
                                 <div className="px-2 py-1.5 text-emerald-400/80 tabular-nums text-[11px]">{f.quantidade_min}+ un.</div>
@@ -758,7 +830,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                                 <div className="px-2 py-1.5 text-right tabular-nums text-emerald-400/90 font-medium">{fmt(f.preco_limpo)}</div>
                               </div>
                             ))}
-                            {/* Parceria */}
                             {temParceria && (
                               <div className="grid grid-cols-[110px_1fr_1fr] divide-x divide-border/30 border-t border-border/20 bg-sky-500/[0.04]">
                                 <div className="px-2 py-1.5 text-sky-400/70 text-[11px]">parceria</div>
@@ -774,12 +845,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
                             )}
                           </div>
                         </div>
-
-                        <div className="flex gap-0.5 shrink-0 pt-0.5">
-                          <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]" title="Editar preço"><Edit2 className="h-3 w-3" /></button>
-                          <button onClick={() => handleRemoverPreco(preco.item_id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]" title="Remover produto"><X className="h-3 w-3" /></button>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   )
                 })}
@@ -787,43 +853,54 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             )}
           </section>
 
-          {/* ── Coluna direita: Descontos por Item ── */}
+          {/* ── Coluna direita: Desconto nosso ── */}
           <section className="space-y-2">
             <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Percent className="h-4 w-4 text-muted-foreground" />Descontos por Item</p>
-              <span className="text-[11px] text-muted-foreground/60">sobrescreve {faccao.desconto_padrao_pct}%</span>
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Percent className="h-4 w-4 text-muted-foreground" />Desconto nosso</p>
+              {faccao.desconto_padrao_pct > 0 && <span className="text-[11px] text-muted-foreground/60">{faccao.desconto_padrao_pct}% padrão</span>}
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar produto..." value={buscaDesconto} onChange={e => setBuscaDesconto(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={abrirNovoDesconto} disabled={produtosParaDesconto.length === 0}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={abrirNovoDescontoModal}>
                 <Plus className="h-3 w-3" />
               </Button>
             </div>
-            {loadingDescontos ? (
+            {(loadingDescontos || loadingExtras) ? (
               <div className="flex justify-center py-5"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-            ) : descontosFiltrados.length === 0 ? (
+            ) : (descontosFiltrados.length === 0 && extrasFiltrados.length === 0) ? (
               <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
-                {buscaDesconto ? 'Nenhum resultado' : 'Nenhum desconto específico por item — usando geral'}
+                {buscaDesconto ? 'Nenhum resultado' : 'Nenhum produto — usando desconto geral'}
               </p>
             ) : (
               <div className="rounded-lg border border-border overflow-hidden">
-                <div className="grid grid-cols-[1fr_120px_44px] gap-3 px-4 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
-                  <span>Produto</span><span className="text-right">Desconto</span><span />
-                </div>
                 {descontosFiltrados.map((d, idx) => {
                   const produto = todosProdutos.find(p => p.id === d.item_id)
+                  const isLast = idx === descontosFiltrados.length - 1 && extrasFiltrados.length === 0
                   return (
-                    <div key={d.id} className={cn('grid grid-cols-[1fr_120px_44px] gap-3 items-center px-4 py-2.5', idx < descontosFiltrados.length - 1 && 'border-b border-border/40')}>
-                      <span className="text-sm font-medium">{produto?.nome ?? '—'}</span>
-                      <span className="text-sm text-right tabular-nums text-emerald-400">{d.desconto_pct}%</span>
-                      <div className="flex gap-0.5">
+                    <div key={d.id} className={cn('flex items-center gap-2 px-3 py-2', !isLast && 'border-b border-border/40')}>
+                      <span className="text-[11px] shrink-0 text-muted-foreground/50" title="Produto do sistema">🎯</span>
+                      <span className="text-xs font-medium flex-1 min-w-0 truncate">{produto?.nome ?? '—'}</span>
+                      <span className="text-xs tabular-nums text-emerald-400 shrink-0">-{d.desconto_pct}%</span>
+                      <div className="flex gap-0.5 shrink-0">
                         <button onClick={() => abrirEditarDesconto(d)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
                         <button onClick={() => handleRemoverDesconto(d)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
                       </div>
                     </div>
                   )
                 })}
+                {extrasFiltrados.map((e, idx) => (
+                  <div key={e.id} className={cn('flex items-center gap-2 px-3 py-2', idx < extrasFiltrados.length - 1 && 'border-b border-border/40')}>
+                    <span className="text-[11px] shrink-0 text-muted-foreground/50" title="Produto manual">📝</span>
+                    <span className="text-xs font-medium flex-1 min-w-0 truncate">{e.nome}</span>
+                    {e.valor_sujo != null && <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(e.valor_sujo)}</span>}
+                    {e.valor_limpo != null && <span className="text-xs tabular-nums font-medium shrink-0">{fmt(e.valor_limpo)}</span>}
+                    <div className="flex gap-0.5 shrink-0">
+                      <button onClick={() => { setEditandoExtra(e); setManualForm({ nome: e.nome, valor_sujo: e.valor_sujo != null ? String(e.valor_sujo) : '', valor_limpo: e.valor_limpo != null ? String(e.valor_limpo) : '' }); setNovoDescontoTab('manual'); setNovoDescontoModal(true) }} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
+                      <button onClick={() => handleRemoverExtra(e.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><X className="h-3 w-3" /></button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>
@@ -857,6 +934,83 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setDescontoItemDialog(null)}>Cancelar</Button>
             <Button size="sm" onClick={handleSalvarDesconto} disabled={descontoSaving}>{descontoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Desconto nosso — novo/lote/manual */}
+      <Dialog open={novoDescontoModal} onOpenChange={v => { if (!v) { setNovoDescontoModal(false); setLoteSelecao({}); setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' }); setEditandoExtra(null) } }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader><DialogTitle className="text-sm">{editandoExtra ? 'Editar produto manual' : 'Desconto nosso — Adicionar'}</DialogTitle></DialogHeader>
+          {!editandoExtra && (
+            <div className="flex gap-0 border-b border-border shrink-0 -mx-6 px-6">
+              <button onClick={() => setNovoDescontoTab('lote')}
+                className={cn('px-4 py-2 text-xs font-medium transition-colors border-b-2', novoDescontoTab === 'lote' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                Produtos cadastrados
+              </button>
+              <button onClick={() => setNovoDescontoTab('manual')}
+                className={cn('px-4 py-2 text-xs font-medium transition-colors border-b-2', novoDescontoTab === 'manual' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground')}>
+                Produto manual
+              </button>
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto">
+            {(novoDescontoTab === 'lote' && !editandoExtra) && (
+              <div className="py-3 space-y-1">
+                <p className="text-[11px] text-muted-foreground pb-1">Informe o desconto (%) para os produtos desejados. Deixe em branco para pular.</p>
+                {produtosParaDesconto.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">Todos os produtos já têm desconto cadastrado.</p>
+                ) : (
+                  produtosParaDesconto.map(p => (
+                    <div key={p.id} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0">
+                      <span className="text-xs flex-1 min-w-0 truncate">{p.nome}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Input
+                          type="number" min="0" max="100" placeholder="%" step="0.5"
+                          value={loteSelecao[p.id] ?? ''}
+                          onChange={e => setLoteSelecao(prev => { const n = { ...prev }; if (e.target.value === '') delete n[p.id]; else n[p.id] = e.target.value; return n })}
+                          className="h-7 text-xs w-16 text-right" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+            {(novoDescontoTab === 'manual' || editandoExtra) && (
+              <div className="py-3 space-y-3">
+                <p className="text-[11px] text-muted-foreground">Produto específico desta facção, não cadastrado globalmente.</p>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome *</Label>
+                  <Input placeholder="Nome do produto" value={manualForm.nome}
+                    onChange={e => setManualForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Valor Sujo</Label>
+                    <Input type="number" min="0" placeholder="0" value={manualForm.valor_sujo}
+                      onChange={e => setManualForm(f => ({ ...f, valor_sujo: e.target.value }))} className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Valor Limpo</Label>
+                    <Input type="number" min="0" placeholder="0" value={manualForm.valor_limpo}
+                      onChange={e => setManualForm(f => ({ ...f, valor_limpo: e.target.value }))} className="h-8 text-sm" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
+            <Button variant="outline" size="sm" onClick={() => { setNovoDescontoModal(false); setLoteSelecao({}); setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' }); setEditandoExtra(null) }}>Cancelar</Button>
+            {(novoDescontoTab === 'lote' && !editandoExtra) ? (
+              <Button size="sm" onClick={handleSalvarLote} disabled={loteSaving || Object.keys(loteSelecao).length === 0}>
+                {loteSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Salvar${Object.keys(loteSelecao).length > 0 ? ` (${Object.keys(loteSelecao).length})` : ''}`}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={handleSalvarManual} disabled={manualSaving || !manualForm.nome.trim()}>
+                {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

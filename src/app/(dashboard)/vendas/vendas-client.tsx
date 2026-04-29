@@ -1167,10 +1167,10 @@ function OrderDialog({
             })()}
 
             {/* Column headers */}
-            <div className="grid grid-cols-[1fr_52px_80px_88px_72px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+            <div className="grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
               <span>Produto</span>
               <span className="text-right">Estoque</span>
-              <span className="text-right">Qtd</span>
+              <span className="text-center">Qtd</span>
               <span className="text-right">Preço unit.</span>
               <span className="text-right">Subtotal</span>
               <span />
@@ -1200,7 +1200,7 @@ function OrderDialog({
 
                 return (
                   <div key={p.item_id}
-                    className={cn('grid grid-cols-[1fr_52px_80px_88px_72px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
+                    className={cn('grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
                       inCart ? 'bg-primary/[0.04]' : 'hover:bg-white/[0.02]'
                     )}>
                     {/* Nome + badges */}
@@ -1248,13 +1248,16 @@ function OrderDialog({
                     </div>
 
                     {/* Qtd */}
-                    <div className="flex items-center justify-end gap-0.5">
+                    <div className="flex items-center justify-center gap-0.5">
                       <Input
-                        type="number" min="0"
-                        value={qtd === 0 ? '' : qtd}
+                        type="text" inputMode="numeric"
+                        value={qtd === 0 ? '' : qtd.toLocaleString('pt-BR')}
                         placeholder="0"
-                        onChange={e => setCartQtd(p.item_id, parseInt(e.target.value) || 0)}
-                        className={cn('h-7 text-xs text-right tabular-nums w-10',
+                        onChange={e => {
+                          const raw = e.target.value.replace(/\D/g, '')
+                          setCartQtd(p.item_id, parseInt(raw) || 0)
+                        }}
+                        className={cn('h-7 text-xs text-center tabular-nums w-[3.75rem]',
                           inCart && 'border-primary/40 bg-primary/[0.04]'
                         )} />
                       <button
