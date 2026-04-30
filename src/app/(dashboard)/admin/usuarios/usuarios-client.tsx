@@ -47,6 +47,7 @@ type Usuario = {
   id: string
   email: string
   nome: string
+  nome_personagem: string | null
   cargo: string | null
   perfil_id: string | null
   membro_id: string | null
@@ -210,6 +211,25 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [editMembroId, setEditMembroId] = useState<string | null>(null)
   const [editMembroForm, setEditMembroForm] = useState({ perfil_id: '', loja_id: '', faccao_id: '', trabalho_principal: '' as '' | 'loja' | 'faccao' })
   const [editMembroSaving, setEditMembroSaving] = useState(false)
+  const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<MembroInvestigacao | null>(null)
+  const [deletandoMembro, setDeletandoMembro] = useState(false)
+
+  async function handleDeleteMembro() {
+    if (!confirmDeleteMembro) return
+    setDeletandoMembro(true)
+    // Desvincula o usuário antes de deletar
+    const u = usuarios.find(u => u.membro_id === confirmDeleteMembro.id)
+    if (u) {
+      await sb().from('usuarios').update({ membro_id: null }).eq('id', u.id)
+      setUsuarios(prev => prev.map(us => us.id === u.id ? { ...us, membro_id: null } : us))
+    }
+    const { error } = await sb().from('membros').delete().eq('id', confirmDeleteMembro.id)
+    setDeletandoMembro(false)
+    if (error) { toast.error('Erro ao excluir membro'); return }
+    setMembrosState(prev => prev.filter(m => m.id !== confirmDeleteMembro.id))
+    toast.success(`${confirmDeleteMembro.nome} removido do histórico`)
+    setConfirmDeleteMembro(null)
+  }
 
   function openEditMembro(m: MembroInvestigacao) {
     const u = usuarios.find(u => u.membro_id === m.id)
@@ -270,12 +290,19 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const hoje = new Date().toISOString().slice(0, 10)
     const { error } = await sb().from('membros').update({ status: 'inativo', faccao_id: null, data_saida: hoje }).eq('id', m.id)
     if (error) { toast.error('Erro ao desativar'); setMembroLoading(null); return }
+    // Remove de loja_membros
+    await sb().from('loja_membros').delete().eq('membro_id', m.id)
+    // Desativa e limpa local de trabalho do usuário vinculado
     const u = usuarios.find(u => u.membro_id === m.id)
     if (u) {
-      await fetch('/api/admin/usuarios', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: u.id, status: 'inativo' }) })
-      setUsuarios(prev => prev.map(us => us.id === u.id ? { ...us, status: 'inativo' } : us))
+      await fetch('/api/admin/usuarios', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: u.id, status: 'inativo', local_trabalho_loja_id: null, local_trabalho_faccao_id: null, trabalho_principal: null }),
+      })
+      setUsuarios(prev => prev.map(us => us.id === u.id ? { ...us, status: 'inativo', local_trabalho_loja_id: null, local_trabalho_faccao_id: null } : us))
     }
-    setMembrosState(prev => prev.map(mb => mb.id === m.id ? { ...mb, status: 'inativo', data_saida: hoje } : mb))
+    setMembrosState(prev => prev.map(mb => mb.id === m.id ? { ...mb, status: 'inativo', faccao_id: null, data_saida: hoje } : mb))
     setMembroLoading(null)
     toast.success(`${m.nome} desativado`)
     router.refresh()
@@ -341,21 +368,61 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
   // ── Ativar usuário pendente ────────────────────────────────────────────────
   const [ativarUsuario, setAtivarUsuario] = useState<Usuario | null>(null)
-  const [ativarForm, setAtivarForm] = useState({ cargo: '', perfil_id: '' })
+  const [ativarForm, setAtivarForm] = useState({
+    cargo: '', perfil_id: '',
+    loja_id: '', faccao_id: '', trabalho_principal: '' as '' | 'loja' | 'faccao',
+    membro_opcao: 'criar' as 'criar' | 'vincular' | 'nenhum',
+    membro_id_vincular: '',
+    membro_nome_criar: '',
+  })
   const [ativarSaving, setAtivarSaving] = useState(false)
 
   function openAtivar(u: Usuario) {
     setAtivarUsuario(u)
-    setAtivarForm({ cargo: '', perfil_id: '' })
+    setAtivarForm({
+      cargo: '', perfil_id: '',
+      loja_id: '', faccao_id: '', trabalho_principal: '',
+      membro_opcao: u.nome_personagem ? 'criar' : 'nenhum',
+      membro_id_vincular: '',
+      membro_nome_criar: u.nome_personagem ?? '',
+    })
   }
 
   async function handleAtivar() {
     if (!ativarUsuario) return
     setAtivarSaving(true)
+
+    let membroId: string | null = ativarUsuario.membro_id
+
+    if (ativarForm.membro_opcao === 'criar' && ativarForm.membro_nome_criar.trim()) {
+      const { data: novoMembro, error } = await sb().from('membros').insert({
+        nome: ativarForm.membro_nome_criar.trim(),
+        status: 'ativo',
+        membro_proprio: true,
+      }).select('id').single()
+      if (error) { toast.error('Erro ao criar membro'); setAtivarSaving(false); return }
+      membroId = novoMembro.id
+      setMembrosState(prev => [...prev, { id: novoMembro.id, nome: ativarForm.membro_nome_criar.trim(), vulgo: null, cargo_faccao: null, status: 'ativo', membro_proprio: true, data_entrada: null, data_saida: null }])
+    } else if (ativarForm.membro_opcao === 'vincular') {
+      membroId = ativarForm.membro_id_vincular || null
+    } else if (ativarForm.membro_opcao === 'nenhum') {
+      membroId = null
+    }
+
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: ativarUsuario.id, nome: ativarUsuario.nome, cargo: ativarForm.cargo, perfil_id: ativarForm.perfil_id, status: 'ativo' }),
+      body: JSON.stringify({
+        id: ativarUsuario.id,
+        nome: ativarUsuario.nome,
+        cargo: ativarForm.cargo,
+        perfil_id: ativarForm.perfil_id,
+        status: 'ativo',
+        membro_id: membroId,
+        local_trabalho_loja_id: ativarForm.loja_id || null,
+        local_trabalho_faccao_id: ativarForm.faccao_id || null,
+        trabalho_principal: ativarForm.trabalho_principal || null,
+      }),
     })
     const json = await res.json()
     setAtivarSaving(false)
@@ -364,7 +431,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const perfilNome = perfis.find(p => p.id === ativarForm.perfil_id)?.nome ?? null
     setUsuarios(prev => prev.map(u =>
       u.id === ativarUsuario.id
-        ? { ...u, cargo: ativarForm.cargo || null, perfil_id: ativarForm.perfil_id || null, perfil_nome: perfilNome, status: 'ativo' }
+        ? { ...u, cargo: ativarForm.cargo || null, perfil_id: ativarForm.perfil_id || null, perfil_nome: perfilNome, status: 'ativo', membro_id: membroId, local_trabalho_loja_id: ativarForm.loja_id || null, local_trabalho_faccao_id: ativarForm.faccao_id || null }
         : u
     ))
     setAtivarUsuario(null)
@@ -378,18 +445,20 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     local_trabalho_loja_id: '',
     local_trabalho_faccao_id: '',
     trabalho_principal: '' as '' | 'loja' | 'faccao',
+    nome_no_jogo: '',
   })
   const [editSaving, setEditSaving] = useState(false)
 
   function openEdit(u: Usuario) {
+    const membroVinculado = membrosState.find(m => m.id === u.membro_id)
     setEditUsuario(u)
     setEditForm({
       nome: u.nome, cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '',
       status: u.status === 'pendente' ? 'ativo' : u.status,
-      // Se o usuário ainda não tem local definido, usa o padrão do admin
       local_trabalho_loja_id: u.local_trabalho_loja_id ?? defaultLojaId ?? '',
       local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? defaultFaccaoId ?? '',
       trabalho_principal: u.trabalho_principal ?? '',
+      nome_no_jogo: membroVinculado?.nome ?? '',
     })
   }
 
@@ -411,6 +480,12 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     })
     const json = await res.json()
     if (!res.ok) { setEditSaving(false); toast.error(json.error ?? 'Erro ao salvar'); return }
+
+    // Atualiza nome no jogo do membro vinculado
+    if (editUsuario.membro_id && editForm.nome_no_jogo.trim()) {
+      await sb().from('membros').update({ nome: editForm.nome_no_jogo.trim() }).eq('id', editUsuario.membro_id)
+      setMembrosState(prev => prev.map(m => m.id === editUsuario.membro_id ? { ...m, nome: editForm.nome_no_jogo.trim() } : m))
+    }
 
     const localMudou = novoLojaId !== editUsuario.local_trabalho_loja_id || novoFaccaoId !== editUsuario.local_trabalho_faccao_id
     if (localMudou) {
@@ -911,7 +986,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                           <span>Nome</span><span>Cargo</span><span>Entrada</span><span>Saída</span><span />
                         </div>
                         {inativos.map((m, idx) => (
-                          <div key={m.id} className={cn('grid grid-cols-[1fr_120px_110px_110px_100px] gap-3 items-center px-4 py-3 opacity-70', idx < inativos.length - 1 && 'border-b border-border/40')}>
+                          <div key={m.id} className={cn('grid grid-cols-[1fr_120px_110px_110px_auto] gap-3 items-center px-4 py-3 opacity-70', idx < inativos.length - 1 && 'border-b border-border/40')}>
                             <div>
                               <span className="text-sm font-medium">{m.nome}</span>
                               {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
@@ -919,9 +994,16 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                             <span className="text-xs text-muted-foreground">{m.cargo_faccao ?? '—'}</span>
                             <span className="text-xs text-muted-foreground">{fmtData(m.data_entrada)}</span>
                             <span className="text-xs text-muted-foreground">{fmtData(m.data_saida)}</span>
-                            <div className="flex justify-end">
+                            <div className="flex justify-end gap-1">
                               {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
-                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleReativarMembro(m)}>Reativar</Button>
+                                <>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleReativarMembro(m)}>Reativar</Button>
+                                  {isDono && (
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmDeleteMembro(m)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>
@@ -1068,26 +1150,122 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
 
       {/* ── Modal: Ativar Pendente ──────────────────────────────────────────── */}
       <Dialog open={!!ativarUsuario} onOpenChange={v => !v && setAtivarUsuario(null)}>
-        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
-            <DialogTitle>Ativar — {ativarUsuario?.nome}</DialogTitle>
+            <DialogTitle>Aceitar — {ativarUsuario?.nome}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Cargo</Label>
-              <Input placeholder="Ex: Vendedor, Entregador..." value={ativarForm.cargo} onChange={e => setAtivarForm(f => ({ ...f, cargo: e.target.value }))} className="h-8 text-sm" />
+          <div className="space-y-4 py-2">
+
+            {/* Vínculo de membro */}
+            <div className="space-y-2 pb-3 border-b border-border">
+              <Label className="text-xs font-semibold">Membro na investigação</Label>
+              {ativarUsuario?.nome_personagem && (
+                <p className="text-xs text-muted-foreground">Nome informado no cadastro: <span className="text-foreground font-medium">{ativarUsuario.nome_personagem}</span></p>
+              )}
+              <div className="grid grid-cols-3 gap-1.5">
+                {ativarUsuario?.nome_personagem && (
+                  <button
+                    type="button"
+                    onClick={() => setAtivarForm(f => ({ ...f, membro_opcao: 'criar', membro_nome_criar: ativarUsuario.nome_personagem ?? '' }))}
+                    className={cn('text-xs px-2 py-1.5 rounded border transition-colors', ativarForm.membro_opcao === 'criar' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50')}
+                  >
+                    Criar novo
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAtivarForm(f => ({ ...f, membro_opcao: 'vincular' }))}
+                  className={cn('text-xs px-2 py-1.5 rounded border transition-colors', ativarForm.membro_opcao === 'vincular' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50')}
+                >
+                  Vincular existente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAtivarForm(f => ({ ...f, membro_opcao: 'nenhum' }))}
+                  className={cn('text-xs px-2 py-1.5 rounded border transition-colors', ativarForm.membro_opcao === 'nenhum' ? 'border-border bg-white/5 text-muted-foreground' : 'border-border text-muted-foreground hover:border-primary/50')}
+                >
+                  Sem vínculo
+                </button>
+              </div>
+
+              {ativarForm.membro_opcao === 'criar' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome do membro</Label>
+                  <Input value={ativarForm.membro_nome_criar} onChange={e => setAtivarForm(f => ({ ...f, membro_nome_criar: e.target.value }))} placeholder="Nome no jogo..." className="h-8 text-sm" />
+                </div>
+              )}
+              {ativarForm.membro_opcao === 'vincular' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Selecionar membro existente</Label>
+                  <Select value={ativarForm.membro_id_vincular || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, membro_id_vincular: v === '_none' ? '' : v }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">— selecionar —</SelectItem>
+                      {membrosState.filter(m => m.status === 'ativo').map(m => (
+                        <SelectItem key={m.id} value={m.id}>{m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Perfil de Acesso</Label>
-              <Select value={ativarForm.perfil_id || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Selecionar perfil..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Sem perfil</SelectItem>
-                  {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
-                </SelectContent>
-              </Select>
+
+            {/* Cargo e Perfil */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Cargo</Label>
+                <Input placeholder="Vendedor..." value={ativarForm.cargo} onChange={e => setAtivarForm(f => ({ ...f, cargo: e.target.value }))} className="h-8 text-sm" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Perfil de acesso</Label>
+                <Select value={ativarForm.perfil_id || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem perfil..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Sem perfil</SelectItem>
+                    {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Local de trabalho */}
+            <div className="space-y-2 pt-1 border-t border-border">
+              <Label className="text-xs text-muted-foreground">Local de trabalho</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Loja</Label>
+                  <Select value={ativarForm.loja_id || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, loja_id: v === '_none' ? '' : v }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Nenhuma</SelectItem>
+                      {lojas.map(l => <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Facção</Label>
+                  <Select value={ativarForm.faccao_id || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, faccao_id: v === '_none' ? '' : v }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Nenhuma..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Nenhuma</SelectItem>
+                      {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {ativarForm.loja_id && ativarForm.faccao_id && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Trabalho principal</Label>
+                  <Select value={ativarForm.trabalho_principal || '_none'} onValueChange={v => setAtivarForm(f => ({ ...f, trabalho_principal: v === '_none' ? '' : v as 'loja' | 'faccao' }))}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Não definido..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Não definido</SelectItem>
+                      <SelectItem value="faccao">Facção</SelectItem>
+                      <SelectItem value="loja">Loja</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1110,6 +1288,12 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               <Label className="text-xs">Apelido</Label>
               <Input value={editForm.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
             </div>
+            {editUsuario?.membro_id && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nome no jogo</Label>
+                <Input placeholder="Nome do personagem..." value={editForm.nome_no_jogo} onChange={e => setEditForm(f => ({ ...f, nome_no_jogo: e.target.value }))} className="h-8 text-sm" />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Cargo</Label>
               <Input placeholder="Ex: Vendedor, Gerente..." value={editForm.cargo} onChange={e => setEditForm(f => ({ ...f, cargo: e.target.value }))} className="h-8 text-sm" />
@@ -1429,6 +1613,23 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleRemoverPerfil} disabled={removendoPerfil} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {removendoPerfil ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Remover'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!confirmDeleteMembro} onOpenChange={v => !v && setConfirmDeleteMembro(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover do histórico?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{confirmDeleteMembro?.nome}</strong> será removido permanentemente do histórico de membros. O login vinculado (se houver) continuará existindo, mas perderá o vínculo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteMembro} disabled={deletandoMembro} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deletandoMembro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Remover'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

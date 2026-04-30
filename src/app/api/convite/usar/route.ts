@@ -17,6 +17,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Senha deve ter pelo menos 6 caracteres' }, { status: 400 })
   }
 
+  if (!nomePersonagem || !String(nomePersonagem).trim()) {
+    return NextResponse.json({ error: 'Nome no jogo é obrigatório' }, { status: 400 })
+  }
+
   const admin = createAdminClient()
 
   // Valida o convite
@@ -55,25 +59,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: createError.message }, { status: 500 })
   }
 
-  // Se nome do personagem fornecido, cria membro e vincula
-  let membroId: string | null = null
-  if (nomePersonagem && typeof nomePersonagem === 'string' && nomePersonagem.trim()) {
-    const { data: membro, error: membroError } = await admin
-      .from('membros')
-      .insert({ nome: nomePersonagem.trim(), status: 'ativo', membro_proprio: true })
-      .select('id')
-      .single()
-    if (!membroError && membro) membroId = membro.id
-  }
-
-  // Insere na tabela usuarios com status pendente
+  // Insere na tabela usuarios com status pendente — membro será criado/vinculado na ativação
   const { error: insertError } = await admin
     .from('usuarios')
-    .insert({ id: created.user.id, nome: apelido, status: 'pendente', membro_id: membroId })
+    .insert({
+      id: created.user.id,
+      nome: apelido,
+      nome_personagem: String(nomePersonagem).trim(),
+      status: 'pendente',
+    })
 
   if (insertError) {
     await admin.auth.admin.deleteUser(created.user.id)
-    if (membroId) await admin.from('membros').delete().eq('id', membroId)
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 

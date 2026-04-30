@@ -37,7 +37,7 @@ export default async function UsuariosPage() {
     { data: faccaoServidorConfig },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    admin.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, perfis_acesso(id, nome)'),
+    admin.from('usuarios').select('id, nome, nome_personagem, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao, is_sistema').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
@@ -61,6 +61,7 @@ export default async function UsuariosPage() {
       cargo: perfil?.cargo ?? null,
       perfil_id: perfil?.perfil_id ?? null,
       membro_id: perfil?.membro_id ?? null,
+      nome_personagem: (perfil as { nome_personagem?: string | null })?.nome_personagem ?? null,
       local_trabalho_loja_id: perfil?.local_trabalho_loja_id ?? null,
       local_trabalho_faccao_id: perfil?.local_trabalho_faccao_id ?? null,
       trabalho_principal: (perfil?.trabalho_principal ?? null) as 'loja' | 'faccao' | null,
