@@ -31,6 +31,7 @@ export default async function UsuariosPage() {
     { data: permissoes },
     { data: convitesData },
     { data: membrosData },
+    { data: allMembrosData },
     { data: lojasData },
     { data: faccoesData },
     { data: donoConfig },
@@ -42,6 +43,7 @@ export default async function UsuariosPage() {
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
     supabase.from('membros').select('id, nome, vulgo, cargo_faccao, status, membro_proprio, data_entrada, data_saida, faccao_id').eq('membro_proprio', true).order('nome'),
+    supabase.from('membros').select('id, nome').eq('status', 'ativo').order('nome'),
     admin.from('lojas').select('id, nome').order('nome'),
     admin.from('faccoes').select('id, nome, sigla').order('nome'),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
@@ -110,6 +112,7 @@ export default async function UsuariosPage() {
       isFantasma={isFantasma}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       membros={(membrosData ?? []) as any[]}
+      allMembros={(allMembrosData ?? []).map(m => ({ id: m.id, nome: m.nome }))}
       lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}
       faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: (f as { sigla?: string }).sigla ?? null }))}
       defaultLojaId={defaultLojaId}

@@ -92,6 +92,7 @@ interface Props {
   currentUserId: string
   isFantasma: boolean
   membros: MembroInvestigacao[]
+  allMembros: { id: string; nome: string }[]
   lojas: LojaSimples[]
   faccoes: FaccaoSimples[]
   defaultLojaId: string | null
@@ -141,7 +142,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, isFantasma, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId, faccaoServidorId: initialFaccaoServidorId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, isFantasma, membros: initialMembros, allMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId, faccaoServidorId: initialFaccaoServidorId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -447,6 +448,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     local_trabalho_faccao_id: '',
     trabalho_principal: '' as '' | 'loja' | 'faccao',
     nome_no_jogo: '',
+    membro_id_vincular: '',
   })
   const [editSaving, setEditSaving] = useState(false)
 
@@ -460,6 +462,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? defaultFaccaoId ?? '',
       trabalho_principal: u.trabalho_principal ?? '',
       nome_no_jogo: membroVinculado?.nome ?? '',
+      membro_id_vincular: '',
     })
   }
 
@@ -468,6 +471,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setEditSaving(true)
     const novoLojaId = editForm.local_trabalho_loja_id || null
     const novoFaccaoId = editForm.local_trabalho_faccao_id || null
+    const membroIdFinal = editUsuario.membro_id ?? (editForm.membro_id_vincular || null)
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -477,6 +481,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
         local_trabalho_loja_id: novoLojaId,
         local_trabalho_faccao_id: novoFaccaoId,
         trabalho_principal: editForm.trabalho_principal || null,
+        membro_id: membroIdFinal,
       }),
     })
     const json = await res.json()
@@ -498,7 +503,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const perfilNome = perfis.find(p => p.id === editForm.perfil_id)?.nome ?? null
     setUsuarios(prev => prev.map(u =>
       u.id === editUsuario.id
-        ? { ...u, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status, local_trabalho_loja_id: novoLojaId, local_trabalho_faccao_id: novoFaccaoId }
+        ? { ...u, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status, membro_id: membroIdFinal, local_trabalho_loja_id: novoLojaId, local_trabalho_faccao_id: novoFaccaoId }
         : u
     ))
     setEditUsuario(null)
@@ -557,6 +562,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   }
 
   function togglePerm(modulo: string, campo: 'ver' | 'criar' | 'editar' | 'excluir') {
+    if (modulo.startsWith('admin_') && !podeEditarAdmin) return
     setPerfilPerms(prev => {
       const curr = prev[modulo]
       if (campo === 'ver') {
@@ -636,6 +642,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   // ── Permissões do usuário atual ───────────────────────────────────────────
   const currentUserPerfilNome = usuarios.find(u => u.id === currentUserId)?.perfil_nome ?? null
   const isDono = currentUserPerfilNome === 'Dono'
+  const podeEditarAdmin = isFantasma || currentUserId === donoSecundarioId
 
   // ── Filtro ─────────────────────────────────────────────────────────────────
   const pendentes = usuarios.filter(u => u.status === 'pendente')
@@ -757,7 +764,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                       <TableCell className="text-xs text-muted-foreground">{formatDate(u.ultimo_acesso)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                          {isDono && (
+                          {isFantasma && (
                             <Button
                               variant="ghost" size="icon" className={cn('h-7 w-7', u.id === donoSecundarioId ? 'text-yellow-400 hover:text-yellow-300' : 'text-muted-foreground hover:text-yellow-400')}
                               onClick={() => handleDefinirDono(u.id === donoSecundarioId ? null : u.id)}
@@ -769,7 +776,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                           <Button
                             variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
                             onClick={() => setConfirmRemover(u)}
-                            disabled={u.id === currentUserId}
+                            disabled={u.id === currentUserId || (!isFantasma && u.id === donoSecundarioId)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1289,10 +1296,23 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               <Label className="text-xs">Apelido</Label>
               <Input value={editForm.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
             </div>
-            {editUsuario?.membro_id && (
+            {editUsuario?.membro_id ? (
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome no jogo</Label>
                 <Input placeholder="Nome do personagem..." value={editForm.nome_no_jogo} onChange={e => setEditForm(f => ({ ...f, nome_no_jogo: e.target.value }))} className="h-8 text-sm" />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vincular ao membro</Label>
+                <Select value={editForm.membro_id_vincular || '_none'} onValueChange={v => setEditForm(f => ({ ...f, membro_id_vincular: v === '_none' ? '' : v }))}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sem vínculo..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Sem vínculo</SelectItem>
+                    {allMembros.filter(m => !usuarios.some(u => u.membro_id === m.id)).map(m => (
+                      <SelectItem key={m.id} value={m.id}>{m.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div className="space-y-1.5">
@@ -1301,7 +1321,11 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Perfil de Acesso</Label>
-              <Select value={editForm.perfil_id || '_none'} onValueChange={v => setEditForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>
+              <Select
+                value={editForm.perfil_id || '_none'}
+                onValueChange={v => setEditForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}
+                disabled={!isFantasma && editUsuario?.id === donoSecundarioId}
+              >
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="Selecionar..." />
                 </SelectTrigger>
@@ -1310,6 +1334,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   {perfis.filter(p => !p.is_sistema).map(p => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {!isFantasma && editUsuario?.id === donoSecundarioId && (
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Lock className="h-3 w-3" />Somente o dono principal pode alterar este perfil</p>
+              )}
             </div>
             <div className="flex items-center justify-between py-1">
               <Label className="text-xs">Status</Label>
@@ -1389,30 +1416,37 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   <span className="w-12 text-center">Excluir</span>
                 </div>
               </div>
-              {GRUPOS.map(grupo => (
-                <div key={grupo}>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 px-1">{grupo}</p>
-                  <div className="rounded-lg border border-border overflow-hidden">
-                    {MODULOS.filter(m => m.grupo === grupo).map((m, idx, arr) => (
-                      <div key={m.key} className={cn('flex items-center justify-between px-3 py-2 hover:bg-white/[0.02]', idx < arr.length - 1 && 'border-b border-border/60')}>
-                        <span className="text-sm">{m.label}</span>
-                        <div className="flex gap-4">
-                          {(['ver', 'criar', 'editar', 'excluir'] as const).map(campo => (
-                            <div key={campo} className="w-12 flex justify-center">
-                              <button
-                                onClick={() => togglePerm(m.key, campo)}
-                                className={cn('h-5 w-5 rounded border transition-colors flex items-center justify-center', perfilPerms[m.key]?.[campo] ? 'bg-primary border-primary' : 'border-border hover:border-muted-foreground')}
-                              >
-                                {perfilPerms[m.key]?.[campo] && <Check className="h-3 w-3 text-background" />}
-                              </button>
-                            </div>
-                          ))}
+              {GRUPOS.map(grupo => {
+                const isAdminGrupo = grupo === 'Admin'
+                const locked = isAdminGrupo && !podeEditarAdmin
+                return (
+                  <div key={grupo}>
+                    <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                      <p className={cn('text-[10px] font-semibold uppercase tracking-widest', locked ? 'text-muted-foreground/50' : 'text-muted-foreground')}>{grupo}</p>
+                      {locked && <Lock className="h-3 w-3 text-muted-foreground/50" />}
+                    </div>
+                    <div className={cn('rounded-lg border border-border overflow-hidden', locked && 'opacity-50 pointer-events-none')}>
+                      {MODULOS.filter(m => m.grupo === grupo).map((m, idx, arr) => (
+                        <div key={m.key} className={cn('flex items-center justify-between px-3 py-2 hover:bg-white/[0.02]', idx < arr.length - 1 && 'border-b border-border/60')}>
+                          <span className="text-sm">{m.label}</span>
+                          <div className="flex gap-4">
+                            {(['ver', 'criar', 'editar', 'excluir'] as const).map(campo => (
+                              <div key={campo} className="w-12 flex justify-center">
+                                <button
+                                  onClick={() => togglePerm(m.key, campo)}
+                                  className={cn('h-5 w-5 rounded border transition-colors flex items-center justify-center', perfilPerms[m.key]?.[campo] ? 'bg-primary border-primary' : 'border-border hover:border-muted-foreground')}
+                                >
+                                  {perfilPerms[m.key]?.[campo] && <Check className="h-3 w-3 text-background" />}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
           <DialogFooter className="sticky bottom-0 bg-background pt-2">

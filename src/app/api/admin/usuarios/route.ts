@@ -19,6 +19,11 @@ async function getPerfilNome(admin: ReturnType<typeof createAdminClient>, userId
   return (Array.isArray(pa) ? pa[0]?.nome : pa?.nome) ?? null
 }
 
+async function getDonoSecundarioId(admin: ReturnType<typeof createAdminClient>): Promise<string | null> {
+  const { data } = await admin.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle()
+  return data?.valor || null
+}
+
 // POST → criar usuário diretamente (com senha) ou via convite
 export async function POST(req: NextRequest) {
   const { user } = await getAuthUser()
@@ -105,12 +110,18 @@ export async function PATCH(req: NextRequest) {
   const admin = createAdminClient()
 
   // Proteção Fantasma: verificar se alvo ou novo perfil envolve Fantasma
-  const [targetPerfilNome, callerPerfilNome] = await Promise.all([
+  const [targetPerfilNome, callerPerfilNome, donoSecundarioId] = await Promise.all([
     getPerfilNome(admin, id),
     getPerfilNome(admin, user.id),
+    getDonoSecundarioId(admin),
   ])
 
   if (targetPerfilNome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  // Proteção dono secundário: só Fantasma pode modificar
+  if (id === donoSecundarioId && callerPerfilNome !== 'Fantasma') {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
@@ -161,11 +172,19 @@ export async function DELETE(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Só Fantasma pode deletar usuário Fantasma
-  const targetPerfilNome = await getPerfilNome(admin, id)
-  if (targetPerfilNome === 'Fantasma') {
-    const callerPerfilNome = await getPerfilNome(admin, user.id)
-    if (callerPerfilNome !== 'Fantasma') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // Só Fantasma pode deletar usuário Fantasma ou dono secundário
+  const [targetPerfilNome, callerPerfilNome, donoSecundarioId] = await Promise.all([
+    getPerfilNome(admin, id),
+    getPerfilNome(admin, user.id),
+    getDonoSecundarioId(admin),
+  ])
+
+  if (targetPerfilNome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  if (id === donoSecundarioId && callerPerfilNome !== 'Fantasma') {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   await admin.from('usuarios').delete().eq('id', id)
