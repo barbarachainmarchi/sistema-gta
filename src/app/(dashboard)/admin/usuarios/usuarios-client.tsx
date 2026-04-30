@@ -736,6 +736,40 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               </div>
             )}
 
+            {/* Dono Fantasma — só visível para barbarachainmarchi */}
+            {isFantasma && (
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-orange-500/20 bg-orange-500/[0.03]">
+                <div className="h-8 w-8 rounded flex items-center justify-center bg-orange-500/10 shrink-0">
+                  <Crown className="h-4 w-4 text-orange-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-orange-400">Dono Fantasma</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {donoSecundarioId
+                      ? `${usuarios.find(u => u.id === donoSecundarioId)?.nome ?? '—'} tem acesso total igual a você, mas aparece normal para os outros.`
+                      : 'Nenhum. Selecione um usuário para dar acesso total invisível.'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Select
+                    value={donoSecundarioId || '_none'}
+                    onValueChange={v => handleDefinirDono(v === '_none' ? null : v)}
+                    disabled={salvandoDono}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-44">
+                      <SelectValue placeholder="Nenhum..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">Nenhum</SelectItem>
+                      {usuarios.filter(u => u.status !== 'pendente' && u.id !== currentUserId).map(u => (
+                        <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
             {/* Ativos/Inativos */}
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-xs">

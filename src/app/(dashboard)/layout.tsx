@@ -36,10 +36,12 @@ export default async function DashboardLayout({
   const pr = perfilRow as PerfilRow
   const isFantasmaLayout = pr?.perfis_acesso?.nome === 'Fantasma'
   const permissoes = pr?.perfis_acesso?.perfil_permissoes
-  // Fantasma e Dono 2 bypassam todas as restrições de visibilidade
-  const modulosVisiveis: string[] | null = (isDonoSecundario || isFantasmaLayout || !permissoes)
+  // Fantasma e Dono 2 bypassam todas as restrições. Sem perfil = sem acesso (lista vazia).
+  const modulosVisiveis: string[] | null = (isDonoSecundario || isFantasmaLayout)
     ? null
-    : permissoes.filter(p => p.pode_ver).map(p => p.modulo)
+    : permissoes
+      ? permissoes.filter(p => p.pode_ver).map(p => p.modulo)
+      : []
 
   return (
     <ThemeProvider config={tema}>

@@ -124,11 +124,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  // Proteção dono secundário: só elevados podem modificar
-  if (id === donoSecundarioId && !elevated) {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
-  }
-
   if (perfil_id) {
     const { data: perfilAlvo } = await admin.from('perfis_acesso').select('nome').eq('id', perfil_id).maybeSingle()
     if (perfilAlvo?.nome === 'Fantasma' && !elevated) {
