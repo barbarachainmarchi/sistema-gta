@@ -216,21 +216,32 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<MembroInvestigacao | null>(null)
   const [deletandoMembro, setDeletandoMembro] = useState(false)
 
-  async function handleDeleteMembro() {
+  async function handleDeleteMembro(modo: 'civil' | 'deletar') {
     if (!confirmDeleteMembro) return
     setDeletandoMembro(true)
-    // Desvincula o usuário antes de deletar
-    const u = usuarios.find(u => u.membro_id === confirmDeleteMembro.id)
-    if (u) {
-      await sb().from('usuarios').update({ membro_id: null }).eq('id', u.id)
-      setUsuarios(prev => prev.map(us => us.id === u.id ? { ...us, membro_id: null } : us))
+
+    if (modo === 'civil') {
+      // Mantém na investigação mas remove da equipe (sem facção)
+      const { error } = await sb().from('membros').update({
+        membro_proprio: false,
+        faccao_id: null,
+        data_saida: new Date().toISOString().slice(0, 10),
+      }).eq('id', confirmDeleteMembro.id)
+      setDeletandoMembro(false)
+      if (error) { toast.error('Erro ao atualizar membro'); return }
+      setMembrosState(prev => prev.filter(m => m.id !== confirmDeleteMembro.id))
+      toast.success(`${confirmDeleteMembro.nome} mantido na investigação como civil`)
+    } else {
+      // Remove completamente — usuarios.membro_id é SET NULL automaticamente via FK
+      const { error } = await sb().from('membros').delete().eq('id', confirmDeleteMembro.id)
+      setDeletandoMembro(false)
+      if (error) { toast.error('Erro ao excluir membro'); return }
+      setMembrosState(prev => prev.filter(m => m.id !== confirmDeleteMembro.id))
+      toast.success(`${confirmDeleteMembro.nome} removido permanentemente`)
     }
-    const { error } = await sb().from('membros').delete().eq('id', confirmDeleteMembro.id)
-    setDeletandoMembro(false)
-    if (error) { toast.error('Erro ao excluir membro'); return }
-    setMembrosState(prev => prev.filter(m => m.id !== confirmDeleteMembro.id))
-    toast.success(`${confirmDeleteMembro.nome} removido do histórico`)
+
     setConfirmDeleteMembro(null)
+    router.refresh()
   }
 
   function openEditMembro(m: MembroInvestigacao) {
@@ -926,17 +937,17 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               const faccaoServidorNome = faccaoServidor ? faccoes.find(f => f.id === faccaoServidor)?.nome : null
               return (
                 <>
-                  {/* Config: Facção do servidor — só donos editam */}
-                  {(isFantasma || isDonoSecundario) && (
-                    <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                      <div className="flex-1 space-y-0.5">
-                        <p className="text-xs font-medium">Facção do Servidor</p>
-                        <p className="text-[11px] text-muted-foreground">Ao salvar um membro com esta facção como trabalho, ele é automaticamente vinculado na investigação.</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {faccaoServidorNome && (
-                          <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccaoServidorNome}</span>
-                        )}
+                  {/* Config: Facção do servidor */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+                    <div className="flex-1 space-y-0.5">
+                      <p className="text-xs font-medium">Facção do Servidor</p>
+                      <p className="text-[11px] text-muted-foreground">Ao salvar um membro com esta facção como trabalho, ele é automaticamente vinculado na investigação.</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {faccaoServidorNome && (
+                        <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccaoServidorNome}</span>
+                      )}
+                      {(isFantasma || isDonoSecundario) ? (
                         <Select
                           value={faccaoServidor || '_none'}
                           onValueChange={v => handleDefinirFaccaoServidor(v === '_none' ? null : v)}
@@ -949,9 +960,11 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                             {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
                           </SelectContent>
                         </Select>
-                      </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">{faccaoServidorNome ?? 'Não definida'}</span>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   <section className="space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-widest text-primary/80 px-1">Equipe ativa ({ativos.length})</p>
@@ -1029,11 +1042,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                               {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
                                 <>
                                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleReativarMembro(m)}>Reativar</Button>
-                                  {(isFantasma || isDono || isDonoSecundario) && (
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmDeleteMembro(m)}>
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  )}
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmDeleteMembro(m)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
                                 </>
                               )}
                             </div>
@@ -1700,15 +1711,26 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       <AlertDialog open={!!confirmDeleteMembro} onOpenChange={v => !v && setConfirmDeleteMembro(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover do histórico?</AlertDialogTitle>
+            <AlertDialogTitle>O que fazer com {confirmDeleteMembro?.nome}?</AlertDialogTitle>
             <AlertDialogDescription>
-              <strong>{confirmDeleteMembro?.nome}</strong> será removido permanentemente do histórico de membros. O login vinculado (se houver) continuará existindo, mas perderá o vínculo.
+              Esta pessoa já foi da facção. Como deseja tratá-la na investigação?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteMembro} disabled={deletandoMembro} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {deletandoMembro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Remover'}
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            <AlertDialogCancel disabled={deletandoMembro}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletandoMembro}
+              className="bg-zinc-700 hover:bg-zinc-600 text-white"
+              onClick={() => handleDeleteMembro('civil')}
+            >
+              {deletandoMembro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Deixar como civil'}
+            </AlertDialogAction>
+            <AlertDialogAction
+              disabled={deletandoMembro}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => handleDeleteMembro('deletar')}
+            >
+              {deletandoMembro ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Excluir da investigação'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
