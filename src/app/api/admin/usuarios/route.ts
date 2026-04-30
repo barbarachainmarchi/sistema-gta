@@ -8,6 +8,17 @@ async function getAuthUser() {
   return { supabase, user }
 }
 
+async function getPerfilNome(admin: ReturnType<typeof createAdminClient>, userId: string): Promise<string | null> {
+  const { data } = await admin
+    .from('usuarios')
+    .select('perfis_acesso(nome)')
+    .eq('id', userId)
+    .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pa = (data as any)?.perfis_acesso
+  return (Array.isArray(pa) ? pa[0]?.nome : pa?.nome) ?? null
+}
+
 // POST → criar usuário diretamente (com senha) ou via convite
 export async function POST(req: NextRequest) {
   const { user } = await getAuthUser()
@@ -21,6 +32,15 @@ export async function POST(req: NextRequest) {
     const { apelido, senha, perfil_id, membro_id } = body
     if (!apelido || !senha) return NextResponse.json({ error: 'Apelido e senha são obrigatórios' }, { status: 400 })
     if (senha.length < 6) return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
+
+    // Bloqueia atribuição de perfil Fantasma por não-Fantasma
+    if (perfil_id) {
+      const { data: perfilAlvo } = await admin.from('perfis_acesso').select('nome').eq('id', perfil_id).maybeSingle()
+      if (perfilAlvo?.nome === 'Fantasma') {
+        const callerPerfil = await getPerfilNome(admin, user.id)
+        if (callerPerfil !== 'Fantasma') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+      }
+    }
 
     const email = `${apelido}@gta.local`
 
@@ -84,6 +104,23 @@ export async function PATCH(req: NextRequest) {
 
   const admin = createAdminClient()
 
+  // Proteção Fantasma: verificar se alvo ou novo perfil envolve Fantasma
+  const [targetPerfilNome, callerPerfilNome] = await Promise.all([
+    getPerfilNome(admin, id),
+    getPerfilNome(admin, user.id),
+  ])
+
+  if (targetPerfilNome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
+  if (perfil_id) {
+    const { data: perfilAlvo } = await admin.from('perfis_acesso').select('nome').eq('id', perfil_id).maybeSingle()
+    if (perfilAlvo?.nome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: Record<string, any> = { id }
   if (cargo !== undefined) updates.cargo = cargo || null
@@ -123,6 +160,14 @@ export async function DELETE(req: NextRequest) {
   if (id === user.id) return NextResponse.json({ error: 'Você não pode remover sua própria conta' }, { status: 400 })
 
   const admin = createAdminClient()
+
+  // Só Fantasma pode deletar usuário Fantasma
+  const targetPerfilNome = await getPerfilNome(admin, id)
+  if (targetPerfilNome === 'Fantasma') {
+    const callerPerfilNome = await getPerfilNome(admin, user.id)
+    if (callerPerfilNome !== 'Fantasma') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  }
+
   await admin.from('usuarios').delete().eq('id', id)
   const { error } = await admin.auth.admin.deleteUser(id)
 

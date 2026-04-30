@@ -52,7 +52,7 @@ export default async function UsuariosPage() {
 
   const usuariosMap = new Map((usuariosData ?? []).map(u => [u.id, u]))
 
-  const usuarios = (authUsers ?? []).map(au => {
+  const todosUsuarios = (authUsers ?? []).map(au => {
     const perfil = usuariosMap.get(au.id)
     return {
       id: au.id,
@@ -72,6 +72,13 @@ export default async function UsuariosPage() {
     }
   })
 
+  // Determina se o usuário atual tem perfil Fantasma
+  const currentUserData = todosUsuarios.find(u => u.id === user.id)
+  const isFantasma = currentUserData?.perfil_nome === 'Fantasma'
+
+  // Oculta usuários Fantasma da lista (ninguém vê, nem eles mesmos)
+  const usuarios = todosUsuarios.filter(u => u.perfil_nome !== 'Fantasma')
+
   const perfisCompletos = (perfis ?? []).map(p => ({
     ...p,
     is_sistema: p.is_sistema ?? false,
@@ -79,6 +86,9 @@ export default async function UsuariosPage() {
       .filter(pm => pm.perfil_id === p.id)
       .map(pm => ({ modulo: pm.modulo, pode_ver: pm.pode_ver, pode_criar: (pm as { pode_criar?: boolean }).pode_criar ?? false, pode_editar: pm.pode_editar, pode_excluir: pm.pode_excluir ?? false })),
   }))
+
+  // Oculta perfil Fantasma dos selects para não-Fantasma
+  const perfisParaCliente = isFantasma ? perfisCompletos : perfisCompletos.filter(p => p.nome !== 'Fantasma')
 
   const convites = (convitesData ?? []).map(c => ({
     token: c.token,
@@ -94,9 +104,10 @@ export default async function UsuariosPage() {
   return (
     <UsuariosClient
       usuarios={usuarios}
-      perfis={perfisCompletos}
+      perfis={perfisParaCliente}
       convites={convites}
       currentUserId={user.id}
+      isFantasma={isFantasma}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       membros={(membrosData ?? []) as any[]}
       lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}

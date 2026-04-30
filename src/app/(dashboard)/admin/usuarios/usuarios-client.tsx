@@ -90,6 +90,7 @@ interface Props {
   perfis: Perfil[]
   convites: Convite[]
   currentUserId: string
+  isFantasma: boolean
   membros: MembroInvestigacao[]
   lojas: LojaSimples[]
   faccoes: FaccaoSimples[]
@@ -140,7 +141,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId, faccaoServidorId: initialFaccaoServidorId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, isFantasma, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId, faccaoServidorId: initialFaccaoServidorId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
