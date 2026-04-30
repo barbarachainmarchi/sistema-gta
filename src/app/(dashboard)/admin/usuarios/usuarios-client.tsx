@@ -65,6 +65,7 @@ type FaccaoSimples = { id: string; nome: string; tag: string | null }
 type MembroInvestigacao = {
   id: string; nome: string; vulgo: string | null; cargo_faccao: string | null
   status: string; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null
+  faccao_id?: string | null
 }
 
 type Permissao = { modulo: string; pode_ver: boolean; pode_criar: boolean; pode_editar: boolean; pode_excluir: boolean }
@@ -94,6 +95,7 @@ interface Props {
   defaultLojaId: string | null
   defaultFaccaoId: string | null
   donoSecundarioId: string | null
+  faccaoServidorId: string | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ function StatusBadge({ status }: { status: Usuario['status'] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId }: Props) {
+export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfis, convites: initialConvites, currentUserId, membros: initialMembros, lojas, faccoes, defaultLojaId, defaultFaccaoId, donoSecundarioId: initialDonoSecundarioId, faccaoServidorId: initialFaccaoServidorId }: Props) {
   const router = useRouter()
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -152,6 +154,8 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [novoUsuarioOpen, setNovoUsuarioOpen] = useState(false)
   const [novoUsuarioForm, setNovoUsuarioForm] = useState({ membro_id: '', apelido: '', senha: '', perfil_id: '' })
   const [novoUsuarioSaving, setNovoUsuarioSaving] = useState(false)
+  const [faccaoServidor, setFaccaoServidor] = useState<string | null>(initialFaccaoServidorId)
+  const [salvandoFaccaoServidor, setSalvandoFaccaoServidor] = useState(false)
 
   // ── Dono secundário ───────────────────────────────────────────────────────
   async function handleDefinirDono(userId: string | null) {
@@ -164,6 +168,18 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setDonoSecundarioId(userId)
     toast.success(userId ? 'Dono secundário definido!' : 'Dono secundário removido')
     router.refresh()
+  }
+
+  // ── Facção do Servidor ───────────────────────────────────────────────────
+  async function handleDefinirFaccaoServidor(faccaoId: string | null) {
+    setSalvandoFaccaoServidor(true)
+    const { error } = await sb()
+      .from('config_sistema')
+      .upsert({ chave: 'faccao_servidor_id', valor: faccaoId ?? '' }, { onConflict: 'chave' })
+    setSalvandoFaccaoServidor(false)
+    if (error) { toast.error('Erro ao salvar facção do servidor'); return }
+    setFaccaoServidor(faccaoId)
+    toast.success(faccaoId ? 'Facção do servidor definida!' : 'Facção do servidor removida')
   }
 
   // ── Novo Usuário ──────────────────────────────────────────────────────────
@@ -226,8 +242,15 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       }),
     })
     const json = await res.json()
+    if (!res.ok) { setEditMembroSaving(false); toast.error(json.error ?? 'Erro ao salvar'); return }
+
+    // Se a facção de trabalho é a facção do servidor, auto-vincular na investigação
+    if (faccaoId && faccaoId === faccaoServidor) {
+      await sb().from('membros').update({ faccao_id: faccaoId }).eq('id', m.id)
+      setMembrosState(prev => prev.map(mb => mb.id === m.id ? { ...mb, faccao_id: faccaoId } : mb))
+    }
+
     setEditMembroSaving(false)
-    if (!res.ok) { toast.error(json.error ?? 'Erro ao salvar'); return }
     const perfilNome = perfis.find(p => p.id === editMembroForm.perfil_id)?.nome ?? null
     setUsuarios(prev => prev.map(us => us.id === u.id ? {
       ...us,
@@ -796,8 +819,34 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               const ativos  = membrosState.filter(m => m.membro_proprio && m.status === 'ativo')
               const inativos = membrosState.filter(m => m.membro_proprio && m.status === 'inativo')
               const fmtData = (d: string | null) => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
+              const faccaoServidorNome = faccaoServidor ? faccoes.find(f => f.id === faccaoServidor)?.nome : null
               return (
                 <>
+                  {/* Config: Facção do servidor */}
+                  <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+                    <div className="flex-1 space-y-0.5">
+                      <p className="text-xs font-medium">Facção do Servidor</p>
+                      <p className="text-[11px] text-muted-foreground">Ao salvar um membro com esta facção como trabalho, ele é automaticamente vinculado na investigação.</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {faccaoServidorNome && (
+                        <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccaoServidorNome}</span>
+                      )}
+                      <Select
+                        value={faccaoServidor || '_none'}
+                        onValueChange={v => handleDefinirFaccaoServidor(v === '_none' ? null : v)}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-32" disabled={salvandoFaccaoServidor}>
+                          <SelectValue placeholder="Nenhuma..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Nenhuma</SelectItem>
+                          {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   <section className="space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-widest text-primary/80 px-1">Equipe ativa ({ativos.length})</p>
                     {ativos.length === 0 ? (
@@ -814,6 +863,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                               <div>
                                 <span className="text-sm font-medium">{m.nome}</span>
                                 {m.vulgo && <span className="ml-1.5 text-xs text-muted-foreground">"{m.vulgo}"</span>}
+                                {faccaoServidor && m.faccao_id === faccaoServidor && (
+                                  <span className="ml-1.5 text-[10px] bg-purple-500/10 text-purple-400 px-1 rounded">servidor</span>
+                                )}
                               </div>
                               <span className="text-xs text-muted-foreground pt-0.5">{m.cargo_faccao ?? '—'}</span>
                               <span className="text-xs text-muted-foreground pt-0.5">{fmtData(m.data_entrada)}</span>

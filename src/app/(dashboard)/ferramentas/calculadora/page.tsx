@@ -37,10 +37,17 @@ export default async function CalculadoraPage() {
   const meuLojaId    = usuarioRow?.local_trabalho_loja_id ?? null
   const meuFaccaoId  = usuarioRow?.local_trabalho_faccao_id ?? null
 
-  // Buscar preços da facção do usuário (se tiver)
-  const { data: faccaoPrecosData } = meuFaccaoId
-    ? await supabase.from('faccao_item_precos').select('faccao_id, item_id, preco_limpo, preco_sujo').eq('faccao_id', meuFaccaoId)
-    : { data: [] }
+  const [
+    { data: faccaoPrecosData },
+    { data: faccaoRow },
+  ] = await Promise.all([
+    meuFaccaoId
+      ? supabase.from('faccao_item_precos').select('faccao_id, item_id, preco_limpo, preco_sujo').eq('faccao_id', meuFaccaoId)
+      : Promise.resolve({ data: [] }),
+    meuFaccaoId
+      ? supabase.from('faccoes').select('nome, sigla').eq('id', meuFaccaoId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
@@ -81,6 +88,8 @@ export default async function CalculadoraPage() {
         faccaoPrecos={faccaoPrecosData ?? []}
         meuLojaId={meuLojaId}
         meuFaccaoId={meuFaccaoId}
+        meuFaccaoNome={(faccaoRow as { nome?: string; sigla?: string } | null)?.sigla ?? (faccaoRow as { nome?: string } | null)?.nome ?? null}
+        meuLojaNome={(lojasData ?? []).find(l => l.id === meuLojaId)?.nome ?? null}
         favoritosIniciais={(favoritosData ?? []).map(f => f.item_id)}
         favoritosServicosIniciais={(favoritosServicosData ?? []).map(f => f.servico_id)}
         podeEditar={podeEditar}

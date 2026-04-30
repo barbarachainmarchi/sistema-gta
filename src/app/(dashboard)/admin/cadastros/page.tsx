@@ -10,7 +10,7 @@ export default async function CadastrosPage() {
     supabase.from('items').select('*, categorias_item (id, nome)').order('nome'),
     supabase.from('categorias_item').select('*').order('nome'),
     supabase.from('lojas').select('id, nome, localizacao').order('nome'),
-    supabase.from('faccoes').select('id, nome, tag').order('nome'),
+    supabase.from('faccoes').select('id, nome, sigla').order('nome'),
     user ? supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).single() : Promise.resolve({ data: null }),
     supabase.from('servicos').select('*').order('nome'),
     supabase.from('servico_itens').select('id, servico_id, item_id, quantidade, items(nome, tem_craft)'),
@@ -43,7 +43,7 @@ export default async function CadastrosPage() {
       initialItems={itemsResult.data || []}
       categorias={categoriasResult.data || []}
       lojas={lojasResult.data || []}
-      faccoes={(faccoesResult.data || []).map(f => ({ id: f.id, nome: f.nome, tag: f.tag ?? null }))}
+      faccoes={(faccoesResult.data || []).map(f => ({ id: f.id, nome: f.nome, tag: (f as { sigla?: string }).sigla ?? null }))}
       userId={user?.id ?? ''}
       localTrabalhoLoja={localTrabalhoLoja}
       localTrabalhoFaccao={localTrabalhoFaccao}

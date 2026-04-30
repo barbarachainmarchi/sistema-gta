@@ -57,10 +57,10 @@ export function BrowseFornecedorDialog({ open, onClose, onConfirm, tipoDinheiro,
     setBuscaProd('')
     Promise.all([
       sb().from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
-      sb().from('faccoes').select('id, nome, tag').order('nome'),
+      sb().from('faccoes').select('id, nome, sigla').order('nome'),
     ]).then(([{ data: l }, { data: f }]) => {
       setLojas(l ?? [])
-      setFaccoes((f ?? []).map(x => ({ ...x, tag: x.tag ?? undefined })))
+      setFaccoes((f ?? []).map(x => ({ id: x.id, nome: x.nome, tag: (x as { sigla?: string }).sigla ?? undefined })))
       setLoading(false)
     })
   }, [open, sb])

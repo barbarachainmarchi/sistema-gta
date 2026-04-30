@@ -62,6 +62,8 @@ interface Props {
   faccaoPrecos: FaccaoPreco[]
   meuLojaId: string | null
   meuFaccaoId: string | null
+  meuFaccaoNome?: string | null
+  meuLojaNome?: string | null
   favoritosIniciais: string[]
   favoritosServicosIniciais: string[]
   podeEditar?: boolean
@@ -240,7 +242,8 @@ function gerarCanvas(linhas: { text: string; indent?: boolean; bold?: boolean; d
 
 export function CalculadoraClient({
   userId, items, precosVigentes, lojas, lojaPrecos, faccaoPrecos,
-  meuLojaId, meuFaccaoId, favoritosIniciais, favoritosServicosIniciais,
+  meuLojaId, meuFaccaoId, meuFaccaoNome, meuLojaNome,
+  favoritosIniciais, favoritosServicosIniciais,
   podeEditar = true, servicos, servicoItens,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
@@ -268,7 +271,7 @@ export function CalculadoraClient({
   const [comboQtdInputs, setComboQtdInputs] = useState<Record<string, string>>({})
   const [combosExpandidos, setCombosExpandidos] = useState<Set<string>>(new Set())
   const [modoServico, setModoServico] = useState<'faccao' | 'loja'>(
-    meuFaccaoId && !meuLojaId ? 'faccao' : 'loja'
+    meuFaccaoId ? 'faccao' : 'loja'
   )
 
   useEffect(() => {
@@ -838,20 +841,28 @@ export function CalculadoraClient({
         {/* Filtros */}
         <div className="p-2.5 border-b border-border space-y-2">
           {/* Toggle Facção / Loja */}
-          {meuLojaId && meuFaccaoId && (
+          {(meuLojaId || meuFaccaoId) && (
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground shrink-0">Em serviço como:</span>
-              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30">
-                <button
-                  onClick={() => setModoServico('faccao')}
-                  className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
-                    modoServico === 'faccao' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
-                  )}>Facção</button>
-                <button
-                  onClick={() => setModoServico('loja')}
-                  className={cn('px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
-                    modoServico === 'loja' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'
-                  )}>Loja</button>
+              <span className="text-[10px] text-muted-foreground shrink-0">Modo:</span>
+              <div className="flex items-center gap-0.5 bg-muted/20 rounded p-0.5 border border-border/30 flex-1">
+                {meuFaccaoId && (
+                  <button
+                    onClick={() => setModoServico('faccao')}
+                    className={cn('flex-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors truncate',
+                      modoServico === 'faccao' ? 'bg-purple-500/20 text-purple-300' : 'text-muted-foreground hover:text-foreground'
+                    )}>
+                    {meuFaccaoNome ?? 'Facção'}
+                  </button>
+                )}
+                {meuLojaId && (
+                  <button
+                    onClick={() => setModoServico('loja')}
+                    className={cn('flex-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors truncate',
+                      modoServico === 'loja' ? 'bg-blue-500/20 text-blue-300' : 'text-muted-foreground hover:text-foreground'
+                    )}>
+                    {meuLojaNome ?? 'Loja'}
+                  </button>
+                )}
               </div>
             </div>
           )}

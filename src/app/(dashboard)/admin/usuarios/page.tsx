@@ -34,16 +34,18 @@ export default async function UsuariosPage() {
     { data: lojasData },
     { data: faccoesData },
     { data: donoConfig },
+    { data: faccaoServidorConfig },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
     admin.from('usuarios').select('id, nome, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao, is_sistema').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
-    supabase.from('membros').select('id, nome, vulgo, cargo_faccao, status, membro_proprio, data_entrada, data_saida').eq('membro_proprio', true).order('nome'),
+    supabase.from('membros').select('id, nome, vulgo, cargo_faccao, status, membro_proprio, data_entrada, data_saida, faccao_id').eq('membro_proprio', true).order('nome'),
     admin.from('lojas').select('id, nome').order('nome'),
-    admin.from('faccoes').select('id, nome, tag').order('nome'),
+    admin.from('faccoes').select('id, nome, sigla').order('nome'),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
+    supabase.from('config_sistema').select('valor').eq('chave', 'faccao_servidor_id').maybeSingle(),
   ])
 
   const authUsers = authResult.data?.users ?? []
@@ -97,10 +99,11 @@ export default async function UsuariosPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       membros={(membrosData ?? []) as any[]}
       lojas={(lojasData ?? []).map(l => ({ id: l.id, nome: l.nome }))}
-      faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: f.tag ?? null }))}
+      faccoes={(faccoesData ?? []).map(f => ({ id: f.id, nome: f.nome, tag: (f as { sigla?: string }).sigla ?? null }))}
       defaultLojaId={defaultLojaId}
       defaultFaccaoId={defaultFaccaoId}
       donoSecundarioId={donoConfig?.valor || null}
+      faccaoServidorId={faccaoServidorConfig?.valor || null}
     />
   )
 }
