@@ -211,7 +211,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   const [membrosState, setMembrosState] = useState<MembroInvestigacao[]>(initialMembros)
   const [membroLoading, setMembroLoading] = useState<string | null>(null)
   const [editMembroId, setEditMembroId] = useState<string | null>(null)
-  const [editMembroForm, setEditMembroForm] = useState({ perfil_id: '', loja_id: '', faccao_id: '', trabalho_principal: '' as '' | 'loja' | 'faccao' })
+  const [editMembroForm, setEditMembroForm] = useState({ perfil_id: '', loja_id: '', faccao_id: '', trabalho_principal: '' as '' | 'loja' | 'faccao', usuario_id_vincular: '' })
   const [editMembroSaving, setEditMembroSaving] = useState(false)
   const [confirmDeleteMembro, setConfirmDeleteMembro] = useState<MembroInvestigacao | null>(null)
   const [deletandoMembro, setDeletandoMembro] = useState(false)
@@ -241,14 +241,31 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
       loja_id: u?.local_trabalho_loja_id ?? '',
       faccao_id: u?.local_trabalho_faccao_id ?? '',
       trabalho_principal: u?.trabalho_principal ?? '',
+      usuario_id_vincular: '',
     })
   }
 
   async function handleSalvarMembro() {
     const m = membrosState.find(m => m.id === editMembroId)
     if (!m) return
-    const u = usuarios.find(u => u.membro_id === m.id)
-    if (!u) { toast.error('Membro sem usuário vinculado'); return }
+    let u = usuarios.find(u => u.membro_id === m.id)
+
+    // Vincular conta se ainda não há usuário e foi selecionado um
+    if (!u && editMembroForm.usuario_id_vincular) {
+      const res = await fetch('/api/admin/usuarios', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editMembroForm.usuario_id_vincular, membro_id: m.id }),
+      })
+      if (!res.ok) { toast.error('Erro ao vincular conta'); return }
+      const usuarioVinculado = usuarios.find(us => us.id === editMembroForm.usuario_id_vincular)
+      if (usuarioVinculado) {
+        u = { ...usuarioVinculado, membro_id: m.id }
+        setUsuarios(prev => prev.map(us => us.id === editMembroForm.usuario_id_vincular ? { ...us, membro_id: m.id } : us))
+      }
+    }
+
+    if (!u) { toast.error('Selecione uma conta para vincular'); return }
     setEditMembroSaving(true)
     const lojaId = editMembroForm.loja_id || null
     const faccaoId = editMembroForm.faccao_id || null
@@ -384,9 +401,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setAtivarForm({
       cargo: '', perfil_id: '',
       loja_id: '', faccao_id: '', trabalho_principal: '',
-      membro_opcao: u.nome_personagem ? 'criar' : 'nenhum',
+      membro_opcao: 'criar',
       membro_id_vincular: '',
-      membro_nome_criar: u.nome_personagem ?? '',
+      membro_nome_criar: u.nome_personagem ?? u.nome,
     })
   }
 
@@ -642,7 +659,8 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   // ── Permissões do usuário atual ───────────────────────────────────────────
   const currentUserPerfilNome = usuarios.find(u => u.id === currentUserId)?.perfil_nome ?? null
   const isDono = currentUserPerfilNome === 'Dono'
-  const podeEditarAdmin = isFantasma || currentUserId === donoSecundarioId
+  const isDonoSecundario = currentUserId === donoSecundarioId
+  const podeEditarAdmin = isFantasma || isDonoSecundario
 
   // ── Filtro ─────────────────────────────────────────────────────────────────
   const pendentes = usuarios.filter(u => u.status === 'pendente')
@@ -749,6 +767,9 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                             <span className="text-sm font-medium">{u.nome}</span>
                             {u.id === currentUserId && <span className="text-[10px] text-muted-foreground">(você)</span>}
                             {u.perfil_nome && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">{u.perfil_nome}</span>}
+                            {isFantasma && u.id === donoSecundarioId && (
+                              <span className="text-[10px] bg-orange-500/10 text-orange-400 px-1.5 py-0.5 rounded font-medium">Dono 2</span>
+                            )}
                           </div>
                           <span className="text-xs text-muted-foreground font-mono">{loginDisplay(u.email)}</span>
                         </div>
@@ -970,7 +991,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                               <div className="flex justify-end items-start gap-1">
                                 {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground mt-1" /> : (
                                   <>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMembro(m)} disabled={!u}>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMembro(m)}>
                                       <Edit2 className="h-3.5 w-3.5" />
                                     </Button>
                                     <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleDesativarMembro(m)}>
@@ -1006,7 +1027,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                               {membroLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
                                 <>
                                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleReativarMembro(m)}>Reativar</Button>
-                                  {isDono && (
+                                  {(isFantasma || isDono || isDonoSecundario) && (
                                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setConfirmDeleteMembro(m)}>
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
@@ -1041,6 +1062,27 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-3 py-2">
+                {(() => {
+                  const mAtual = membrosState.find(m => m.id === editMembroId)
+                  const uAtual = mAtual ? usuarios.find(u => u.membro_id === mAtual.id) : null
+                  const usuariosLivres = usuarios.filter(u => !u.membro_id)
+                  if (!uAtual) return (
+                    <div className="space-y-1.5 pb-3 border-b border-border">
+                      <Label className="text-xs font-semibold">Vincular conta de usuário</Label>
+                      <Select value={editMembroForm.usuario_id_vincular || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, usuario_id_vincular: v === '_none' ? '' : v }))}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Selecionar conta..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">— sem vínculo —</SelectItem>
+                          {usuariosLivres.map(u => <SelectItem key={u.id} value={u.id}>{u.nome} ({u.email.split('@')[0]})</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      {usuariosLivres.length === 0 && (
+                        <p className="text-[11px] text-muted-foreground">Nenhuma conta livre. Crie um novo usuário na aba Usuários.</p>
+                      )}
+                    </div>
+                  )
+                  return null
+                })()}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Perfil de acesso</Label>
                   <Select value={editMembroForm.perfil_id || '_none'} onValueChange={v => setEditMembroForm(f => ({ ...f, perfil_id: v === '_none' ? '' : v }))}>

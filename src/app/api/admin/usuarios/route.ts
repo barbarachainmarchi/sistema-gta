@@ -24,6 +24,11 @@ async function getDonoSecundarioId(admin: ReturnType<typeof createAdminClient>):
   return data?.valor || null
 }
 
+async function callerIsElevated(admin: ReturnType<typeof createAdminClient>, userId: string): Promise<boolean> {
+  const [perfilNome, donoId] = await Promise.all([getPerfilNome(admin, userId), getDonoSecundarioId(admin)])
+  return perfilNome === 'Fantasma' || userId === donoId
+}
+
 // POST → criar usuário diretamente (com senha) ou via convite
 export async function POST(req: NextRequest) {
   const { user } = await getAuthUser()
@@ -38,12 +43,11 @@ export async function POST(req: NextRequest) {
     if (!apelido || !senha) return NextResponse.json({ error: 'Apelido e senha são obrigatórios' }, { status: 400 })
     if (senha.length < 6) return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
 
-    // Bloqueia atribuição de perfil Fantasma por não-Fantasma
+    // Bloqueia atribuição de perfil Fantasma por não-elevados
     if (perfil_id) {
       const { data: perfilAlvo } = await admin.from('perfis_acesso').select('nome').eq('id', perfil_id).maybeSingle()
       if (perfilAlvo?.nome === 'Fantasma') {
-        const callerPerfil = await getPerfilNome(admin, user.id)
-        if (callerPerfil !== 'Fantasma') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+        if (!(await callerIsElevated(admin, user.id))) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
       }
     }
 
@@ -110,24 +114,24 @@ export async function PATCH(req: NextRequest) {
   const admin = createAdminClient()
 
   // Proteção Fantasma: verificar se alvo ou novo perfil envolve Fantasma
-  const [targetPerfilNome, callerPerfilNome, donoSecundarioId] = await Promise.all([
+  const [targetPerfilNome, donoSecundarioId, elevated] = await Promise.all([
     getPerfilNome(admin, id),
-    getPerfilNome(admin, user.id),
     getDonoSecundarioId(admin),
+    callerIsElevated(admin, user.id),
   ])
 
-  if (targetPerfilNome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+  if (targetPerfilNome === 'Fantasma' && !elevated) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  // Proteção dono secundário: só Fantasma pode modificar
-  if (id === donoSecundarioId && callerPerfilNome !== 'Fantasma') {
+  // Proteção dono secundário: só elevados podem modificar
+  if (id === donoSecundarioId && !elevated) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
   if (perfil_id) {
     const { data: perfilAlvo } = await admin.from('perfis_acesso').select('nome').eq('id', perfil_id).maybeSingle()
-    if (perfilAlvo?.nome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+    if (perfilAlvo?.nome === 'Fantasma' && !elevated) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
   }
@@ -172,18 +176,18 @@ export async function DELETE(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Só Fantasma pode deletar usuário Fantasma ou dono secundário
-  const [targetPerfilNome, callerPerfilNome, donoSecundarioId] = await Promise.all([
+  // Só elevados (Fantasma ou Dono 2) podem deletar usuário Fantasma ou dono secundário
+  const [targetPerfilNome, donoSecundarioId, elevated] = await Promise.all([
     getPerfilNome(admin, id),
-    getPerfilNome(admin, user.id),
     getDonoSecundarioId(admin),
+    callerIsElevated(admin, user.id),
   ])
 
-  if (targetPerfilNome === 'Fantasma' && callerPerfilNome !== 'Fantasma') {
+  if (targetPerfilNome === 'Fantasma' && !elevated) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  if (id === donoSecundarioId && callerPerfilNome !== 'Fantasma') {
+  if (id === donoSecundarioId && !elevated) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 

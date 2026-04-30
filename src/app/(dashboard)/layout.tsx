@@ -14,13 +14,14 @@ export default async function DashboardLayout({
   if (!user) redirect('/login')
 
   // Paraleliza: perfil do usuário (dinâmico) + tema (cacheado) + atualiza ultimo_acesso
-  const [{ data: perfilRow }, tema] = await Promise.all([
+  const [{ data: perfilRow }, tema, { data: donoConfig }] = await Promise.all([
     supabase
       .from('usuarios')
       .select('status, perfis_acesso(perfil_permissoes(modulo, pode_ver))')
       .eq('id', user.id)
       .maybeSingle(),
     getTema(),
+    supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
     supabase.from('usuarios').update({ ultimo_acesso: new Date().toISOString() }).eq('id', user.id),
   ])
 
@@ -30,12 +31,14 @@ export default async function DashboardLayout({
   const categoriaCores: Record<string, string> = tema?.categoriaCores ?? {}
 
   // Módulos que o usuário pode ver (null = sem perfil = vê tudo)
+  const isDonoSecundario = donoConfig?.valor === user.id
   type PerfilRow = { perfis_acesso: { perfil_permissoes: { modulo: string; pode_ver: boolean }[] } | null } | null
   const pr = perfilRow as PerfilRow
   const permissoes = pr?.perfis_acesso?.perfil_permissoes
-  const modulosVisiveis: string[] | null = permissoes
-    ? permissoes.filter(p => p.pode_ver).map(p => p.modulo)
-    : null
+  // Dono secundário bypassa todas as restrições de visibilidade
+  const modulosVisiveis: string[] | null = (isDonoSecundario || !permissoes)
+    ? null
+    : permissoes.filter(p => p.pode_ver).map(p => p.modulo)
 
   return (
     <ThemeProvider config={tema}>
