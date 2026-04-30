@@ -573,8 +573,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       sb().from('faccao_item_preco_faixas').delete().eq('faccao_id', faccao.id).eq('item_id', itemId),
       sb().from('faccao_item_precos').delete().eq('faccao_id', faccao.id).eq('item_id', itemId),
     ])
-    const { count } = await sb().from('faccao_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', itemId)
-    if (count === 0) await sb().from('items').update({ eh_compravel: false }).eq('id', itemId)
+    const [{ count: cFac }, { count: cLoja }] = await Promise.all([
+      sb().from('faccao_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', itemId),
+      sb().from('loja_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', itemId),
+    ])
+    if ((cFac ?? 0) === 0 && (cLoja ?? 0) === 0) await sb().from('items').update({ eh_compravel: false }).eq('id', itemId)
     onUpdateFaccaoPrecos(faccaoPrecos.filter(p => p.item_id !== itemId))
     setFaixasPrecos(prev => { const n = { ...prev }; delete n[itemId]; return n })
     toast.success('Produto removido')

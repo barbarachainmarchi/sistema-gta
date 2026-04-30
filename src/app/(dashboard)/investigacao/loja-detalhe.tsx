@@ -109,6 +109,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     const { data, error } = await sb().from('loja_item_precos').upsert({ loja_id: loja.id, item_id: newItemId, preco: parseFloat(newItemPreco), preco_sujo: newItemPrecoSujo ? parseFloat(newItemPrecoSujo) : null }, { onConflict: 'loja_id,item_id' }).select('id, item_id, preco, preco_sujo, items(id, nome, categorias_item(nome))').single()
     setSavingItem(false)
     if (error) { toast.error('Erro ao salvar'); return }
+    await sb().from('items').update({ eh_compravel: true }).eq('id', newItemId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setItens(prev => [...prev.filter(i => i.item_id !== newItemId), data as any])
     setAddItem(false); setNewItemId(''); setBuscaNovoItem(''); setNewItemPreco(''); setNewItemPrecoSujo('')
@@ -129,6 +130,11 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
 
   async function handleRemoverItem(item: LojaItem) {
     await sb().from('loja_item_precos').delete().eq('id', item.id)
+    const [{ count: cLoja }, { count: cFac }] = await Promise.all([
+      sb().from('loja_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', item.item_id),
+      sb().from('faccao_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', item.item_id),
+    ])
+    if ((cLoja ?? 0) === 0 && (cFac ?? 0) === 0) await sb().from('items').update({ eh_compravel: false }).eq('id', item.item_id)
     setItens(prev => prev.filter(i => i.id !== item.id))
     toast.success('Item removido')
   }
