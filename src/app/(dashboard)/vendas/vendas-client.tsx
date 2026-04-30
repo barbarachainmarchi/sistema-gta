@@ -650,8 +650,23 @@ function OrderDialog({
         setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
         setCombosQtd(Object.fromEntries(idsCombo.map(id => [id, 1])))
       } else {
-        setForm(emptyForm())
-        setEmpresaNome('')
+        const defaultFaccao = meuFaccao ? faccoes.find(f => f.id === meuFaccao.id) ?? null : null
+        const defaultDesconto = defaultFaccao?.desconto_padrao_pct ?? 0
+        setForm({
+          ...emptyForm(),
+          faccao_id: meuFaccao?.id ?? '',
+          loja_id: meuFaccao ? '' : (meuLoja?.id ?? ''),
+          desconto_pct: defaultDesconto > 0 ? String(defaultDesconto) : '0',
+        })
+        setEmpresaNome(meuFaccao?.nome ?? meuLoja?.nome ?? '')
+        if (meuFaccao) {
+          sb().from('faccao_desconto_por_item').select('item_id, desconto_pct').eq('faccao_id', meuFaccao.id)
+            .then(({ data }) => {
+              const map: Record<string, number> = {}
+              for (const row of (data ?? [])) map[row.item_id] = row.desconto_pct
+              setFaccaoDescontosItem(map)
+            })
+        }
         setMembroNome('')
         setCart([])
         setNovoMembroTel('')

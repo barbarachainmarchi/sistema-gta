@@ -183,6 +183,8 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
             allItems={items}
             sb={sb}
             categoriaNomes={categorias.map(c => c.nome)}
+            faccoes={faccoes}
+            lojas={lojas}
             onCreated={(s, itens) => {
               setServicos(p => [...p, s].sort((a,b) => a.nome.localeCompare(b.nome)))
               setServicoItens(p => [...p, ...itens])
@@ -237,6 +239,8 @@ export function CadastrosClient({ initialItems, categorias: initialCategorias, l
               allItems={items}
               sb={sb}
               categoriaNomes={categorias.map(c => c.nome)}
+              faccoes={faccoes}
+              lojas={lojas}
               onUpdated={(s, itens) => {
                 setServicos(p => p.map(x => x.id === s.id ? s : x))
                 setServicoItens(p => [...p.filter(si => si.servico_id !== s.id), ...itens])
@@ -1285,12 +1289,14 @@ function CategoriaDialog({ categoria, sb, onClose, onSaved }: {
 
 // ─── ABA SERVIÇOS ─────────────────────────────────────────────────────────────
 
-function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, onUpdated, onDelete }: {
+function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, faccoes, lojas, onUpdated, onDelete }: {
   servicos: Servico[]
   servicoItens: ServicoItemFull[]
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
   categoriaNomes: string[]
+  faccoes: { id: string; nome: string }[]
+  lojas: { id: string; nome: string }[]
   onUpdated: (s: Servico, itens: ServicoItemFull[]) => void
   onDelete: (id: string, nome: string) => void
 }) {
@@ -1396,6 +1402,8 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, onU
           allItems={allItems}
           sb={sb}
           categoriaNomes={categoriaNomes}
+          faccoes={faccoes}
+          lojas={lojas}
           onClose={() => setEditing(null)}
           onSaved={(s, itens) => { onUpdated(s, itens); setEditing(null) }}
         />
@@ -1404,10 +1412,12 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, onU
   )
 }
 
-function BtnNovoServico({ allItems, sb, categoriaNomes, onCreated }: {
+function BtnNovoServico({ allItems, sb, categoriaNomes, faccoes, lojas, onCreated }: {
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
   categoriaNomes: string[]
+  faccoes: { id: string; nome: string }[]
+  lojas: { id: string; nome: string }[]
   onCreated: (s: Servico, itens: ServicoItemFull[]) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -1423,6 +1433,8 @@ function BtnNovoServico({ allItems, sb, categoriaNomes, onCreated }: {
           allItems={allItems}
           sb={sb}
           categoriaNomes={categoriaNomes}
+          faccoes={faccoes}
+          lojas={lojas}
           onClose={() => setOpen(false)}
           onSaved={(s, itens) => { onCreated(s, itens); setOpen(false) }}
         />
@@ -1431,12 +1443,14 @@ function BtnNovoServico({ allItems, sb, categoriaNomes, onCreated }: {
   )
 }
 
-function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, categoriaNomes, onClose, onSaved }: {
+function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, categoriaNomes, faccoes, lojas, onClose, onSaved }: {
   servico: Servico | null
   servicoItens: ServicoItemFull[]
   allItems: Item[]
   sb: () => ReturnType<typeof createClient>
   categoriaNomes: string[]
+  faccoes: { id: string; nome: string }[]
+  lojas: { id: string; nome: string }[]
   onClose: () => void
   onSaved: (s: Servico, itens: ServicoItemFull[]) => void
 }) {
@@ -1452,6 +1466,20 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, cate
   const [novoItemId, setNovoItemId] = useState('')
   const [novoItemQtd, setNovoItemQtd] = useState('')
   const [saving, setSaving] = useState(false)
+  const [faccaoLinks, setFaccaoLinks] = useState<string[]>([])
+  const [lojaLinks, setLojaLinks] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!servico) return
+    Promise.all([
+      sb().from('faccao_servicos').select('faccao_id').eq('servico_id', servico.id),
+      sb().from('loja_servicos').select('loja_id').eq('servico_id', servico.id),
+    ]).then(([fRes, lRes]) => {
+      setFaccaoLinks((fRes.data ?? []).map((r: { faccao_id: string }) => r.faccao_id))
+      setLojaLinks((lRes.data ?? []).map((r: { loja_id: string }) => r.loja_id))
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servico?.id])
 
   function addItem() {
     if (!novoItemId || !novoItemQtd) return
@@ -1507,6 +1535,20 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, cate
           return { id: row.id, servico_id: row.servico_id, item_id: row.item_id, quantidade: row.quantidade, item_nome: found?.nome ?? '', tem_craft: found?.tem_craft ?? false }
         })
       }
+
+      // Rebuild faccao_servicos e loja_servicos
+      await Promise.all([
+        sb().from('faccao_servicos').delete().eq('servico_id', saved.id),
+        sb().from('loja_servicos').delete().eq('servico_id', saved.id),
+      ])
+      await Promise.all([
+        faccaoLinks.length > 0
+          ? sb().from('faccao_servicos').insert(faccaoLinks.map(fid => ({ faccao_id: fid, servico_id: saved.id })))
+          : Promise.resolve(),
+        lojaLinks.length > 0
+          ? sb().from('loja_servicos').insert(lojaLinks.map(lid => ({ loja_id: lid, servico_id: saved.id })))
+          : Promise.resolve(),
+      ])
 
       toast.success(servico ? 'Serviço atualizado!' : 'Serviço criado!')
       onSaved(saved, savedItens)
@@ -1607,6 +1649,79 @@ function ServicoDialog({ servico, servicoItens: initialItens, allItems, sb, cate
                   ))}
                 </div>
             }
+          </div>
+
+          {/* Vendido por */}
+          <div className="space-y-3 pt-1 border-t border-border">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5" />Vendido por
+            </p>
+
+            {/* Facções */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-14 shrink-0">Facções</span>
+                <Select
+                  value=""
+                  onValueChange={id => setFaccaoLinks(p => p.includes(id) ? p : [...p, id])}
+                >
+                  <SelectTrigger className="h-7 flex-1 text-xs"><SelectValue placeholder="Adicionar facção..." /></SelectTrigger>
+                  <SelectContent>
+                    {faccoes.filter(f => !faccaoLinks.includes(f.id)).map(f => (
+                      <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {faccaoLinks.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pl-16">
+                  {faccaoLinks.map(fid => {
+                    const f = faccoes.find(x => x.id === fid)
+                    return f ? (
+                      <span key={fid} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {f.nome}
+                        <button type="button" onClick={() => setFaccaoLinks(p => p.filter(id => id !== fid))}>
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Lojas */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-14 shrink-0">Lojas</span>
+                <Select
+                  value=""
+                  onValueChange={id => setLojaLinks(p => p.includes(id) ? p : [...p, id])}
+                >
+                  <SelectTrigger className="h-7 flex-1 text-xs"><SelectValue placeholder="Adicionar loja..." /></SelectTrigger>
+                  <SelectContent>
+                    {lojas.filter(l => !lojaLinks.includes(l.id)).map(l => (
+                      <SelectItem key={l.id} value={l.id}>{l.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {lojaLinks.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pl-16">
+                  {lojaLinks.map(lid => {
+                    const l = lojas.find(x => x.id === lid)
+                    return l ? (
+                      <span key={lid} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        {l.nome}
+                        <button type="button" onClick={() => setLojaLinks(p => p.filter(id => id !== lid))}>
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
