@@ -926,30 +926,32 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
               const faccaoServidorNome = faccaoServidor ? faccoes.find(f => f.id === faccaoServidor)?.nome : null
               return (
                 <>
-                  {/* Config: Facção do servidor */}
-                  <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                    <div className="flex-1 space-y-0.5">
-                      <p className="text-xs font-medium">Facção do Servidor</p>
-                      <p className="text-[11px] text-muted-foreground">Ao salvar um membro com esta facção como trabalho, ele é automaticamente vinculado na investigação.</p>
+                  {/* Config: Facção do servidor — só donos editam */}
+                  {(isFantasma || isDonoSecundario) && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+                      <div className="flex-1 space-y-0.5">
+                        <p className="text-xs font-medium">Facção do Servidor</p>
+                        <p className="text-[11px] text-muted-foreground">Ao salvar um membro com esta facção como trabalho, ele é automaticamente vinculado na investigação.</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {faccaoServidorNome && (
+                          <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccaoServidorNome}</span>
+                        )}
+                        <Select
+                          value={faccaoServidor || '_none'}
+                          onValueChange={v => handleDefinirFaccaoServidor(v === '_none' ? null : v)}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-32" disabled={salvandoFaccaoServidor}>
+                            <SelectValue placeholder="Nenhuma..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Nenhuma</SelectItem>
+                            {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {faccaoServidorNome && (
-                        <span className="text-[10px] bg-purple-500/10 text-purple-400 px-1.5 py-0.5 rounded">{faccaoServidorNome}</span>
-                      )}
-                      <Select
-                        value={faccaoServidor || '_none'}
-                        onValueChange={v => handleDefinirFaccaoServidor(v === '_none' ? null : v)}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-32" disabled={salvandoFaccaoServidor}>
-                          <SelectValue placeholder="Nenhuma..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="_none">Nenhuma</SelectItem>
-                          {faccoes.map(f => <SelectItem key={f.id} value={f.id}>{f.nome}{f.tag ? ` [${f.tag}]` : ''}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                  )}
 
                   <section className="space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-widest text-primary/80 px-1">Equipe ativa ({ativos.length})</p>

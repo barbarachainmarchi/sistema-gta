@@ -67,7 +67,7 @@ export default async function UsuariosPage() {
       local_trabalho_loja_id: perfil?.local_trabalho_loja_id ?? null,
       local_trabalho_faccao_id: perfil?.local_trabalho_faccao_id ?? null,
       trabalho_principal: (perfil?.trabalho_principal ?? null) as 'loja' | 'faccao' | null,
-      perfil_nome: (Array.isArray(perfil?.perfis_acesso) ? perfil.perfis_acesso[0]?.nome : null) ?? null,
+      perfil_nome: (() => { const pa = (perfil as any)?.perfis_acesso; return (Array.isArray(pa) ? pa[0]?.nome : pa?.nome) ?? null })(),
       status: (perfil?.status ?? 'ativo') as 'ativo' | 'inativo' | 'pendente',
       created_at: au.created_at,
       ultimo_acesso: au.last_sign_in_at ?? null,

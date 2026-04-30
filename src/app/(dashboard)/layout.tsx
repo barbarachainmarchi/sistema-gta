@@ -17,7 +17,7 @@ export default async function DashboardLayout({
   const [{ data: perfilRow }, tema, { data: donoConfig }] = await Promise.all([
     supabase
       .from('usuarios')
-      .select('status, perfis_acesso(perfil_permissoes(modulo, pode_ver))')
+      .select('status, perfis_acesso(nome, perfil_permissoes(modulo, pode_ver))')
       .eq('id', user.id)
       .maybeSingle(),
     getTema(),
@@ -32,11 +32,12 @@ export default async function DashboardLayout({
 
   // Módulos que o usuário pode ver (null = sem perfil = vê tudo)
   const isDonoSecundario = donoConfig?.valor === user.id
-  type PerfilRow = { perfis_acesso: { perfil_permissoes: { modulo: string; pode_ver: boolean }[] } | null } | null
+  type PerfilRow = { perfis_acesso: { nome?: string; perfil_permissoes: { modulo: string; pode_ver: boolean }[] } | null } | null
   const pr = perfilRow as PerfilRow
+  const isFantasmaLayout = pr?.perfis_acesso?.nome === 'Fantasma'
   const permissoes = pr?.perfis_acesso?.perfil_permissoes
-  // Dono secundário bypassa todas as restrições de visibilidade
-  const modulosVisiveis: string[] | null = (isDonoSecundario || !permissoes)
+  // Fantasma e Dono 2 bypassam todas as restrições de visibilidade
+  const modulosVisiveis: string[] | null = (isDonoSecundario || isFantasmaLayout || !permissoes)
     ? null
     : permissoes.filter(p => p.pode_ver).map(p => p.modulo)
 
