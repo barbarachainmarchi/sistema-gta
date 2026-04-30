@@ -546,6 +546,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
     const { data, error } = await sb().from('faccao_item_precos').upsert(row, { onConflict: 'faccao_id,item_id' }).select().single()
     if (error) { toast.error('Erro ao salvar preço'); setPrecoSaving(false); return }
 
+    await sb().from('items').update({ eh_compravel: true }).eq('id', editPreco.id)
+
     // Salvar faixas: apaga as antigas e insere as novas
     await sb().from('faccao_item_preco_faixas').delete().eq('faccao_id', faccao.id).eq('item_id', editPreco.id)
     const faixasValidas = faixasForm.filter(f => f.qtd_min && parseInt(f.qtd_min) > 0)
@@ -571,6 +573,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       sb().from('faccao_item_preco_faixas').delete().eq('faccao_id', faccao.id).eq('item_id', itemId),
       sb().from('faccao_item_precos').delete().eq('faccao_id', faccao.id).eq('item_id', itemId),
     ])
+    const { count } = await sb().from('faccao_item_precos').select('*', { count: 'exact', head: true }).eq('item_id', itemId)
+    if (count === 0) await sb().from('items').update({ eh_compravel: false }).eq('id', itemId)
     onUpdateFaccaoPrecos(faccaoPrecos.filter(p => p.item_id !== itemId))
     setFaixasPrecos(prev => { const n = { ...prev }; delete n[itemId]; return n })
     toast.success('Produto removido')

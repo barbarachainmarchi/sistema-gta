@@ -507,6 +507,7 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
   const [criarSubItemNome, setCriarSubItemNome] = useState<{ nome: string; target: 'ing' | 'rec' } | null>(null)
   const [newPreco, setNewPreco] = useState({ preco_sujo: '', preco_limpo: '', data_inicio: new Date().toISOString().split('T')[0] })
   const [newLoja, setNewLoja] = useState({ loja_id: '', preco: '' })
+  const [faccaoPrecosList, setFaccaoPrecosList] = useState<{ faccao_id: string; preco_sujo: number | null; preco_limpo: number | null }[]>([])
 
   useState(() => {
     if (!item) return
@@ -515,7 +516,8 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
       sb().from('item_reciclagem').select('id, resultado_id, quantidade, items!item_reciclagem_resultado_id_fkey(nome)').eq('item_id', item.id),
       sb().from('item_precos').select('id, preco_sujo, preco_limpo, data_inicio').eq('item_id', item.id).order('data_inicio', { ascending: false }),
       sb().from('loja_item_precos').select('id, loja_id, preco').eq('item_id', item.id),
-    ]).then(([receitaRes, reciclagemRes, precosRes, lojasRes]) => {
+      sb().from('faccao_item_precos').select('faccao_id, preco_sujo, preco_limpo').eq('item_id', item.id),
+    ]).then(([receitaRes, reciclagemRes, precosRes, lojasRes, faccaoPrecosRes]) => {
       setForm(prev => ({
         ...prev,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -525,6 +527,7 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
         precos: precosRes.data || [],
         loja_precos: lojasRes.data || [],
       }))
+      setFaccaoPrecosList(faccaoPrecosRes.data || [])
       setLoading(false)
     })
   })
@@ -943,6 +946,23 @@ function ItemDialog({ item, categorias, lojas, faccoes, allItems: allItemsProp, 
                       })}</div>
                     }
                   </>
+                )}
+                {faccaoPrecosList.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Facções que vendem</p>
+                    {faccaoPrecosList.map(fp => {
+                      const fac = faccoes.find(f => f.id === fp.faccao_id)
+                      return (
+                        <div key={fp.faccao_id} className="rounded-md bg-violet-500/5 border border-violet-500/20 px-3 py-2 flex items-center gap-2">
+                          <span className="text-xs font-medium text-violet-300 flex-1">{fac?.tag ?? fac?.nome ?? fp.faccao_id}</span>
+                          <div className="flex gap-3 text-xs text-muted-foreground">
+                            {fp.preco_sujo != null && <span>Sujo <strong className="text-foreground">R${fp.preco_sujo.toLocaleString('pt-BR')}</strong></span>}
+                            {fp.preco_limpo != null && <span>Limpo <strong className="text-foreground">R${fp.preco_limpo.toLocaleString('pt-BR')}</strong></span>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </TabsContent>
             </Tabs>
