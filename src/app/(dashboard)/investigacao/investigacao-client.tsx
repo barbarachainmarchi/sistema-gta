@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto } from './faccao-detalhe'
+import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto, type Servico } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
@@ -36,6 +36,7 @@ interface Props {
   initialVeiculos: Veiculo[]
   initialLojas: Loja[]
   todosProdutos: Produto[]
+  todoServicos: Servico[]
   initialFaccaoPrecos: FaccaoPreco[]
   lojaPorMembro: Record<string, string[]>
   onlineMap: Record<string, boolean>
@@ -85,7 +86,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, initialFaccaoPrecos, lojaPorMembro, onlineMap }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -1104,6 +1105,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           todosProdutos={todosProdutos}
           todosMembros={membros}
           todosVeiculos={veiculos}
+          todoServicos={todoServicos}
           open={!!detalheLoja}
           onClose={() => setDetalheLoja(null)}
           onUpdateLoja={l => { setLojas(prev => prev.map(x => x.id === l.id ? l : x)); setDetalheLoja(l) }}
@@ -1121,6 +1123,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             return false
           })}
           todosProdutos={todosProdutos}
+          todoServicos={todoServicos}
           faccaoPrecos={faccaoPrecos.filter(p => p.faccao_id === detalhe.id)}
           open={!!detalhe}
           onClose={() => setDetalhe(null)}

@@ -79,6 +79,8 @@ export default async function VendasConcluidasPage() {
         servicos={[]}
         servicoItens={[]}
         favoritosIniciais={[]}
+        faccaoServicos={[]}
+        lojaServicos={[]}
       />
     </>
   )

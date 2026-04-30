@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown,
 } from 'lucide-react'
 import { resolverPrecoFaixas, type PrecoFaixa } from '@/lib/precoFaixas'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
@@ -29,7 +29,7 @@ type VendaItem = {
 }
 type Venda = {
   id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; cliente_telefone: string | null
-  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; status: StatusVenda
+  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; desconto_fixo: number; status: StatusVenda
   data_encomenda: string | null; notas: string | null
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null; entregue_em: string | null
@@ -58,7 +58,7 @@ type CartItem = {
 type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade: string; preco_unit: string; origem: 'fabricar' | 'estoque'; servico_id: string | null }
 type FormState = {
   faccao_id: string; loja_id: string; cliente_nome: string; cliente_telefone: string
-  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; notas: string; data_encomenda: string
+  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; desconto_fixo: string; notas: string; data_encomenda: string
   status: StatusVenda; itens: FormItem[]
 }
 
@@ -72,6 +72,8 @@ interface Props {
   podeExcluirConcluida: boolean; ocultarConcluidosDias: number
   servicos: Servico[]; servicoItens: ServicoItemVenda[]
   favoritosIniciais: string[]
+  faccaoServicos: { faccao_id: string; servico_id: string }[]
+  lojaServicos: { loja_id: string; servico_id: string }[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -228,7 +230,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
     }
     return s
   })()
-  const total = subtotal * (1 - venda.desconto_pct / 100)
+  const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
   const podeEntregar = venda.status === 'encomenda' || venda.status === 'pronto'
   const temFabricar = venda.itens.some(it => it.origem === 'fabricar')
@@ -508,7 +510,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
 function OrderDialog({
   open, onOpenChange, editando, faccoes, lojas, membros, onMembroCreated,
   meuFaccao, meuLoja, estoqueMap, receitas, allItems, onSave, saving,
-  servicos, servicoItens, userId, favoritosIniciais,
+  servicos, servicoItens, userId, favoritosIniciais, faccaoServicos, lojaServicos,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
@@ -519,6 +521,8 @@ function OrderDialog({
   onSave: (form: FormState) => void; saving: boolean
   servicos: Servico[]; servicoItens: ServicoItemVenda[]
   userId: string; favoritosIniciais: string[]
+  faccaoServicos: { faccao_id: string; servico_id: string }[]
+  lojaServicos: { loja_id: string; servico_id: string }[]
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -538,7 +542,7 @@ function OrderDialog({
 
   const emptyForm = (): FormState => ({
     faccao_id: '', loja_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
-    desconto_pct: '0', notas: '', data_encomenda: today(), status: 'fabricando', itens: []
+    desconto_pct: '0', desconto_fixo: '0', notas: '', data_encomenda: today(), status: 'fabricando', itens: []
   })
 
   const [form, setForm] = useState<FormState>(emptyForm)
@@ -561,6 +565,7 @@ function OrderDialog({
   const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
+  const [sortCartFirst, setSortCartFirst] = useState(false)
 
   const cartMap = useMemo(() => Object.fromEntries(cart.filter(c => !c.servico_id).map(c => [c.item_id, c])), [cart])
   const descontoPct = parseFloat(form.desconto_pct) || 0
@@ -623,6 +628,7 @@ function OrderDialog({
           cliente_telefone: editando.cliente_telefone ?? '',
           tipo_dinheiro: editando.tipo_dinheiro,
           desconto_pct: String(editando.desconto_pct),
+          desconto_fixo: String(editando.desconto_fixo ?? 0),
           notas: editando.notas ?? '',
           data_encomenda: editando.data_encomenda ?? today(),
           status: editando.status, itens: [],
@@ -867,15 +873,17 @@ function OrderDialog({
       lista = lista.filter(p => p.nome.toLowerCase().includes(q))
     }
     return [...lista].sort((a, b) => {
-      const aq = (cartMap[a.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
-      const bq = (cartMap[b.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
-      if (aq !== bq) return aq - bq
+      if (sortCartFirst) {
+        const aq = (cartMap[a.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
+        const bq = (cartMap[b.item_id]?.quantidade ?? 0) > 0 ? 0 : 1
+        if (aq !== bq) return aq - bq
+      }
       const af = favoritos.has(a.item_id) ? 0 : 1
       const bf = favoritos.has(b.item_id) ? 0 : 1
       if (af !== bf) return af - bf
       return a.nome.localeCompare(b.nome)
     })
-  }, [meusProdutos, buscaProd, filterCategoria, itemCatMap, favoritos, cartMap])
+  }, [meusProdutos, buscaProd, filterCategoria, itemCatMap, favoritos, cartMap, sortCartFirst])
 
   // Ingredients panel
   const ingredientes = useMemo(() => {
@@ -898,8 +906,20 @@ function OrderDialog({
       .sort((a, b) => a.nome.localeCompare(b.nome))
   }, [cart, receitas, allItems, estoqueMap, combosModo, combosQtd])
 
+  const servicosDaEmpresa = useMemo(() => {
+    if (meuFaccao) {
+      const ids = new Set(faccaoServicos.filter(fs => fs.faccao_id === meuFaccao.id).map(fs => fs.servico_id))
+      return servicos.filter(s => ids.has(s.id))
+    }
+    if (meuLoja) {
+      const ids = new Set(lojaServicos.filter(ls => ls.loja_id === meuLoja.id).map(ls => ls.servico_id))
+      return servicos.filter(s => ids.has(s.id))
+    }
+    return []
+  }, [servicos, faccaoServicos, lojaServicos, meuFaccao, meuLoja])
+
   // Totals — combos em modo resumo usam preço definido do combo, não soma dos itens
-  const { subtotal, total } = (() => {
+  const { subtotal, totalSemFixo } = (() => {
     function comboPrecoResumo(sid: string): number | null {
       const sv = servicos.find(s => s.id === sid)
       const pb = form.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
@@ -934,9 +954,11 @@ function OrderDialog({
       sub += v
       tot += v * (1 - (c.desconto_item_pct ?? descontoPct) / 100)
     }
-    return { subtotal: sub, total: tot }
+    return { subtotal: sub, totalSemFixo: tot }
   })()
-  const descValor = subtotal - total
+  const descontoFixoVal = parseFloat(form.desconto_fixo) || 0
+  const total = Math.max(0, totalSemFixo - descontoFixoVal)
+  const descValor = subtotal - totalSemFixo
 
   function buildItens(): FormItem[] {
     return cart.map(c => {
@@ -1122,15 +1144,25 @@ function OrderDialog({
                     </SelectContent>
                   </Select>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setSortCartFirst(v => !v)}
+                  title="Ordenar itens no carrinho primeiro"
+                  className={cn('h-8 w-8 rounded flex items-center justify-center border transition-colors shrink-0',
+                    sortCartFirst ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
 
             {/* Serviços / Combos */}
-            {servicos.length > 0 && (() => {
+            {servicosDaEmpresa.length > 0 && (() => {
               const q = buscaProd.toLowerCase()
               const servicosFiltrados = buscaProd.trim()
-                ? servicos.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
-                : servicos
+                ? servicosDaEmpresa.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+                : servicosDaEmpresa
               if (servicosFiltrados.length === 0) return null
               return (
                 <div className="shrink-0 border-b border-border bg-white/[0.01]">
@@ -1458,6 +1490,21 @@ function OrderDialog({
                     <span className="tabular-nums">-{fmt(descValor)}</span>
                   </div>
                 )}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground flex-1">Desconto R$</span>
+                  <Input
+                    type="number" min="0" placeholder="0"
+                    value={form.desconto_fixo === '0' ? '' : form.desconto_fixo}
+                    onChange={e => setForm(prev => ({ ...prev, desconto_fixo: e.target.value || '0' }))}
+                    className="h-7 text-xs w-24 text-right"
+                  />
+                </div>
+                {descontoFixoVal > 0 && (
+                  <div className="flex justify-between text-xs text-green-400">
+                    <span>Desconto fixo</span>
+                    <span className="tabular-nums">-{fmt(descontoFixoVal)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm font-bold border-t border-border/50 pt-1.5 mt-1">
                   <span>Total</span>
                   <span className={cn('tabular-nums', form.tipo_dinheiro === 'sujo' ? 'text-orange-400' : 'text-primary')}>
@@ -1562,7 +1609,7 @@ export function VendasClient({
   userId, userNome, vendas: vendasIniciais, faccoes, lojas, allItems,
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
   meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
-  servicos, servicoItens, favoritosIniciais,
+  servicos, servicoItens, favoritosIniciais, faccaoServicos, lojaServicos,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1643,7 +1690,9 @@ export function VendasClient({
           faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
           cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
-          desconto_pct: parseFloat(form.desconto_pct) || 0, notas: form.notas || null,
+          desconto_pct: parseFloat(form.desconto_pct) || 0,
+          desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
         }).eq('id', editando.id)
         if (error) { toast.error('Erro ao salvar: ' + error.message); return }
@@ -1660,7 +1709,9 @@ export function VendasClient({
           ...v, faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
           cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
-          desconto_pct: parseFloat(form.desconto_pct) || 0, notas: form.notas || null,
+          desconto_pct: parseFloat(form.desconto_pct) || 0,
+          desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
           itens: (itensData ?? []) as VendaItem[],
         } : v))
@@ -1670,7 +1721,9 @@ export function VendasClient({
           faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
           cliente_nome: form.cliente_nome.trim(),
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
-          desconto_pct: parseFloat(form.desconto_pct) || 0, status: form.status,
+          desconto_pct: parseFloat(form.desconto_pct) || 0,
+          desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
           criado_por: userId, criado_por_nome: userNome,
         }).select().single()
@@ -2027,6 +2080,8 @@ export function VendasClient({
         servicoItens={servicoItens}
         userId={userId}
         favoritosIniciais={favoritosIniciais}
+        faccaoServicos={faccaoServicos}
+        lojaServicos={lojaServicos}
       />
     </div>
   )

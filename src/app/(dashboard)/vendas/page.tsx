@@ -25,6 +25,8 @@ export default async function VendasPage() {
     { data: servicoItensData },
     { data: favoritosData },
     { data: donoConfig },
+    { data: faccaoServicosData },
+    { data: lojaServicosData },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*, servico_id'),
@@ -42,6 +44,8 @@ export default async function VendasPage() {
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
+    supabase.from('faccao_servicos').select('faccao_id, servico_id'),
+    supabase.from('loja_servicos').select('loja_id, servico_id'),
   ])
 
   // Calcular saldo de estoque por item a partir das movimentações
@@ -137,6 +141,8 @@ export default async function VendasPage() {
         servicos={servicosData ?? []}
         servicoItens={servicoItensMapped}
         favoritosIniciais={(favoritosData ?? []).map((f: { item_id: string }) => f.item_id)}
+        faccaoServicos={(faccaoServicosData ?? []) as { faccao_id: string; servico_id: string }[]}
+        lojaServicos={(lojaServicosData ?? []) as { loja_id: string; servico_id: string }[]}
       />
     </>
   )

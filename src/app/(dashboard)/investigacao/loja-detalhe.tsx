@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car, ImageUp, Copy, Check } from 'lucide-react'
+import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car, ImageUp, Copy, Check, Layers } from 'lucide-react'
 import { gerarImagemLoja } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
-import type { Membro, Produto, Veiculo } from './faccao-detalhe'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { Membro, Produto, Veiculo, Servico } from './faccao-detalhe'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
 type LojaItem = { id: string; item_id: string; preco: number; preco_sujo: number | null; items: { id: string; nome: string; categorias_item: { nome: string } | null } | null }
@@ -25,12 +26,13 @@ interface Props {
   todosProdutos: Produto[]
   todosMembros: Membro[]
   todosVeiculos: Veiculo[]
+  todoServicos: Servico[]
   open: boolean
   onClose: () => void
   onUpdateLoja: (l: Loja) => void
 }
 
-export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, open, onClose, onUpdateLoja }: Props) {
+export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, todoServicos, open, onClose, onUpdateLoja }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -38,6 +40,10 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   const [itens, setItens] = useState<LojaItem[]>([])
   const [funcionarios, setFuncionarios] = useState<LojaFuncionario[]>([])
   const [loadingData, setLoadingData] = useState(true)
+  const [lojaServicosIds, setLojaServicosIds] = useState<string[]>([])
+  const [servicoAddOpen, setServicoAddOpen] = useState(false)
+  const [novoServicoId, setNovoServicoId] = useState('')
+  const [servicoSaving, setServicoSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -45,14 +51,34 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
     Promise.all([
       sb().from('loja_item_precos').select('id, item_id, preco, preco_sujo, items(id, nome, categorias_item(nome))').eq('loja_id', loja.id).order('items(nome)'),
       sb().from('loja_membros').select('id, membro_id, cargo, membros(id, nome, vulgo, telefone, faccoes(nome, cor_tag))').eq('loja_id', loja.id),
-    ]).then(([itensRes, funcRes]) => {
+      sb().from('loja_servicos').select('servico_id').eq('loja_id', loja.id),
+    ]).then(([itensRes, funcRes, servicosRes]) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setItens((itensRes.data ?? []) as any)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setFuncionarios((funcRes.data ?? []) as any)
+      setLojaServicosIds((servicosRes.data ?? []).map((r: { servico_id: string }) => r.servico_id))
       setLoadingData(false)
     })
   }, [open, loja.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleAdicionarServico() {
+    if (!novoServicoId) return
+    setServicoSaving(true)
+    const { error } = await sb().from('loja_servicos').insert({ loja_id: loja.id, servico_id: novoServicoId })
+    setServicoSaving(false)
+    if (error) { toast.error('Erro ao adicionar serviço'); return }
+    setLojaServicosIds(prev => [...prev, novoServicoId])
+    setNovoServicoId('')
+    setServicoAddOpen(false)
+    toast.success('Serviço adicionado')
+  }
+
+  async function handleRemoverServico(servicoId: string) {
+    await sb().from('loja_servicos').delete().eq('loja_id', loja.id).eq('servico_id', servicoId)
+    setLojaServicosIds(prev => prev.filter(id => id !== servicoId))
+    toast.success('Serviço removido')
+  }
 
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
@@ -459,6 +485,60 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
               )}
             </section>
             </div>{/* end grid itens + funcionários */}
+
+            {/* ── Serviços / Combos ── */}
+            <div className="mt-5 border-t border-border pt-4 space-y-2">
+              <div className="flex items-center gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" />Serviços / Combos ({lojaServicosIds.length})
+                </p>
+                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setServicoAddOpen(true)} disabled={todoServicos.filter(s => !lojaServicosIds.includes(s.id)).length === 0}>
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+              {servicoAddOpen && (
+                <div className="flex gap-2 items-center">
+                  <Select value={novoServicoId} onValueChange={setNovoServicoId}>
+                    <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar serviço..." /></SelectTrigger>
+                    <SelectContent>
+                      {todoServicos.filter(s => !lojaServicosIds.includes(s.id)).map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" className="h-8 px-3" onClick={handleAdicionarServico} disabled={!novoServicoId || servicoSaving}>
+                    {servicoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setServicoAddOpen(false); setNovoServicoId('') }}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              {lojaServicosIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">
+                  Nenhum serviço/combo vinculado
+                </p>
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/50">
+                  {lojaServicosIds.map(sid => {
+                    const s = todoServicos.find(x => x.id === sid)
+                    if (!s) return null
+                    return (
+                      <div key={sid} className="flex items-center gap-2 px-3 py-2">
+                        <Layers className="h-3 w-3 text-primary/50 shrink-0" />
+                        <span className="text-xs font-medium flex-1 min-w-0 truncate">{s.nome}</span>
+                        {s.preco_limpo != null && <span className="text-xs tabular-nums text-muted-foreground">{fmt(s.preco_limpo)}</span>}
+                        {s.desconto_pct > 0 && <span className="text-xs text-emerald-400 shrink-0">-{s.desconto_pct}%</span>}
+                        <button onClick={() => handleRemoverServico(sid)} className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-colors shrink-0">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
           </div>
         )}
       </DialogContent>

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
@@ -38,6 +38,7 @@ export type FaccaoPreco = {
 export type FaixaPreco   = { id: string; faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 export type Produto      = { id: string; nome: string; categoria?: string | null }
 export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
+export type Servico      = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
 type FaccaoProdutoExtra = { id: string; faccao_id: string; nome: string; valor_sujo: number | null; valor_limpo: number | null; created_at: string }
 
 function fmt(v: number | null) {
@@ -53,6 +54,7 @@ interface Props {
   membros: Membro[]
   veiculos: Veiculo[]
   todosProdutos: Produto[]
+  todoServicos: Servico[]
   faccaoPrecos: FaccaoPreco[]
   open: boolean
   onClose: () => void
@@ -64,7 +66,7 @@ interface Props {
   onVeiculoDeleted: (id: string) => void
 }
 
-export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos, onMembroSaved, onMembroDeleted, onVeiculoSaved, onVeiculoDeleted }: Props) {
+export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoServicos, faccaoPrecos, open, onClose, onUpdateFaccao, onUpdateFaccaoPrecos, onMembroSaved, onMembroDeleted, onVeiculoSaved, onVeiculoDeleted }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -401,6 +403,37 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
       .then(({ data }) => setTodasLojas(data ?? []))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // ── Serviços vinculados ────────────────────────────────��───────────────────
+  const [faccaoServicosIds, setFaccaoServicosIds] = useState<string[]>([])
+  const [servicoAddOpen, setServicoAddOpen] = useState(false)
+  const [novoServicoId, setNovoServicoId] = useState('')
+  const [servicoSaving, setServicoSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    sb().from('faccao_servicos').select('servico_id').eq('faccao_id', faccao.id)
+      .then(({ data }) => setFaccaoServicosIds((data ?? []).map((r: { servico_id: string }) => r.servico_id)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, faccao.id])
+
+  async function handleAdicionarServico() {
+    if (!novoServicoId) return
+    setServicoSaving(true)
+    const { error } = await sb().from('faccao_servicos').insert({ faccao_id: faccao.id, servico_id: novoServicoId })
+    setServicoSaving(false)
+    if (error) { toast.error('Erro ao adicionar serviço'); return }
+    setFaccaoServicosIds(prev => [...prev, novoServicoId])
+    setNovoServicoId('')
+    setServicoAddOpen(false)
+    toast.success('Serviço adicionado')
+  }
+
+  async function handleRemoverServico(servicoId: string) {
+    await sb().from('faccao_servicos').delete().eq('faccao_id', faccao.id).eq('servico_id', servicoId)
+    setFaccaoServicosIds(prev => prev.filter(id => id !== servicoId))
+    toast.success('Serviço removido')
+  }
 
   const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
 
@@ -912,6 +945,60 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, faccao
             )}
           </section>
           </div>{/* end grid produtos + descontos */}
+
+          {/* ── Serviços / Combos ── */}
+          <div className="border-t border-border pt-4 space-y-2">
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0">
+                <Layers className="h-4 w-4 text-muted-foreground" />Serviços / Combos ({faccaoServicosIds.length})
+              </p>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setServicoAddOpen(true)} disabled={todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).length === 0}>
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+            {servicoAddOpen && (
+              <div className="flex gap-2 items-center">
+                <Select value={novoServicoId} onValueChange={setNovoServicoId}>
+                  <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar serviço..." /></SelectTrigger>
+                  <SelectContent>
+                    {todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" className="h-8 px-3" onClick={handleAdicionarServico} disabled={!novoServicoId || servicoSaving}>
+                  {servicoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setServicoAddOpen(false); setNovoServicoId('') }}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            {faccaoServicosIds.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">
+                Nenhum serviço/combo vinculado
+              </p>
+            ) : (
+              <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/50">
+                {faccaoServicosIds.map(sid => {
+                  const s = todoServicos.find(x => x.id === sid)
+                  if (!s) return null
+                  return (
+                    <div key={sid} className="flex items-center gap-2 px-3 py-2">
+                      <Layers className="h-3 w-3 text-primary/50 shrink-0" />
+                      <span className="text-xs font-medium flex-1 min-w-0 truncate">{s.nome}</span>
+                      {s.preco_limpo != null && <span className="text-xs tabular-nums text-muted-foreground">{fmt(s.preco_limpo)}</span>}
+                      {s.desconto_pct > 0 && <span className="text-xs text-emerald-400 shrink-0">-{s.desconto_pct}%</span>}
+                      <button onClick={() => handleRemoverServico(sid)} className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-colors shrink-0">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       </DialogContent>
 
