@@ -794,7 +794,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                     <TableHead className="text-xs">Usuário</TableHead>
                     <TableHead className="text-xs">Local</TableHead>
                     <TableHead className="text-xs">Status</TableHead>
-                    <TableHead className="text-xs">Último acesso</TableHead>
+                    {(isFantasma || isDonoSecundario) && <TableHead className="text-xs">Último acesso</TableHead>}
                     <TableHead className="text-xs w-20" />
                   </TableRow>
                 </TableHeader>
@@ -828,14 +828,16 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                         </div>
                       </TableCell>
                       <TableCell><StatusBadge status={u.status} /></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        <div>{formatDate(u.ultimo_acesso)}</div>
-                        {u.ultima_pagina && (
-                          <div className="font-mono text-[10px] opacity-60 truncate max-w-[140px]" title={u.ultima_pagina}>
-                            {u.ultima_pagina}
-                          </div>
-                        )}
-                      </TableCell>
+                      {(isFantasma || isDonoSecundario) && (
+                        <TableCell className="text-xs text-muted-foreground">
+                          <div>{formatDate(u.ultimo_acesso)}</div>
+                          {u.ultima_pagina && (
+                            <div className="font-mono text-[10px] opacity-60 truncate max-w-[140px]" title={u.ultima_pagina}>
+                              {u.ultima_pagina}
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                           {isFantasma && (
@@ -1614,6 +1616,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   <span className="text-xs text-muted-foreground">Status</span>
                   <StatusBadge status={infoUsuario.status} />
                 </div>
+                {(isFantasma || isDonoSecundario) && (
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground shrink-0">Último acesso</span>
                   <div className="text-right">
@@ -1625,6 +1628,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                     )}
                   </div>
                 </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">Cadastrado em</span>
                   <span className="text-xs text-muted-foreground">{formatDate(infoUsuario.created_at)}</span>
