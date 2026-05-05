@@ -170,11 +170,11 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   const faccoesParceiras = useMemo(() => {
     const ids = new Set<string>()
-    for (const p of faccaoPrecos) {
-      if (p.parceria_tipo != null) ids.add(p.faccao_id)
+    for (const f of faccoes) {
+      if (f.tem_parceria) ids.add(f.id)
     }
     return ids
-  }, [faccaoPrecos])
+  }, [faccoes])
 
   const faccoesFiltradas = useMemo(() => {
     const filtered = faccoes.filter(f => !buscaFaccao || f.nome.toLowerCase().includes(buscaFaccao.toLowerCase()) || f.territorio?.toLowerCase().includes(buscaFaccao.toLowerCase()))

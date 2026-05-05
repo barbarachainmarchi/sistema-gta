@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers } from 'lucide-react'
+import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers, Handshake } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn } from '@/lib/utils'
@@ -21,7 +21,7 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; created_at: string; updated_at: string }
+export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; tem_parceria: boolean; parceria_obs: string | null; created_at: string; updated_at: string }
 export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; local_trabalho_loja_id: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo     = { id: string; placa: string | null; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
 export type FaccaoPreco = {
@@ -72,11 +72,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
 
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
-  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '' })
+  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '' })
   const [geralSaving, setGeralSaving] = useState(false)
 
   function abrirEdicao() {
-    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '' })
+    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '' })
     setEditando(true)
   }
 
@@ -91,6 +91,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       desconto_padrao_pct: geralForm.desconto_padrao_pct ?? 0,
       telefone: geralForm.telefone.trim() || null,
       observacoes: geralForm.observacoes.trim() || null,
+      tem_parceria: geralForm.tem_parceria,
+      parceria_obs: geralForm.tem_parceria ? (geralForm.parceria_obs.trim() || null) : null,
     }).eq('id', faccao.id).select().single()
     setGeralSaving(false)
     if (error) { toast.error('Erro ao salvar'); return }
@@ -650,6 +652,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
             <span className={cn('text-[11px] px-2 py-0.5 rounded-full', faccao.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
               {faccao.status === 'ativo' ? 'Ativa' : 'Inativa'}
             </span>
+            {faccao.tem_parceria && (
+              <span title={faccao.parceria_obs ?? 'Parceria ativa'} className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400">
+                <Handshake className="h-3 w-3" />
+                Parceria
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-1.5">
               {linkImagem && (
                 <div className="flex items-center gap-1 rounded border border-border bg-white/[0.04] px-2 h-7 max-w-[220px]">
@@ -724,6 +732,18 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Observações internas</Label>
                 <Textarea value={geralForm.observacoes} onChange={e => setGeralForm(f => ({ ...f, observacoes: e.target.value }))} placeholder="Notas, histórico, informações relevantes..." rows={3} className="text-sm resize-none" />
+              </div>
+              <div className="space-y-2 rounded-md border border-border/50 p-3 bg-sky-500/[0.03]">
+                <div className="flex items-center gap-2">
+                  <Switch checked={geralForm.tem_parceria} onCheckedChange={v => setGeralForm(f => ({ ...f, tem_parceria: v }))} />
+                  <span className="text-xs font-medium text-muted-foreground">Parceria ativa</span>
+                </div>
+                {geralForm.tem_parceria && (
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Observações sobre a parceria</Label>
+                    <Textarea value={geralForm.parceria_obs} onChange={e => setGeralForm(f => ({ ...f, parceria_obs: e.target.value }))} placeholder="Detalhes da parceria, acordos, condições..." rows={3} className="text-sm resize-none" />
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
