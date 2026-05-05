@@ -16,6 +16,7 @@ import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown } 
 import { cn } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto, type Servico } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
+import { FichaMembroModal } from './ficha-membro'
 
 type Loja = { id: string; nome: string; localizacao: string | null; tipo: string | null; status: 'ativo' | 'inativo' }
 
@@ -335,6 +336,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
   // ── Pesquisa Geral ─────────────────────────────────────────────────────────
   const [termoBusca, setTermoBusca] = useState('')
+  const [fichaMembroAberta, setFichaMembroAberta] = useState<Membro | null>(null)
 
   const resultadosMembros = useMemo(() => {
     const q = termoBusca.trim().toLowerCase()
@@ -684,7 +686,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                     </p>
                     <div className="rounded-lg border border-border overflow-hidden">
                       {resultadosMembros.map((m, idx) => (
-                        <div key={m.id} className={cn('flex flex-col gap-1 px-4 py-3', idx < resultadosMembros.length - 1 && 'border-b border-border/40')}>
+                        <div key={m.id} onClick={() => setFichaMembroAberta(m)} className={cn('flex flex-col gap-1 px-4 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors', idx < resultadosMembros.length - 1 && 'border-b border-border/40')}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold">{m.nome}</span>
                             {m.vulgo && <span className="text-xs text-muted-foreground">"{m.vulgo}"</span>}
@@ -1113,6 +1115,14 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
       )}
 
       {/* ── Facção Detalhe ─────────────────────────────────────────────────── */}
+      <FichaMembroModal
+        membro={fichaMembroAberta}
+        veiculos={veiculos}
+        lojasNomes={fichaMembroAberta ? (lojaPorMembro[fichaMembroAberta.id] ?? []) : []}
+        open={fichaMembroAberta !== null}
+        onClose={() => setFichaMembroAberta(null)}
+      />
+
       {detalhe && (
         <FaccaoDetalhe
           faccao={detalhe}

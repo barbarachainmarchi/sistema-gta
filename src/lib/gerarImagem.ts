@@ -361,3 +361,113 @@ export function gerarImagemVenda(params: {
 
   return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
 }
+
+// ── Gerar imagem de ficha de membro ──────────────────────────────────────────
+
+type MembroImg = {
+  nome: string; vulgo: string | null; telefone: string | null; instagram: string | null
+  deep: string | null; cargo_faccao: string | null; status: string
+  observacoes: string | null; membro_proprio: boolean; data_entrada: string | null
+  faccoes: { nome: string; cor_tag: string } | null
+}
+type VeiculoImg = { placa: string | null; modelo: string | null; cor: string | null; observacoes: string | null }
+
+export function gerarImagemMembro(params: {
+  membro: MembroImg; veiculos: VeiculoImg[]; lojasNomes: string[]
+}): string {
+  const { membro, veiculos, lojasNomes } = params
+  const cor = membro.faccoes?.cor_tag ?? '#6366f1'
+
+  const linhasDados = [
+    membro.telefone ? 1 : 0, membro.instagram ? 1 : 0, membro.deep ? 1 : 0,
+    lojasNomes.length > 0 ? 1 : 0, membro.data_entrada ? 1 : 0, 1,
+  ].reduce((a, b) => a + b, 0)
+  const alturaEst = 110 + linhasDados * 22 + 60 + Math.max(veiculos.length, 1) * 22 + (membro.observacoes ? 60 : 0) + 40
+  const H = Math.max(300, alturaEst + PAD * 2)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H)
+  ctx.fillStyle = cor; ctx.fillRect(0, 0, W, 56)
+  ctx.fillStyle = '#fff'; ctx.font = FONT_TITLE
+  ctx.fillText(membro.nome, PAD, 36)
+  if (membro.vulgo) {
+    const nW = ctx.measureText(membro.nome).width
+    ctx.font = FONT; ctx.fillStyle = 'rgba(255,255,255,0.7)'
+    ctx.fillText(`"${membro.vulgo}"`, PAD + nW + 10, 36)
+  }
+
+  ctx.fillStyle = BG2; ctx.fillRect(0, 56, W, 36)
+  ctx.font = FONT_SM; ctx.fillStyle = MUTED
+  const meta: string[] = []
+  if (membro.faccoes) meta.push(membro.faccoes.nome)
+  if (membro.cargo_faccao) meta.push(membro.cargo_faccao)
+  meta.push(membro.status === 'ativo' ? '● Ativo' : '○ Inativo')
+  ctx.fillText(meta.join('   '), PAD, 80)
+
+  let y = 110
+
+  ctx.fillStyle = TEXT; ctx.font = FONT_LG
+  ctx.fillText('DADOS', PAD, y); y += 6
+  linha(ctx, y, W); y += 14
+
+  const rows: [string, string][] = []
+  if (membro.telefone) rows.push(['Telefone', membro.telefone])
+  if (membro.instagram) rows.push(['Instagram', '@' + membro.instagram.replace(/^@/, '')])
+  if (membro.deep) rows.push(['Deep', membro.deep])
+  if (lojasNomes.length > 0) rows.push(['Lojas', lojasNomes.join(', ')])
+  if (membro.data_entrada) rows.push(['Entrada', new Date(membro.data_entrada).toLocaleDateString('pt-BR')])
+  rows.push(['Tipo', membro.membro_proprio ? 'Membro próprio' : 'Externo'])
+
+  for (const [label, value] of rows) {
+    ctx.fillStyle = MUTED; ctx.font = FONT_SM
+    ctx.fillText(label, PAD, y)
+    ctx.fillStyle = TEXT; ctx.font = FONT
+    ctx.fillText(value.length > 80 ? value.slice(0, 79) + '…' : value, PAD + 130, y)
+    y += 20
+  }
+  y += 10
+
+  ctx.fillStyle = TEXT; ctx.font = FONT_LG
+  ctx.fillText('VEÍCULOS', PAD, y); y += 6
+  linha(ctx, y, W); y += 14
+
+  ctx.font = FONT_SM; ctx.fillStyle = MUTED
+  ctx.fillText('Placa', PAD, y)
+  ctx.fillText('Modelo', PAD + 130, y)
+  ctx.fillText('Cor', PAD + 420, y)
+  y += 6; linha(ctx, y, W); y += 14
+
+  if (veiculos.length === 0) {
+    ctx.fillStyle = MUTED; ctx.font = FONT_SM
+    ctx.fillText('Nenhum veículo', PAD, y); y += 20
+  } else {
+    for (const v of veiculos) {
+      ctx.fillStyle = TEXT; ctx.font = FONT
+      ctx.fillText(v.placa ?? '—', PAD, y)
+      ctx.fillStyle = MUTED; ctx.font = FONT_SM
+      ctx.fillText(v.modelo ?? '—', PAD + 130, y)
+      ctx.fillText(v.cor ?? '—', PAD + 420, y)
+      y += 20
+    }
+  }
+  y += 10
+
+  if (membro.observacoes) {
+    ctx.fillStyle = TEXT; ctx.font = FONT_LG
+    ctx.fillText('OBSERVAÇÕES', PAD, y); y += 6
+    linha(ctx, y, W); y += 14
+    ctx.fillStyle = MUTED; ctx.font = FONT
+    for (const l of wrapText(ctx, membro.observacoes, W - PAD * 2)) {
+      ctx.fillText(l, PAD, y); y += 18
+    }
+  }
+
+  ctx.fillStyle = BG2; ctx.fillRect(0, H - 30, W, 30)
+  ctx.font = FONT_SM; ctx.fillStyle = MUTED
+  ctx.fillText(`Gerado em ${new Date().toLocaleString('pt-BR')}`, PAD, H - 10)
+
+  return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '')
+}
