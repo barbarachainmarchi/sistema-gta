@@ -9,7 +9,7 @@ import {
   ChevronDown, ArrowUp, ArrowDown, CheckCircle2, AlertTriangle,
   GripVertical, Trash2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { toast } from 'sonner'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ function calcSaldo(
   const base = ultima?.quantidade ?? 0
   const saldo = base + entradas - saidas
 
-  const nomeNorm = itemNome.toLowerCase()
+  const nomeNorm = norm(itemNome)
   const metasPendentes = metasItens
     .filter(mi => {
       if (mi.item_nome.toLowerCase() !== nomeNorm) return false
@@ -200,14 +200,14 @@ export function EstoqueClient({
 
   const itensFiltrados = useMemo(() => {
     if (!busca.trim()) return itensControlados
-    const q = busca.toLowerCase()
-    return itensControlados.filter(({ item }) => item.nome.toLowerCase().includes(q))
+    const q = norm(busca)
+    return itensControlados.filter(({ item }) => norm(item.nome).includes(q))
   }, [itensControlados, busca])
 
   const itensConfigFiltrados = useMemo(() => {
     if (!buscaConfig.trim()) return itens
-    const q = buscaConfig.toLowerCase()
-    return itens.filter(i => i.nome.toLowerCase().includes(q))
+    const q = norm(buscaConfig)
+    return itens.filter(i => norm(i.nome).includes(q))
   }, [itens, buscaConfig])
 
   // ── Salvar "Real" ─────────────────────────────────────────────────────────

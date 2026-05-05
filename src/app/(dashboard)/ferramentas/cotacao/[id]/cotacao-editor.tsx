@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import {
   Plus, Minus, Trash2, Edit2, Check, X, Users, ArrowLeft,
   ImageUp, Copy, Loader2, UserPlus, ChevronDown, ChevronUp, Eye, XCircle, Layers,
@@ -218,9 +218,9 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
   // ── Membros filtrados para o dialog de adicionar pessoa ───────────────────
 
   const membrosDialog = useMemo(() => {
-    const q = novaPessoaForm.nome.toLowerCase().trim()
+    const q = norm(novaPessoaForm.nome).trim()
     return q ? membros.filter(m =>
-      m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q)
+      norm(m.nome).includes(q) || norm(m.vulgo).includes(q)
     ) : membros
   }, [membros, novaPessoaForm.nome])
 
@@ -269,7 +269,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
 
   const catalogoFiltrado = useMemo(() => {
     if (!itemBusca.trim()) return catalogo
-    return catalogo.filter(c => c.nome.toLowerCase().includes(itemBusca.toLowerCase()))
+    return catalogo.filter(c => norm(c.nome).includes(norm(itemBusca)))
   }, [catalogo, itemBusca])
 
   // ── Derivados ──────────────────────────────────────────────────────────────
@@ -783,7 +783,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                               /* ── Aba Kits ── */
                               <>
                                 <div className="max-h-60 overflow-y-auto">
-                                  {servicos.filter(s => !kitBusca.trim() || s.nome.toLowerCase().includes(kitBusca.toLowerCase())).map(srv => {
+                                  {servicos.filter(s => !kitBusca.trim() || norm(s.nome).includes(norm(kitBusca))).map(srv => {
                                     const qty = kitQtds[srv.id] ?? 0
                                     const itensDoKit = servicoItens.filter(si => si.servico_id === srv.id)
                                     return (
@@ -821,7 +821,7 @@ export function CotacaoEditor({ userId, userNome, cotacao: cotacaoInicial, pesso
                                       </div>
                                     )
                                   })}
-                                  {servicos.filter(s => !kitBusca.trim() || s.nome.toLowerCase().includes(kitBusca.toLowerCase())).length === 0 && (
+                                  {servicos.filter(s => !kitBusca.trim() || norm(s.nome).includes(norm(kitBusca))).length === 0 && (
                                     <p className="text-xs text-muted-foreground text-center py-4">Nenhum kit encontrado</p>
                                   )}
                                 </div>

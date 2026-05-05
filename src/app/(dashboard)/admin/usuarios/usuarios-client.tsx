@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { Plus, Search, Edit2, Trash2, Loader2, Link2, Shield, Check, Copy, Clock, X, Crown, Lock, UserPlus } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 
 // ─── Módulos ──────────────────────────────────────────────────────────────────
 
@@ -677,7 +677,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   // ── Filtro ─────────────────────────────────────────────────────────────────
   const pendentes = usuarios.filter(u => u.status === 'pendente')
   const ativos = usuarios.filter(u => u.status !== 'pendente' && (
-    !busca || u.nome.toLowerCase().includes(busca.toLowerCase())
+    !busca || norm(u.nome).includes(norm(busca))
   ))
 
   // ──────────────────────────────────────────────────────────────────────────

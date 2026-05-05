@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { Plus, Search, Edit2, Trash2, X, Package, Wrench, ShoppingBag, Loader2, Tag, MapPin, Recycle, Weight, Layers, ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 
 // ─── AutocompleteInput ────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ function AutocompleteInput({ value, onChange, suggestions, placeholder, classNam
 }) {
   const [aberto, setAberto] = useState(false)
   const filtradas = suggestions.filter(s =>
-    s && (!value.trim() || s.toLowerCase().includes(value.toLowerCase()))
+    s && (!value.trim() || norm(s).includes(norm(value)))
   )
   return (
     <div className="relative">
@@ -300,7 +300,7 @@ function ItemsTab({ items, categorias, lojas, faccoes, userId, localTrabalhoLoja
   const [editingItem, setEditingItem] = useState<Item | null>(null)
 
   const filtered = useMemo(() => items.filter(item => {
-    const matchSearch = item.nome.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = norm(item.nome).includes(norm(search))
     const matchStatus = filterStatus === 'todos' || item.status === filterStatus
     const matchCategoria = filterCategoria === 'todas' || item.categoria_id === filterCategoria
     const matchTipo = filterTipo === 'todos'
@@ -1018,7 +1018,7 @@ function ItemCombobox({ allItems, selectedId, onSelect, onCriar, placeholder, cl
   const selectedNome = allItems.find(i => i.id === selectedId)?.nome ?? ''
   const filtered = useMemo(() =>
     query.trim()
-      ? allItems.filter(i => i.nome.toLowerCase().includes(query.toLowerCase()))
+      ? allItems.filter(i => norm(i.nome).includes(norm(query)))
       : [],
     [allItems, query]
   )
@@ -1305,8 +1305,8 @@ function ServicosTab({ servicos, servicoItens, allItems, sb, categoriaNomes, fac
 
   const filtered = useMemo(() => {
     if (!search.trim()) return servicos
-    const q = search.toLowerCase()
-    return servicos.filter(s => s.nome.toLowerCase().includes(q))
+    const q = norm(search)
+    return servicos.filter(s => norm(s.nome).includes(q))
   }, [servicos, search])
 
   function fmt(v: number | null) {

@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { Trash2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -97,8 +97,8 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
     }
     if (tipoDinFiltro !== 'todos') list = list.filter(v => v.tipo_dinheiro === tipoDinFiltro)
     if (busca.trim()) {
-      const q = busca.toLowerCase()
-      list = list.filter(v => v.cliente_nome.toLowerCase().includes(q))
+      const q = norm(busca)
+      list = list.filter(v => norm(v.cliente_nome).includes(q))
     }
     if (dataDE || dataATE) {
       list = list.filter(v => {

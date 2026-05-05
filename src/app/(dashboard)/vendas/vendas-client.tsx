@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown,
@@ -691,10 +691,10 @@ function OrderDialog({
   type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number } | { tipo: 'loja'; id: string; nome: string }
   const empresaSugestoes = useMemo((): EmpresaOpc[] => {
     if (!empresaAberta) return []
-    const q = empresaNome.toLowerCase().trim()
-    const ff = (q ? faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q)) : faccoes)
+    const q = norm(empresaNome).trim()
+    const ff = (q ? faccoes.filter(f => norm(f.nome).includes(q) || norm(f.sigla).includes(q)) : faccoes)
       .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
-    const ll = (q ? lojas.filter(l => l.nome.toLowerCase().includes(q)) : lojas)
+    const ll = (q ? lojas.filter(l => norm(l.nome).includes(q)) : lojas)
       .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
     return [...ff, ...ll].slice(0, 12)
   }, [faccoes, lojas, empresaNome, empresaAberta])
@@ -724,12 +724,12 @@ function OrderDialog({
   // Membro autocomplete
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta) return []
-    const q = membroNome.toLowerCase().trim()
+    const q = norm(membroNome).trim()
     const pool = form.faccao_id
       ? membros.filter(m => m.faccao_id === form.faccao_id || m.faccao_id === null)
       : membros
     const filtered = q
-      ? pool.filter(m => m.nome.toLowerCase().includes(q) || m.vulgo?.toLowerCase().includes(q))
+      ? pool.filter(m => norm(m.nome).includes(q) || norm(m.vulgo).includes(q))
       : pool
     return filtered
       .sort((a, b) => {
@@ -889,8 +889,8 @@ function OrderDialog({
     let lista = meusProdutos
     if (filterCategoria) lista = lista.filter(p => itemCatMap[p.item_id] === filterCategoria)
     if (buscaProd.trim()) {
-      const q = buscaProd.toLowerCase()
-      lista = lista.filter(p => p.nome.toLowerCase().includes(q))
+      const q = norm(buscaProd)
+      lista = lista.filter(p => norm(p.nome).includes(q))
     }
     return [...lista].sort((a, b) => {
       if (sortCartFirst) {
@@ -1195,9 +1195,9 @@ function OrderDialog({
 
             {/* Serviços / Combos */}
             {servicosDaEmpresa.length > 0 && (() => {
-              const q = buscaProd.toLowerCase()
+              const q = norm(buscaProd)
               const servicosFiltrados = buscaProd.trim()
-                ? servicosDaEmpresa.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+                ? servicosDaEmpresa.filter(s => norm(s.nome).includes(q) || norm(s.descricao).includes(q))
                 : servicosDaEmpresa
               if (servicosFiltrados.length === 0) return null
               return (

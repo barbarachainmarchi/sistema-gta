@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { Edit2, Loader2, Plus, X, Package, Users, MapPin, Tag, Search, Car, ImageUp, Copy, Check, Layers } from 'lucide-react'
 import { gerarImagemLoja } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Membro, Produto, Veiculo, Servico } from './faccao-detalhe'
 
@@ -124,7 +124,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   const itensFiltrados = useMemo(() => {
     return itens.filter(i => {
       const matchCat = categoriaFiltro === 'todas' || (i.items?.categorias_item?.nome ?? 'Sem categoria') === categoriaFiltro
-      const matchBusca = !buscaItem || (i.items?.nome ?? '').toLowerCase().includes(buscaItem.toLowerCase())
+      const matchBusca = !buscaItem || norm(i.items?.nome).includes(norm(buscaItem))
       return matchCat && matchBusca
     })
   }, [itens, categoriaFiltro, buscaItem])
@@ -215,8 +215,8 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
 
   const funcionariosFiltrados = useMemo(() => {
     if (!buscaFunc) return funcionarios
-    const q = buscaFunc.toLowerCase()
-    return funcionarios.filter(f => (f.membros?.nome ?? '').toLowerCase().includes(q) || (f.membros?.vulgo ?? '').toLowerCase().includes(q) || (f.cargo ?? '').toLowerCase().includes(q))
+    const q = norm(buscaFunc)
+    return funcionarios.filter(f => norm(f.membros?.nome).includes(q) || norm(f.membros?.vulgo).includes(q) || norm(f.cargo).includes(q))
   }, [funcionarios, buscaFunc])
 
   async function handleSalvarFunc() {
@@ -321,10 +321,10 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
                       />
                       {buscaNovoItem && !newItemId && (
                         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                          {itensDisponiveis.filter(p => p.nome.toLowerCase().includes(buscaNovoItem.toLowerCase())).length === 0
+                          {itensDisponiveis.filter(p => norm(p.nome).includes(norm(buscaNovoItem))).length === 0
                             ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item encontrado</p>
                             : itensDisponiveis
-                                .filter(p => p.nome.toLowerCase().includes(buscaNovoItem.toLowerCase()))
+                                .filter(p => norm(p.nome).includes(norm(buscaNovoItem)))
                                 .map(p => (
                                   <button key={p.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onClick={() => { setNewItemId(p.id); setBuscaNovoItem(p.nome) }}>
                                     {p.nome}
@@ -425,9 +425,9 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
                     />
                     {newFuncBusca && !newFuncId && (
                       <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                        {membrosDisponiveis.filter(m => m.nome.toLowerCase().includes(newFuncBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(newFuncBusca.toLowerCase())).length === 0
+                        {membrosDisponiveis.filter(m => norm(m.nome).includes(norm(newFuncBusca)) || norm(m.vulgo).includes(norm(newFuncBusca))).length === 0
                           ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum membro encontrado</p>
-                          : membrosDisponiveis.filter(m => m.nome.toLowerCase().includes(newFuncBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(newFuncBusca.toLowerCase())).map(m => (
+                          : membrosDisponiveis.filter(m => norm(m.nome).includes(norm(newFuncBusca)) || norm(m.vulgo).includes(norm(newFuncBusca))).map(m => (
                             <button key={m.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setNewFuncId(m.id); setNewFuncBusca(m.nome + (m.vulgo ? ` "${m.vulgo}"` : '')) }}>
                               {m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}
                             </button>

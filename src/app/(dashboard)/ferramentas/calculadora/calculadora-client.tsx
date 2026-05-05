@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Search, Star, Package, Plus, X, Minus, Copy, Check, Image, Layers, SlidersHorizontal, GripVertical, ArrowDownUp, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import { getImgbbKey, uploadImgbb } from '@/lib/imgbb'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { toast } from 'sonner'
 
 // ── Config de fonte ───────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ function fmtNum(v: number) {
 }
 
 function matchBusca(texto: string, apelidos: string | null | undefined, q: string): boolean {
-  if (texto.toLowerCase().includes(q)) return true
+  if (norm(texto).includes(q)) return true
   if (apelidos) {
     return apelidos.toLowerCase().split(',').some(a => a.trim().includes(q))
   }
@@ -425,7 +425,7 @@ export function CalculadoraClient({
       lista = lista.filter(i => lojaPrecoPorItem[i.id]?.some(lp => lp.loja_id === filterLoja))
     }
     if (busca.trim()) {
-      const q = busca.toLowerCase()
+      const q = norm(busca)
       lista = lista.filter(i => matchBusca(i.nome, i.apelidos, q))
     }
     return lista
@@ -481,8 +481,8 @@ export function CalculadoraClient({
     if (aba === 'meus') lista = lista.filter(s => s.eh_meu_servico || servicoItens.some(si => si.servico_id === s.id && meusItemIds.has(si.item_id)))
     if (filterCategoria) lista = lista.filter(s => s.categoria === filterCategoria)
     if (busca.trim()) {
-      const q = busca.toLowerCase()
-      lista = lista.filter(s => s.nome.toLowerCase().includes(q) || s.descricao?.toLowerCase().includes(q))
+      const q = norm(busca)
+      lista = lista.filter(s => norm(s.nome).includes(q) || norm(s.descricao).includes(q))
     }
     return lista
   }, [servicos, busca, aba, servicoItens, meusItemIds, favoritosServicos, filterLoja, filterCategoria])

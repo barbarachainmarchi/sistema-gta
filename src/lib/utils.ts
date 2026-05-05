@@ -15,3 +15,9 @@ export function formatCurrency(value: number): string {
 export function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('pt-BR')
 }
+
+export function norm(s: string | null | undefined): string {
+  if (!s) return ''
+  // eslint-disable-next-line no-misleading-character-class
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+}

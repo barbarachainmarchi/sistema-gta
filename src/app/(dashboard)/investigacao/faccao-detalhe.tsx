@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers, Handshake } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 
 const FACTION_COLORS = [
   '#6366f1','#8b5cf6','#a855f7','#ec4899',
@@ -146,16 +146,16 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const itemNomeClass = tamanhoTexto === 'base' ? 'text-sm' : tamanhoTexto === 'sm' ? 'text-[13px]' : 'text-xs'
 
   const membrosFiltrados = useMemo(() => membros.filter(m =>
-    !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) ||
-    m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase()) ||
+    !buscaMembro || norm(m.nome).includes(norm(buscaMembro)) ||
+    norm(m.vulgo).includes(norm(buscaMembro)) ||
     m.telefone?.includes(buscaMembro)
   ), [membros, buscaMembro])
 
   const veiculosFiltrados = useMemo(() => veiculos.filter(v => {
     if (!buscaVeiculo) return true
-    const q = buscaVeiculo.toLowerCase()
+    const q = norm(buscaVeiculo)
     const dono = v.proprietario_tipo === 'membro' ? membros.find(m => m.id === v.proprietario_id)?.nome : undefined
-    return v.placa?.toLowerCase().includes(q) || v.modelo?.toLowerCase().includes(q) || dono?.toLowerCase().includes(q)
+    return norm(v.placa).includes(q) || norm(v.modelo).includes(q) || norm(dono).includes(q)
   }), [veiculos, buscaVeiculo, membros])
 
   const veiculosPorMembro = useMemo(() => {
@@ -171,7 +171,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const precosFiltrados = useMemo(() => faccaoPrecos.filter(p => {
     if (!buscaProduto) return true
     const produto = todosProdutos.find(x => x.id === p.item_id)
-    return produto?.nome.toLowerCase().includes(buscaProduto.toLowerCase())
+    return norm(produto?.nome).includes(norm(buscaProduto))
   }), [faccaoPrecos, buscaProduto, todosProdutos])
 
   // ── CRUD Membros ───────────────────────────────────────────────────────────
@@ -450,13 +450,13 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
 
   const combosFiltradosProduto = useMemo(() =>
     faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
-      !buscaProduto || s!.nome.toLowerCase().includes(buscaProduto.toLowerCase())
+      !buscaProduto || norm(s!.nome).includes(norm(buscaProduto))
     ) as Servico[]
   , [faccaoServicosIds, todoServicos, buscaProduto])
 
   const combosFiltradosDesconto = useMemo(() =>
     faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
-      s!.desconto_pct > 0 && (!buscaDesconto || s!.nome.toLowerCase().includes(buscaDesconto.toLowerCase()))
+      s!.desconto_pct > 0 && (!buscaDesconto || norm(s!.nome).includes(norm(buscaDesconto)))
     ) as Servico[]
   , [faccaoServicosIds, todoServicos, buscaDesconto])
 
@@ -465,12 +465,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const descontosFiltrados = useMemo(() => descontosItem.filter(d => {
     if (!buscaDesconto) return true
     const nome = todosProdutos.find(p => p.id === d.item_id)?.nome ?? ''
-    return nome.toLowerCase().includes(buscaDesconto.toLowerCase())
+    return norm(nome).includes(norm(buscaDesconto))
   }), [descontosItem, buscaDesconto, todosProdutos])
 
   const extrasFiltrados = useMemo(() => produtosExtras.filter(e => {
     if (!buscaDesconto) return true
-    return e.nome.toLowerCase().includes(buscaDesconto.toLowerCase())
+    return norm(e.nome).includes(norm(buscaDesconto))
   }), [produtosExtras, buscaDesconto])
 
   function abrirNovoDesconto() {
@@ -1159,10 +1159,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
             />
             {buscaNovoPreco && !newItemId && (
               <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
-                {produtosDisponiveis.filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase())).length === 0
+                {produtosDisponiveis.filter(p => norm(p.nome).includes(norm(buscaNovoPreco))).length === 0
                   ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
                   : produtosDisponiveis
-                      .filter(p => p.nome.toLowerCase().includes(buscaNovoPreco.toLowerCase()))
+                      .filter(p => norm(p.nome).includes(norm(buscaNovoPreco)))
                       .map(p => (
                         <button key={p.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onClick={() => { setNewItemId(p.id); setBuscaNovoPreco(p.nome) }}>
                           {p.nome}
@@ -1368,9 +1368,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
               />
               {membroLojaBusca && !membroForm.loja_id && (
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                  {todasLojas.filter(l => l.nome.toLowerCase().includes(membroLojaBusca.toLowerCase())).length === 0
+                  {todasLojas.filter(l => norm(l.nome).includes(norm(membroLojaBusca))).length === 0
                     ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhuma loja encontrada</p>
-                    : todasLojas.filter(l => l.nome.toLowerCase().includes(membroLojaBusca.toLowerCase())).map(l => (
+                    : todasLojas.filter(l => norm(l.nome).includes(norm(membroLojaBusca))).map(l => (
                       <button key={l.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setMembroForm(f => ({ ...f, loja_id: l.id })); setMembroLojaBusca(l.nome) }}>
                         {l.nome}
                       </button>
@@ -1481,9 +1481,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   />
                   {veiculoMembroBusca && !veiculoForm.proprietario_id && (
                     <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                      {membros.filter(m => m.nome.toLowerCase().includes(veiculoMembroBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(veiculoMembroBusca.toLowerCase())).length === 0
+                      {membros.filter(m => norm(m.nome).includes(norm(veiculoMembroBusca)) || norm(m.vulgo).includes(norm(veiculoMembroBusca))).length === 0
                         ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum membro encontrado</p>
-                        : membros.filter(m => m.nome.toLowerCase().includes(veiculoMembroBusca.toLowerCase()) || m.vulgo?.toLowerCase().includes(veiculoMembroBusca.toLowerCase())).map(m => (
+                        : membros.filter(m => norm(m.nome).includes(norm(veiculoMembroBusca)) || norm(m.vulgo).includes(norm(veiculoMembroBusca))).map(m => (
                           <button key={m.id} className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors" onMouseDown={e => { e.preventDefault(); setVeiculoForm(f => ({ ...f, proprietario_id: m.id })); setVeiculoMembroBusca(m.nome + (m.vulgo ? ` "${m.vulgo}"` : '')) }}>
                             {m.nome}{m.vulgo ? ` "${m.vulgo}"` : ''}
                           </button>

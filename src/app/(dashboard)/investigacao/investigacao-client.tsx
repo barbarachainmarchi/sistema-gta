@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown, Handshake } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto, type Servico } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
 import { FichaMembroModal } from './ficha-membro'
@@ -51,7 +51,7 @@ function AutocompleteInput({ value, onChange, suggestions, placeholder, classNam
   className?: string
 }) {
   const [aberto, setAberto] = useState(false)
-  const filtradas = suggestions.filter(s => s && s.toLowerCase().includes(value.toLowerCase()) && s.toLowerCase() !== value.toLowerCase())
+  const filtradas = suggestions.filter(s => s && norm(s).includes(norm(value)) && norm(s) !== norm(value))
   return (
     <div className="relative">
       <Input
@@ -121,10 +121,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
       .order('preco')
     setBuscando(false)
     if (!data) return
-    const termo_lower = termo.toLowerCase()
+    const termo_lower = norm(termo)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtrado = (data as any[])
-      .filter((r: any) => r.items?.nome?.toLowerCase().includes(termo_lower))
+      .filter((r: any) => norm(r.items?.nome).includes(termo_lower))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((r: any) => ({ loja_id: r.lojas?.id ?? '', loja_nome: r.lojas?.nome ?? '—', item_nome: r.items?.nome ?? '—', preco: r.preco }))
     setResultadosBusca(filtrado)
@@ -177,7 +177,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   }, [faccoes])
 
   const faccoesFiltradas = useMemo(() => {
-    const filtered = faccoes.filter(f => !buscaFaccao || f.nome.toLowerCase().includes(buscaFaccao.toLowerCase()) || f.territorio?.toLowerCase().includes(buscaFaccao.toLowerCase()))
+    const filtered = faccoes.filter(f => !buscaFaccao || norm(f.nome).includes(norm(buscaFaccao)) || norm(f.territorio).includes(norm(buscaFaccao)))
     return filtered.sort((a, b) => {
       const pa = faccoesParceiras.has(a.id) ? 0 : 1
       const pb = faccoesParceiras.has(b.id) ? 0 : 1
@@ -249,7 +249,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   }
 
   const membrosFiltrados = membros.filter(m => {
-    const matchBusca = !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) || m.telefone?.includes(buscaMembro) || m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase())
+    const matchBusca = !buscaMembro || norm(m.nome).includes(norm(buscaMembro)) || m.telefone?.includes(buscaMembro) || norm(m.vulgo).includes(norm(buscaMembro))
     const matchFaccao = filtrFaccaoId === 'todas' || (filtrFaccaoId === 'sem' ? !m.faccao_id : m.faccao_id === filtrFaccaoId)
     const matchTipo = filtrTipo === 'todos' || (filtrTipo === 'minha_equipe' ? m.membro_proprio && m.status === 'ativo' : filtrTipo === 'ex_membros' ? m.membro_proprio && m.status === 'inativo' : true)
     return matchBusca && matchFaccao && matchTipo
@@ -298,7 +298,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     setConfirmDeleteVeiculo(null); toast.success('Veículo excluído')
   }
 
-  const veiculosFiltrados = veiculos.filter(v => !buscaVeiculo || v.placa?.toLowerCase().includes(buscaVeiculo.toLowerCase()) || v.modelo?.toLowerCase().includes(buscaVeiculo.toLowerCase()))
+  const veiculosFiltrados = veiculos.filter(v => !buscaVeiculo || norm(v.placa).includes(norm(buscaVeiculo)) || norm(v.modelo).includes(norm(buscaVeiculo)))
 
   const veiculosPorMembro = useMemo(() => {
     const map: Record<string, Veiculo[]> = {}
@@ -348,34 +348,34 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     setConfirmDeleteLoja(null); toast.success('Loja excluída')
   }
 
-  const lojasFiltradas = lojas.filter(l => !buscaLoja || l.nome.toLowerCase().includes(buscaLoja.toLowerCase()) || l.localizacao?.toLowerCase().includes(buscaLoja.toLowerCase()))
+  const lojasFiltradas = lojas.filter(l => !buscaLoja || norm(l.nome).includes(norm(buscaLoja)) || norm(l.localizacao).includes(norm(buscaLoja)))
 
   // ── Pesquisa Geral ─────────────────────────────────────────────────────────
   const [termoBusca, setTermoBusca] = useState('')
   const [fichaMembroAberta, setFichaMembroAberta] = useState<Membro | null>(null)
 
   const resultadosMembros = useMemo(() => {
-    const q = termoBusca.trim().toLowerCase()
+    const q = norm(termoBusca.trim())
     if (q.length < 2) return []
     return membros.filter(m =>
-      m.nome.toLowerCase().includes(q) ||
-      m.vulgo?.toLowerCase().includes(q) ||
+      norm(m.nome).includes(q) ||
+      norm(m.vulgo).includes(q) ||
       m.telefone?.includes(q) ||
-      m.instagram?.toLowerCase().includes(q) ||
-      m.deep?.toLowerCase().includes(q) ||
-      m.cargo_faccao?.toLowerCase().includes(q) ||
-      m.observacoes?.toLowerCase().includes(q)
+      norm(m.instagram).includes(q) ||
+      norm(m.deep).includes(q) ||
+      norm(m.cargo_faccao).includes(q) ||
+      norm(m.observacoes).includes(q)
     )
   }, [membros, termoBusca])
 
   const resultadosVeiculos = useMemo(() => {
-    const q = termoBusca.trim().toLowerCase()
+    const q = norm(termoBusca.trim())
     if (q.length < 2) return []
     return veiculos.filter(v =>
-      v.placa?.toLowerCase().includes(q) ||
-      v.modelo?.toLowerCase().includes(q) ||
-      v.cor?.toLowerCase().includes(q) ||
-      v.observacoes?.toLowerCase().includes(q)
+      norm(v.placa).includes(q) ||
+      norm(v.modelo).includes(q) ||
+      norm(v.cor).includes(q) ||
+      norm(v.observacoes).includes(q)
     )
   }, [veiculos, termoBusca])
 

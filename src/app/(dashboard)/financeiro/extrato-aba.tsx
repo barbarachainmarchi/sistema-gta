@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import {
   Plus, TrendingUp, TrendingDown, ArrowLeftRight, Trash2, Pencil, Loader2,
   ShoppingCart, PackageSearch,
@@ -133,7 +133,7 @@ export function ExtratoAba({
       if (filtroTipo === 'vendas'         && l.tipo !== 'venda')         return false
       if (filtroTipo === 'transferencias' && l.tipo !== 'transferencia') return false
       if (filtroDinheiro !== 'todos'  && l.tipo_dinheiro !== filtroDinheiro) return false
-      if (filtroCategoria && !l.categoria?.toLowerCase().includes(filtroCategoria.toLowerCase())) return false
+      if (filtroCategoria && !norm(l.categoria).includes(norm(filtroCategoria))) return false
       const dataL = l.data ?? l.created_at.split('T')[0]
       if (filtroDataDe  && dataL < filtroDataDe)  return false
       if (filtroDataAte && dataL > filtroDataAte) return false

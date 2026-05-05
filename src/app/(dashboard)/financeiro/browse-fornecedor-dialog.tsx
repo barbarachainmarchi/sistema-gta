@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, norm } from '@/lib/utils'
 import { Plus, Minus, Loader2, Search, Store, Users, X } from 'lucide-react'
 import type { SbClient } from './financeiro-client'
 
@@ -107,14 +107,14 @@ export function BrowseFornecedorDialog({ open, onClose, onConfirm, tipoDinheiro,
   const fornecedores = tab === 'loja' ? lojas : faccoes
   const fornecedoresFiltrados = useMemo(() => {
     if (!busca.trim()) return fornecedores
-    const q = busca.toLowerCase()
-    return fornecedores.filter(f => f.nome.toLowerCase().includes(q) || f.tag?.toLowerCase().includes(q))
+    const q = norm(busca)
+    return fornecedores.filter(f => norm(f.nome).includes(q) || norm(f.tag).includes(q))
   }, [fornecedores, busca])
 
   const produtosFiltrados = useMemo(() => {
     if (!buscaProd.trim()) return produtos
-    const q = buscaProd.toLowerCase()
-    return produtos.filter(p => p.nome.toLowerCase().includes(q))
+    const q = norm(buscaProd)
+    return produtos.filter(p => norm(p.nome).includes(q))
   }, [produtos, buscaProd])
 
   function addAoCarrinho(p: Produto) {
