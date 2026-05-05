@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown, Handshake } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto, type Servico } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
@@ -168,7 +168,23 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     setConfirmDeleteFaccao(null); toast.success('Facção excluída')
   }
 
-  const faccoesFiltradas = faccoes.filter(f => !buscaFaccao || f.nome.toLowerCase().includes(buscaFaccao.toLowerCase()) || f.territorio?.toLowerCase().includes(buscaFaccao.toLowerCase()))
+  const faccoesParceiras = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of faccaoPrecos) {
+      if (p.parceria_tipo != null) ids.add(p.faccao_id)
+    }
+    return ids
+  }, [faccaoPrecos])
+
+  const faccoesFiltradas = useMemo(() => {
+    const filtered = faccoes.filter(f => !buscaFaccao || f.nome.toLowerCase().includes(buscaFaccao.toLowerCase()) || f.territorio?.toLowerCase().includes(buscaFaccao.toLowerCase()))
+    return filtered.sort((a, b) => {
+      const pa = faccoesParceiras.has(a.id) ? 0 : 1
+      const pb = faccoesParceiras.has(b.id) ? 0 : 1
+      if (pa !== pb) return pa - pb
+      return a.nome.localeCompare(b.nome)
+    })
+  }, [faccoes, buscaFaccao, faccoesParceiras])
 
   // ── Membro: CRUD ───────────────────────────────────────────────────────────
   const [membroModal, setMembroModal] = useState(false)
@@ -409,6 +425,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                             <div className="flex items-center gap-1.5">
                               <p className="text-sm font-semibold truncate">{f.nome}</p>
                               {f.sigla && <span className="text-[10px] font-mono text-muted-foreground bg-white/[0.06] px-1 py-0.5 rounded shrink-0">{f.sigla}</span>}
+                              {faccoesParceiras.has(f.id) && <span title="Parceria ativa"><Handshake className="h-3.5 w-3.5 text-sky-400 shrink-0" /></span>}
                             </div>
                             {f.territorio && <p className="text-xs text-muted-foreground truncate">{f.territorio}</p>}
                           </div>

@@ -654,11 +654,11 @@ function OrderDialog({
         const defaultDesconto = defaultFaccao?.desconto_padrao_pct ?? 0
         setForm({
           ...emptyForm(),
-          faccao_id: meuFaccao?.id ?? '',
-          loja_id: meuFaccao ? '' : (meuLoja?.id ?? ''),
-          desconto_pct: defaultDesconto > 0 ? String(defaultDesconto) : '0',
+          faccao_id: '',
+          loja_id: '',
+          desconto_pct: '0',
         })
-        setEmpresaNome(meuFaccao?.nome ?? meuLoja?.nome ?? '')
+        setEmpresaNome('')
         if (meuFaccao) {
           sb().from('faccao_desconto_por_item').select('item_id, desconto_pct').eq('faccao_id', meuFaccao.id)
             .then(({ data }) => {
@@ -688,10 +688,10 @@ function OrderDialog({
     if (!empresaAberta) return []
     const q = empresaNome.toLowerCase().trim()
     const ff = (q ? faccoes.filter(f => f.nome.toLowerCase().includes(q) || f.sigla?.toLowerCase().includes(q)) : faccoes)
-      .slice(0, 5).map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
-    const ll = (q ? lojas.filter(l => l.nome.toLowerCase().includes(q)) : lojas).slice(0, 4)
+      .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
+    const ll = (q ? lojas.filter(l => l.nome.toLowerCase().includes(q)) : lojas)
       .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
-    return [...ff, ...ll].slice(0, 9)
+    return [...ff, ...ll].slice(0, 12)
   }, [faccoes, lojas, empresaNome, empresaAberta])
 
   function selecionarEmpresa(e: EmpresaOpc) {

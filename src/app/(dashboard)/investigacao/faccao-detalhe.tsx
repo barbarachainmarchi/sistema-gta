@@ -132,6 +132,17 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [buscaVeiculo, setBuscaVeiculo] = useState('')
   const [buscaProduto, setBuscaProduto] = useState('')
 
+  type TamanhoTexto = 'xs' | 'sm' | 'base'
+  const [tamanhoTexto, setTamanhoTexto] = useState<TamanhoTexto>(() => {
+    if (typeof window === 'undefined') return 'xs'
+    return (localStorage.getItem('faccao_item_font_size') as TamanhoTexto) ?? 'xs'
+  })
+  function mudarTamanho(t: TamanhoTexto) {
+    setTamanhoTexto(t)
+    localStorage.setItem('faccao_item_font_size', t)
+  }
+  const itemNomeClass = tamanhoTexto === 'base' ? 'text-sm' : tamanhoTexto === 'sm' ? 'text-[13px]' : 'text-xs'
+
   const membrosFiltrados = useMemo(() => membros.filter(m =>
     !buscaMembro || m.nome.toLowerCase().includes(buscaMembro.toLowerCase()) ||
     m.vulgo?.toLowerCase().includes(buscaMembro.toLowerCase()) ||
@@ -434,6 +445,18 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     setFaccaoServicosIds(prev => prev.filter(id => id !== servicoId))
     toast.success('Serviço removido')
   }
+
+  const combosFiltradosProduto = useMemo(() =>
+    faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
+      !buscaProduto || s!.nome.toLowerCase().includes(buscaProduto.toLowerCase())
+    ) as Servico[]
+  , [faccaoServicosIds, todoServicos, buscaProduto])
+
+  const combosFiltradosDesconto = useMemo(() =>
+    faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
+      s!.desconto_pct > 0 && (!buscaDesconto || s!.nome.toLowerCase().includes(buscaDesconto.toLowerCase()))
+    ) as Servico[]
+  , [faccaoServicosIds, todoServicos, buscaDesconto])
 
   const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
 
@@ -789,7 +812,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                     <span className="font-mono text-sm font-semibold">{v.placa ?? '—'}</span>
                     <span className="text-sm text-muted-foreground truncate">{v.modelo ?? '—'}</span>
                     <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
-                    <span className="text-xs truncate">{dono ? dono.nome : v.proprietario_tipo === 'faccao' ? 'Facção' : '—'}</span>
+                    <span className="text-xs truncate">{dono ? dono.nome : v.proprietario_tipo === 'faccao' ? 'Facção' : <span className="text-muted-foreground/40 italic">Desconhecido</span>}</span>
                     <div className="flex gap-0.5">
                       <button onClick={() => abrirEditarVeiculo(v)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
                       <button onClick={() => setConfirmDeleteVeiculo(v)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]"><Trash2 className="h-3 w-3" /></button>
@@ -808,16 +831,45 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
           {/* ── Coluna esquerda: Produto deles ── */}
           <section className="space-y-2">
             <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produto deles ({precosFiltrados.length})</p>
+              <p className="text-sm font-semibold flex items-center gap-2 shrink-0"><Package className="h-4 w-4 text-muted-foreground" />Produto deles ({precosFiltrados.length + faccaoServicosIds.length})</p>
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                 <Input placeholder="Buscar produto..." value={buscaProduto} onChange={e => setBuscaProduto(e.target.value)} className="pl-7 h-7 text-xs" />
               </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0}>
+              <div className="flex items-center gap-0.5 shrink-0 border border-border/50 rounded overflow-hidden">
+                {(['xs', 'sm', 'base'] as TamanhoTexto[]).map(t => (
+                  <button key={t} onClick={() => mudarTamanho(t)} title={t === 'xs' ? 'Pequeno' : t === 'sm' ? 'Médio' : 'Grande'}
+                    className={cn('px-1.5 py-1 text-[9px] font-mono transition-colors', tamanhoTexto === t ? 'bg-primary/20 text-primary' : 'text-muted-foreground/50 hover:text-muted-foreground')}>
+                    {t === 'xs' ? 'P' : t === 'sm' ? 'M' : 'G'}
+                  </button>
+                ))}
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0} title="Adicionar produto">
                 <Plus className="h-3 w-3" />
               </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setServicoAddOpen(true)} disabled={todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).length === 0} title="Adicionar combo">
+                <Layers className="h-3 w-3" />
+              </Button>
             </div>
-            {precosFiltrados.length === 0 ? (
+            {servicoAddOpen && (
+              <div className="flex gap-2 items-center">
+                <Select value={novoServicoId} onValueChange={setNovoServicoId}>
+                  <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar combo..." /></SelectTrigger>
+                  <SelectContent>
+                    {todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" className="h-8 px-3" onClick={handleAdicionarServico} disabled={!novoServicoId || servicoSaving}>
+                  {servicoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setServicoAddOpen(false); setNovoServicoId('') }}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            {(precosFiltrados.length === 0 && combosFiltradosProduto.length === 0) ? (
               <p className="text-xs text-muted-foreground text-center py-6 rounded-lg border border-border border-dashed">
                 {buscaProduto ? 'Nenhum resultado' : 'Nenhum produto cadastrado'}
               </p>
@@ -838,7 +890,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                         className={cn('flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/[0.03] transition-colors', expandido && 'bg-white/[0.02]')}
                         onClick={() => setProdutosExpandidos(prev => { const n = new Set(prev); expandido ? n.delete(preco.item_id) : n.add(preco.item_id); return n })}>
                         <span className="text-sm leading-none shrink-0" title={tipoTitulo}>{tipoIcone}</span>
-                        <span className="text-xs font-medium flex-1 min-w-0 truncate">{produto?.nome ?? '—'}</span>
+                        <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{produto?.nome ?? '—'}</span>
                         <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(preco.preco_sujo)}</span>
                         <span className="text-xs tabular-nums font-medium shrink-0">{fmt(preco.preco_limpo)}</span>
                         <ChevronDown className={cn('h-3 w-3 text-muted-foreground/50 shrink-0 transition-transform', expandido && 'rotate-180')} />
@@ -889,6 +941,15 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                     </div>
                   )
                 })}
+                {combosFiltradosProduto.map((s, idx) => (
+                  <div key={s.id} className={cn('flex items-center gap-2 px-3 py-2', (precosFiltrados.length > 0 || idx > 0) && 'border-t border-border/40')}>
+                    <span title="Combo/Serviço"><Layers className="h-3 w-3 text-primary/50 shrink-0" /></span>
+                    <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{s.nome}</span>
+                    {s.preco_sujo != null && <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(s.preco_sujo)}</span>}
+                    {s.preco_limpo != null && <span className="text-xs tabular-nums font-medium shrink-0">{fmt(s.preco_limpo)}</span>}
+                    <button onClick={() => handleRemoverServico(s.id)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-white/[0.06]" title="Remover"><X className="h-3 w-3" /></button>
+                  </div>
+                ))}
               </div>
             )}
           </section>
@@ -920,7 +981,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   return (
                     <div key={d.id} className={cn('flex items-center gap-2 px-3 py-2', !isLast && 'border-b border-border/40')}>
                       <span className="text-[11px] shrink-0 text-muted-foreground/50" title="Produto do sistema">🎯</span>
-                      <span className="text-xs font-medium flex-1 min-w-0 truncate">{produto?.nome ?? '—'}</span>
+                      <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{produto?.nome ?? '—'}</span>
                       <span className="text-xs tabular-nums text-emerald-400 shrink-0">-{d.desconto_pct}%</span>
                       <div className="flex gap-0.5 shrink-0">
                         <button onClick={() => abrirEditarDesconto(d)} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]"><Edit2 className="h-3 w-3" /></button>
@@ -930,9 +991,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   )
                 })}
                 {extrasFiltrados.map((e, idx) => (
-                  <div key={e.id} className={cn('flex items-center gap-2 px-3 py-2', idx < extrasFiltrados.length - 1 && 'border-b border-border/40')}>
+                  <div key={e.id} className={cn('flex items-center gap-2 px-3 py-2', (idx < extrasFiltrados.length - 1 || combosFiltradosDesconto.length > 0) && 'border-b border-border/40')}>
                     <span className="text-[11px] shrink-0 text-muted-foreground/50" title="Produto manual">📝</span>
-                    <span className="text-xs font-medium flex-1 min-w-0 truncate">{e.nome}</span>
+                    <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{e.nome}</span>
                     {e.valor_sujo != null && <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(e.valor_sujo)}</span>}
                     {e.valor_limpo != null && <span className="text-xs tabular-nums font-medium shrink-0">{fmt(e.valor_limpo)}</span>}
                     <div className="flex gap-0.5 shrink-0">
@@ -941,63 +1002,17 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                     </div>
                   </div>
                 ))}
+                {combosFiltradosDesconto.map((s, idx) => (
+                  <div key={s.id} className={cn('flex items-center gap-2 px-3 py-2', idx < combosFiltradosDesconto.length - 1 && 'border-b border-border/40')}>
+                    <span title="Combo/Serviço"><Layers className="h-3 w-3 text-primary/50 shrink-0" /></span>
+                    <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{s.nome}</span>
+                    <span className="text-xs tabular-nums text-emerald-400 shrink-0">-{s.desconto_pct}%</span>
+                  </div>
+                ))}
               </div>
             )}
           </section>
           </div>{/* end grid produtos + descontos */}
-
-          {/* ── Serviços / Combos ── */}
-          <div className="border-t border-border pt-4 space-y-2">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-semibold flex items-center gap-2 shrink-0">
-                <Layers className="h-4 w-4 text-muted-foreground" />Serviços / Combos ({faccaoServicosIds.length})
-              </p>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setServicoAddOpen(true)} disabled={todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).length === 0}>
-                <Plus className="h-3 w-3" />
-              </Button>
-            </div>
-            {servicoAddOpen && (
-              <div className="flex gap-2 items-center">
-                <Select value={novoServicoId} onValueChange={setNovoServicoId}>
-                  <SelectTrigger className="flex-1 h-8 text-sm"><SelectValue placeholder="Selecionar serviço..." /></SelectTrigger>
-                  <SelectContent>
-                    {todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).map(s => (
-                      <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button size="sm" className="h-8 px-3" onClick={handleAdicionarServico} disabled={!novoServicoId || servicoSaving}>
-                  {servicoSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                </Button>
-                <Button variant="ghost" size="sm" className="h-8 px-3" onClick={() => { setServicoAddOpen(false); setNovoServicoId('') }}>
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            )}
-            {faccaoServicosIds.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4 rounded-lg border border-border border-dashed">
-                Nenhum serviço/combo vinculado
-              </p>
-            ) : (
-              <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/50">
-                {faccaoServicosIds.map(sid => {
-                  const s = todoServicos.find(x => x.id === sid)
-                  if (!s) return null
-                  return (
-                    <div key={sid} className="flex items-center gap-2 px-3 py-2">
-                      <Layers className="h-3 w-3 text-primary/50 shrink-0" />
-                      <span className="text-xs font-medium flex-1 min-w-0 truncate">{s.nome}</span>
-                      {s.preco_limpo != null && <span className="text-xs tabular-nums text-muted-foreground">{fmt(s.preco_limpo)}</span>}
-                      {s.desconto_pct > 0 && <span className="text-xs text-emerald-400 shrink-0">-{s.desconto_pct}%</span>}
-                      <button onClick={() => handleRemoverServico(sid)} className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-colors shrink-0">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
 
         </div>
       </DialogContent>

@@ -8,6 +8,7 @@ import { BancoAba } from './banco-aba'
 import { TransferenciasAba } from './transferencias-aba'
 import { LavagemAba } from './lavagem-aba'
 import { ContasAba } from './contas-aba'
+import { RepasseAba, type Repasse } from './repasse-aba'
 
 // ── Tipos exportados ──────────────────────────────────────────────────────────
 
@@ -53,13 +54,14 @@ export type SbClient = () => ReturnType<typeof createClient>
 
 // ── Tipos da aba ──────────────────────────────────────────────────────────────
 
-type Aba = 'extrato' | 'banco' | 'transferencias' | 'lavagem' | 'contas'
+type Aba = 'extrato' | 'banco' | 'transferencias' | 'lavagem' | 'repasse' | 'contas'
 
 const ABAS: [Aba, string][] = [
   ['extrato',          'Extrato'],
   ['banco',            'Banco'],
   ['transferencias',   'Transferências'],
   ['lavagem',          'Lavagem'],
+  ['repasse',          'Repasse'],
   ['contas',           'Cadastro de Contas'],
 ]
 
@@ -69,14 +71,15 @@ interface Props {
   userId: string; userNome: string | null
   contasIniciais: Conta[]; lancamentosIniciais: Lancamento[]
   lavagensIniciais: Lavagem[]; membros: Membro[]; cotacoesFinaliz: Cotacao[]
-  podeEditar: boolean
+  podeEditar: boolean; podeExcluir: boolean
   tabPadrao?: string
+  repassesIniciais: Repasse[]
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function FinanceiroClient({
-  userId, userNome, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, tabPadrao,
+  userId, userNome, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, podeExcluir, tabPadrao, repassesIniciais,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb: SbClient = useCallback(() => {
@@ -88,6 +91,7 @@ export function FinanceiroClient({
   const [contas, setContas]         = useState<Conta[]>(contasIniciais)
   const [lancamentos, setLancamentos] = useState<Lancamento[]>(lancamentosIniciais)
   const [lavagens, setLavagens]     = useState<Lavagem[]>(lavagensIniciais)
+  const [repasses, setRepasses]     = useState<Repasse[]>(repassesIniciais)
 
   // Ref para evitar stale closure em atualizarSaldo
   const contasRef = useRef(contas)
@@ -146,6 +150,13 @@ export function FinanceiroClient({
           contas={contas} lavagens={lavagens} setLavagens={setLavagens}
           atualizarSaldo={atualizarSaldo} userId={userId} sb={sb}
           podeEditar={podeEditar}
+        />
+      </div>
+      <div className={cn('flex-1 overflow-hidden', aba !== 'repasse' && 'hidden')}>
+        <RepasseAba
+          repasses={repasses} setRepasses={setRepasses}
+          userId={userId} userNome={userNome}
+          podeExcluir={podeExcluir} sb={sb}
         />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'contas' && 'hidden')}>

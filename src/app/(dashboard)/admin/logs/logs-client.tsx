@@ -95,6 +95,12 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
     }
   }
 
+  async function handleDeleteSolicitacao(id: string) {
+    const { error } = await sb().from('sistema_solicitacoes').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setSolicitacoes(prev => prev.filter(s => s.id !== id))
+  }
+
   async function handleResolver(sol: Solicitacao, novoStatus: 'aprovado' | 'rejeitado') {
     setResolvendo(sol.id)
     try {
@@ -281,6 +287,14 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                         {sol.aprovador_nome && ` · Resolvido por ${sol.aprovador_nome}`}
                       </p>
                     </div>
+                    {podeAprovar && (
+                      <button
+                        onClick={() => handleDeleteSolicitacao(sol.id)}
+                        className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-white/[0.06] transition-colors shrink-0"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
