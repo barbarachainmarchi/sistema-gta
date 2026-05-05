@@ -9,7 +9,7 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon
+  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon, LayoutDashboard,
 } from 'lucide-react'
 import { TEMA_KEY } from '@/components/layout/theme-provider'
 
@@ -44,9 +44,10 @@ const navGroups = [
     key: 'vendas',
     label: 'Vendas',
     items: [
-      { href: '/vendas',                  label: 'Vendas',         icon: ShoppingCart, perm: 'vendas', exact: true },
-      { href: '/vendas/relatorios',       label: 'Relatórios',     icon: BarChart2,    perm: 'vendas' },
-      { href: '/vendas/minha-carteira',   label: 'Minha Carteira', icon: Wallet,       perm: 'vendas' },
+      { href: '/vendas',                  label: 'Vendas',         icon: ShoppingCart,     perm: 'vendas', exact: true },
+      { href: '/vendas/dashboard',        label: 'Dashboard',      icon: LayoutDashboard,  perm: 'vendas' },
+      { href: '/vendas/relatorios',       label: 'Relatórios',     icon: BarChart2,        perm: 'vendas' },
+      { href: '/vendas/minha-carteira',   label: 'Minha Carteira', icon: Wallet,           perm: 'vendas' },
     ],
   },
   {
@@ -61,7 +62,8 @@ const navGroups = [
     key: 'financeiro',
     label: 'Financeiro',
     items: [
-      { href: '/financeiro',        label: 'Financeiro',   icon: DollarSign,   perm: 'financeiro' },
+      { href: '/financeiro',           label: 'Financeiro',  icon: DollarSign,     perm: 'financeiro', exact: true },
+      { href: '/financeiro/dashboard', label: 'Dashboard',   icon: LayoutDashboard, perm: 'financeiro' },
     ],
   },
   {
