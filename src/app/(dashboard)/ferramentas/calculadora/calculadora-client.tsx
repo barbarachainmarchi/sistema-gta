@@ -288,6 +288,8 @@ export function CalculadoraClient({
   const [precoManualIngValor, setPrecoManualIngValor] = useState<Record<string, string>>({})
   // larguras das colunas
   const [colWidths, setColWidths] = useState<ColWidths>(DEFAULT_COL_WIDTHS)
+  // itens riscados no resumo
+  const [riscadosResumo, setRiscadosResumo] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     try {
@@ -900,6 +902,7 @@ export function CalculadoraClient({
     setPrecoManualValor({})
     setPrecoManualIngAtivo({})
     setPrecoManualIngValor({})
+    setRiscadosResumo(new Set())
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1406,15 +1409,57 @@ export function CalculadoraClient({
           <div className="flex-1 overflow-y-auto flex flex-col">
 
             {/* Itens consolidados com quantidade e peso */}
-            <div className="px-3 py-3 space-y-1 border-b border-border/50">
-              {resumoItens.map(entry => (
-                <div key={entry.item_id} className="flex items-baseline justify-between gap-1 min-w-0">
-                  <span className="text-foreground/70 truncate" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>{entry.nome}</span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums text-right" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>
-                    {entry.quantidade}×{entry.pesoTotal > 0 ? ` · ${fmtKg(entry.pesoTotal)}` : ''}
-                  </span>
-                </div>
-              ))}
+            <div
+              className="px-3 py-3 space-y-1 border-b border-border/50 select-text"
+              onCopy={e => {
+                const sel = window.getSelection()?.toString().trim()
+                if (!sel) return
+                const linhas = resumoItens
+                  .filter(item => sel.includes(item.nome))
+                  .map(item => `${item.nome} ${item.quantidade}×`)
+                if (linhas.length > 0) {
+                  e.preventDefault()
+                  e.clipboardData.setData('text/plain', linhas.join('\n'))
+                }
+              }}
+            >
+              {resumoItens.map(entry => {
+                const riscado = riscadosResumo.has(entry.item_id)
+                return (
+                  <div
+                    key={entry.item_id}
+                    className="flex items-baseline justify-between gap-1 min-w-0 cursor-pointer"
+                    onClick={() => {
+                      if ((window.getSelection()?.toString() ?? '') !== '') return
+                      setRiscadosResumo(prev => {
+                        const next = new Set(prev)
+                        if (next.has(entry.item_id)) next.delete(entry.item_id)
+                        else next.add(entry.item_id)
+                        return next
+                      })
+                    }}
+                  >
+                    <span
+                      className="text-foreground/70 truncate transition-all"
+                      style={{
+                        fontSize: `${fonte.tamanhoResumo}px`,
+                        textDecoration: riscado ? 'line-through' : 'none',
+                        opacity: riscado ? 0.4 : 1,
+                      }}
+                    >{entry.nome}</span>
+                    <span
+                      className="text-muted-foreground shrink-0 tabular-nums text-right transition-all"
+                      style={{
+                        fontSize: `${fonte.tamanhoResumo}px`,
+                        textDecoration: riscado ? 'line-through' : 'none',
+                        opacity: riscado ? 0.4 : 1,
+                      }}
+                    >
+                      {entry.quantidade}×{entry.pesoTotal > 0 ? ` · ${fmtKg(entry.pesoTotal)}` : ''}
+                    </span>
+                  </div>
+                )
+              })}
               {resumoItens.some(e => e.pesoTotal > 0) && (
                 <div className="flex justify-between pt-1 border-t border-border/30 mt-1" style={{ fontSize: `${fonte.tamanhoResumo}px` }}>
                   <span className="text-muted-foreground">Peso</span>
