@@ -74,6 +74,8 @@ interface Props {
   favoritosIniciais: string[]
   faccaoServicos: { faccao_id: string; servico_id: string }[]
   lojaServicos: { loja_id: string; servico_id: string }[]
+  isDono: boolean
+  vendedores: { id: string; nome: string }[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -510,7 +512,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
 function OrderDialog({
   open, onOpenChange, editando, faccoes, lojas, membros, onMembroCreated,
   meuFaccao, meuLoja, estoqueMap, receitas, allItems, onSave, saving,
-  servicos, servicoItens, userId, favoritosIniciais, faccaoServicos, lojaServicos,
+  servicos, servicoItens, userId, userNome, favoritosIniciais, faccaoServicos, lojaServicos,
+  isDono, vendedores, vendedorId, setVendedorId,
 }: {
   open: boolean; onOpenChange: (v: boolean) => void; editando: Venda | null
   faccoes: Faccao[]; lojas: Loja[]; membros: Membro[]
@@ -520,9 +523,11 @@ function OrderDialog({
   receitas: Receita[]; allItems: ItemSimples[]
   onSave: (form: FormState) => void; saving: boolean
   servicos: Servico[]; servicoItens: ServicoItemVenda[]
-  userId: string; favoritosIniciais: string[]
+  userId: string; userNome: string | null; favoritosIniciais: string[]
   faccaoServicos: { faccao_id: string; servico_id: string }[]
   lojaServicos: { loja_id: string; servico_id: string }[]
+  isDono: boolean; vendedores: { id: string; nome: string }[]
+  vendedorId: string; setVendedorId: (v: string) => void
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1135,6 +1140,22 @@ function OrderDialog({
                   rows={3} placeholder="Observações..."
                   className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring resize-none" />
               </div>
+
+              {/* Vendedor (só donos, só novo pedido) */}
+              {isDono && !editando && (
+                <div className="space-y-1 pt-1 border-t border-border/50">
+                  <Label className="text-xs text-muted-foreground">Registrar como</Label>
+                  <Select value={vendedorId || '_eu'} onValueChange={v => setVendedorId(v === '_eu' ? '' : v)}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_eu">{userNome ?? 'Eu mesmo'}</SelectItem>
+                      {vendedores.filter(v => v.id !== userId).map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1625,6 +1646,7 @@ export function VendasClient({
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
   meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
   servicos, servicoItens, favoritosIniciais, faccaoServicos, lojaServicos,
+  isDono, vendedores,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1635,6 +1657,7 @@ export function VendasClient({
   const [formOpen, setFormOpen] = useState(false)
   const [editando, setEditando] = useState<Venda | null>(null)
   const [saving, setSaving] = useState(false)
+  const [vendedorId, setVendedorId] = useState('')
   const [filtro, setFiltro] = useState<string>(filtroInicial)
   const [mostrarTodosConcluidos, setMostrarTodosConcluidos] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -1740,7 +1763,8 @@ export function VendasClient({
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
-          criado_por: userId, criado_por_nome: userNome,
+          criado_por: vendedorId || userId,
+          criado_por_nome: (isDono && vendedorId) ? (vendedores.find(v => v.id === vendedorId)?.nome ?? userNome) : userNome,
         }).select().single()
         if (vendaErr) { toast.error('Erro ao criar: ' + vendaErr.message); return }
         const novosItens = form.itens.map(it => ({
@@ -1772,7 +1796,7 @@ export function VendasClient({
           }).catch(() => {})
         }
       }
-      setFormOpen(false); setEditando(null)
+      setFormOpen(false); setEditando(null); setVendedorId('')
     } finally { setSaving(false) }
   }
 
@@ -2113,9 +2137,14 @@ export function VendasClient({
         servicos={servicos}
         servicoItens={servicoItens}
         userId={userId}
+        userNome={userNome}
         favoritosIniciais={favoritosIniciais}
         faccaoServicos={faccaoServicos}
         lojaServicos={lojaServicos}
+        isDono={isDono}
+        vendedores={vendedores}
+        vendedorId={vendedorId}
+        setVendedorId={setVendedorId}
       />
     </div>
   )

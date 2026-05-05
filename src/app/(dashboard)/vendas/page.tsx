@@ -27,6 +27,7 @@ export default async function VendasPage() {
     { data: donoConfig },
     { data: faccaoServicosData },
     { data: lojaServicosData },
+    { data: todosUsuariosData },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*, servico_id'),
@@ -46,6 +47,7 @@ export default async function VendasPage() {
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
     supabase.from('faccao_servicos').select('faccao_id, servico_id'),
     supabase.from('loja_servicos').select('loja_id, servico_id'),
+    supabase.from('usuarios').select('id, nome').order('nome'),
   ])
 
   // Calcular saldo de estoque por item a partir das movimentações
@@ -94,6 +96,7 @@ export default async function VendasPage() {
   const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas')?.pode_editar ?? false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
+  const isDono = perms == null
   const ocultarConcluidosDias = configOcultar?.valor ? parseInt(configOcultar.valor) || 0 : 7
 
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
@@ -143,6 +146,8 @@ export default async function VendasPage() {
         favoritosIniciais={(favoritosData ?? []).map((f: { item_id: string }) => f.item_id)}
         faccaoServicos={(faccaoServicosData ?? []) as { faccao_id: string; servico_id: string }[]}
         lojaServicos={(lojaServicosData ?? []) as { loja_id: string; servico_id: string }[]}
+        isDono={isDono}
+        vendedores={(todosUsuariosData ?? []) as { id: string; nome: string }[]}
       />
     </>
   )

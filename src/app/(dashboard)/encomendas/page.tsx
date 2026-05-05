@@ -81,6 +81,8 @@ export default async function EncomendasPage() {
         favoritosIniciais={[]}
         faccaoServicos={[]}
         lojaServicos={[]}
+        isDono={perms == null}
+        vendedores={[]}
       />
     </>
   )
