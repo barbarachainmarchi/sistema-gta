@@ -665,16 +665,18 @@ export function CalculadoraClient({
         map[r.ingrediente_id].totalPeso += (itemMap[r.ingrediente_id]?.peso ?? 0) * qtd
       }
     }
-    for (const { item_id, quantidade } of batch) addIngredientes(item_id, quantidade)
+    for (const { item_id, quantidade } of batch) {
+      if (!riscadosResumo.has(item_id)) addIngredientes(item_id, quantidade)
+    }
     for (const combo of comboBatch) {
       for (const si of servicoItens.filter(s => s.servico_id === combo.servico_id)) {
-        addIngredientes(si.item_id, si.quantidade * combo.quantidade)
+        if (!riscadosResumo.has(si.item_id)) addIngredientes(si.item_id, si.quantidade * combo.quantidade)
       }
     }
     return Object.entries(map)
       .map(([id, v]) => ({ ingrediente_id: id, ...v }))
       .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? ''))
-  }, [batch, comboBatch, itemMap, lojaPrecoPorItem, servicoItens])
+  }, [batch, comboBatch, itemMap, lojaPrecoPorItem, servicoItens, riscadosResumo])
 
   // ── Totais ────────────────────────────────────────────────────────────────
 
