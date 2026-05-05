@@ -38,7 +38,7 @@ export default async function UsuariosPage() {
     { data: faccaoServidorConfig },
   ] = await Promise.all([
     admin.auth.admin.listUsers({ perPage: 1000 }),
-    admin.from('usuarios').select('id, nome, nome_personagem, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, perfis_acesso(id, nome)'),
+    admin.from('usuarios').select('id, nome, nome_personagem, cargo, perfil_id, status, membro_id, local_trabalho_loja_id, local_trabalho_faccao_id, trabalho_principal, ultimo_acesso, ultima_pagina, perfis_acesso(id, nome)'),
     supabase.from('perfis_acesso').select('id, nome, descricao, is_sistema').order('nome'),
     supabase.from('perfil_permissoes').select('perfil_id, modulo, pode_ver, pode_criar, pode_editar, pode_excluir'),
     admin.from('convites').select('token, expires_at, created_at').is('usado_em', null).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }),
@@ -70,7 +70,8 @@ export default async function UsuariosPage() {
       perfil_nome: (() => { const pa = (perfil as any)?.perfis_acesso; return (Array.isArray(pa) ? pa[0]?.nome : pa?.nome) ?? null })(),
       status: (perfil?.status ?? 'ativo') as 'ativo' | 'inativo' | 'pendente',
       created_at: au.created_at,
-      ultimo_acesso: au.last_sign_in_at ?? null,
+      ultimo_acesso: (perfil as { ultimo_acesso?: string | null })?.ultimo_acesso ?? au.last_sign_in_at ?? null,
+      ultima_pagina: (perfil as { ultima_pagina?: string | null })?.ultima_pagina ?? null,
     }
   })
 

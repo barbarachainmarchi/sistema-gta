@@ -58,6 +58,7 @@ type Usuario = {
   status: 'ativo' | 'inativo' | 'pendente'
   created_at: string
   ultimo_acesso: string | null
+  ultima_pagina: string | null
 }
 
 type LojaSimples = { id: string; nome: string }
@@ -827,7 +828,14 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                         </div>
                       </TableCell>
                       <TableCell><StatusBadge status={u.status} /></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{formatDate(u.ultimo_acesso)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <div>{formatDate(u.ultimo_acesso)}</div>
+                        {u.ultima_pagina && (
+                          <div className="font-mono text-[10px] opacity-60 truncate max-w-[140px]" title={u.ultima_pagina}>
+                            {u.ultima_pagina}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                           {isFantasma && (
@@ -1606,9 +1614,16 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   <span className="text-xs text-muted-foreground">Status</span>
                   <StatusBadge status={infoUsuario.status} />
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Último acesso</span>
-                  <span className="text-xs text-muted-foreground">{formatDate(infoUsuario.ultimo_acesso)}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground shrink-0">Último acesso</span>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground">{formatDate(infoUsuario.ultimo_acesso)}</div>
+                    {infoUsuario.ultima_pagina && (
+                      <div className="font-mono text-[10px] text-muted-foreground/50 truncate max-w-[160px]" title={infoUsuario.ultima_pagina}>
+                        {infoUsuario.ultima_pagina}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">Cadastrado em</span>

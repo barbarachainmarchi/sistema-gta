@@ -1752,6 +1752,25 @@ export function VendasClient({
         if (itensErr) { toast.error('Erro nos itens'); return }
         setVendas(prev => [{ ...(venda as Venda), itens: (itensData ?? []) as VendaItem[] }, ...prev])
         toast.success('Pedido criado!')
+        // Notificação Telegram para encomendas
+        if (filtroInicial === 'encomenda') {
+          const subtotal = form.itens.reduce((s, it) => s + (parseFloat(it.quantidade) || 0) * (parseFloat(it.preco_unit) || 0), 0)
+          const total = Math.max(0, subtotal * (1 - (parseFloat(form.desconto_pct) || 0) / 100) - (parseFloat(form.desconto_fixo) || 0))
+          fetch('/api/telegram/notify', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              tipo: 'encomenda',
+              usuario_nome: userNome ?? '',
+              encomenda: {
+                destinatario: form.cliente_nome.trim(),
+                itens: (itensData ?? []).map((it: VendaItem) => ({ nome: it.item_nome, quantidade: it.quantidade })),
+                total,
+                link: `${window.location.origin}/encomendas`,
+              },
+            }),
+          }).catch(() => {})
+        }
       }
       setFormOpen(false); setEditando(null)
     } finally { setSaving(false) }
