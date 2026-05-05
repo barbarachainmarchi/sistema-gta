@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import {
   TrendingUp, CheckCircle2, Clock, XCircle, Wallet, ShoppingCart,
-  CalendarCheck, Target, ArrowRight, DollarSign, Users,
+  CalendarCheck, Target, ArrowRight, DollarSign, Users, AlertCircle,
 } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -51,6 +51,8 @@ interface Props {
   disponibilidade: Disponibilidade | null
   hoje: string
   dispTodos: DispMembro[]
+  cotacoesAbertas: number
+  encomendasAbertas: number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -81,7 +83,7 @@ function saudacao(nome: string | null) {
 
 export function DashboardClient({
   userId, userNome, lojaNome, faccaoNome, conta, metaAtual, vendasSemana,
-  disponibilidade: dispInicial, hoje, dispTodos,
+  disponibilidade: dispInicial, hoje, dispTodos, cotacoesAbertas, encomendasAbertas,
 }: Props) {
   const sb = useCallback(() => createClient(), [])
 
@@ -161,6 +163,36 @@ export function DashboardClient({
           )}
         </div>
       </div>
+
+      {/* Alertas */}
+      {(cotacoesAbertas > 0 || encomendasAbertas > 0) && (
+        <div className="space-y-2">
+          {cotacoesAbertas > 0 && (
+            <Link href="/ferramentas/cotacao"
+              className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 hover:bg-amber-500/10 transition-colors">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <p className="text-sm text-amber-300 flex-1">
+                {cotacoesAbertas === 1
+                  ? '1 cotação em aberto'
+                  : `${cotacoesAbertas} cotações em aberto`}
+              </p>
+              <ArrowRight className="h-3.5 w-3.5 text-amber-400/60 shrink-0" />
+            </Link>
+          )}
+          {encomendasAbertas > 0 && (
+            <Link href="/encomendas"
+              className="flex items-center gap-3 rounded-lg border border-sky-500/30 bg-sky-500/[0.06] px-4 py-3 hover:bg-sky-500/10 transition-colors">
+              <AlertCircle className="h-4 w-4 text-sky-400 shrink-0" />
+              <p className="text-sm text-sky-300 flex-1">
+                {encomendasAbertas === 1
+                  ? '1 encomenda em aberto'
+                  : `${encomendasAbertas} encomendas em aberto`}
+              </p>
+              <ArrowRight className="h-3.5 w-3.5 text-sky-400/60 shrink-0" />
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Cards principais */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

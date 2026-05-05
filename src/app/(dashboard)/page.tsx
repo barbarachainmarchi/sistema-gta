@@ -19,6 +19,8 @@ export default async function DashboardPage() {
     { data: usuarioRow },
     { data: disponibilidadeRow },
     { data: dispTodosRow },
+    { count: cotacoesAbertas },
+    { count: encomendasAbertas },
   ] = await Promise.all([
     supabase
       .from('usuarios')
@@ -37,6 +39,8 @@ export default async function DashboardPage() {
       .eq('data', hoje)
       .eq('disponivel', true)
       .order('hora_inicio', { ascending: true, nullsFirst: false }),
+    supabase.from('cotacoes').select('*', { count: 'exact', head: true }).eq('status', 'rascunho'),
+    supabase.from('vendas').select('*', { count: 'exact', head: true }).eq('status', 'encomenda'),
   ])
 
   const membroId = usuarioRow?.membro_id ?? null
@@ -100,6 +104,8 @@ export default async function DashboardPage() {
         disponibilidade={disponibilidadeRow ?? null}
         hoje={hoje}
         dispTodos={dispTodos}
+        cotacoesAbertas={cotacoesAbertas ?? 0}
+        encomendasAbertas={encomendasAbertas ?? 0}
       />
     </>
   )
