@@ -120,7 +120,7 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
         await sb().from('cotacoes').delete().eq('id', sol.referencia_id)
       }
 
-      // Se aprovado e é cancelamento de venda → reverte lancamentos e deleta a venda
+      // Se aprovado e é cancelamento de venda → reverte lançamentos e marca como cancelado
       if (novoStatus === 'aprovado' && sol.tipo === 'cancelamento_venda' && sol.referencia_id) {
         const vendaId = sol.referencia_id
         const { data: lancs } = await sb().from('financeiro_lancamentos')
@@ -137,7 +137,13 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
             }
           }
         }
-        await sb().from('vendas').delete().eq('id', vendaId)
+        await sb().from('vendas').update({
+          status: 'cancelado',
+          cancelado_por: userId,
+          cancelado_por_nome: userNome,
+          cancelado_em: new Date().toISOString(),
+          cancelamento_solicitado: false,
+        }).eq('id', vendaId)
       }
 
       setSolicitacoes(prev => prev.map(s => s.id === sol.id

@@ -82,6 +82,7 @@ export default async function EncomendasPage() {
         faccaoServicos={[]}
         lojaServicos={[]}
         isDono={perms == null}
+        exclusaoSuprema={false}
         vendedores={[]}
       />
     </>

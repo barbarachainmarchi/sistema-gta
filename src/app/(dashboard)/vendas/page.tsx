@@ -39,7 +39,7 @@ export default async function VendasPage() {
     supabase.from('membros').select('id, nome, vulgo, telefone, faccao_id').eq('status', 'ativo').order('nome'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
-    supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id, exclusao_suprema').eq('id', user.id).maybeSingle(),
     supabase.from('config_sistema').select('valor').eq('chave', 'ocultar_concluidos_dias').maybeSingle(),
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, categoria').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome, tem_craft)'),
@@ -98,6 +98,8 @@ export default async function VendasPage() {
   const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
   const isDono = perms == null
   const isDonoFantasma = !isDono && donoId !== null && donoId === user.id
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exclusaoSuprema = !!(usuarioRow as any)?.exclusao_suprema
   const ocultarConcluidosDias = configOcultar?.valor ? parseInt(configOcultar.valor) || 0 : 7
 
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
@@ -148,6 +150,7 @@ export default async function VendasPage() {
         faccaoServicos={(faccaoServicosData ?? []) as { faccao_id: string; servico_id: string }[]}
         lojaServicos={(lojaServicosData ?? []) as { loja_id: string; servico_id: string }[]}
         isDono={isDono || isDonoFantasma}
+        exclusaoSuprema={exclusaoSuprema && !isDono && !isDonoFantasma}
         vendedores={(todosUsuariosData ?? []) as { id: string; nome: string }[]}
       />
     </>

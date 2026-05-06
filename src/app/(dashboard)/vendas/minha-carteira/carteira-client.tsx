@@ -98,6 +98,11 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletando, setDeletando] = useState(false)
 
+  // Solicitar exclusão da carteira
+  const [solicitarExclusaoId, setSolicitarExclusaoId] = useState<string | null>(null)
+  const [motivoExclusaoCart, setMotivoExclusaoCart] = useState('')
+  const [solicitandoExclusao, setSolicitandoExclusao] = useState(false)
+
   const [salvando, setSalvando] = useState(false)
 
   // Transferências pendentes para mim
@@ -316,6 +321,33 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
       toast.success('Venda excluída do sistema')
     } catch { toast.error('Erro ao excluir') }
     finally { setDeletando(false); setDeleteConfirmId(null) }
+  }
+
+  async function handleSolicitarExclusaoCarteira(vendaId: string, motivo: string) {
+    const venda = vendas.find(v => v.id === vendaId)
+    setSolicitandoExclusao(true)
+    try {
+      await sb().from('vendas').update({
+        cancelamento_solicitado: true,
+        cancelamento_motivo: motivo || 'Solicitado pelo vendedor via Carteira',
+        cancelamento_solicitado_por: userId,
+      }).eq('id', vendaId)
+      await sb().from('sistema_solicitacoes').insert({
+        tipo: 'cancelamento_venda',
+        referencia_id: vendaId,
+        referencia_tipo: 'venda',
+        descricao: `Exclusão carteira: ${venda?.cliente_nome ?? 'Venda'}`,
+        solicitante_id: userId,
+        solicitante_nome: userNome,
+        dados: { cliente_nome: venda?.cliente_nome, motivo: motivo || 'Solicitado pelo vendedor via Carteira' },
+      })
+      setVendas(prev => prev.map(v => v.id === vendaId
+        ? { ...v, cancelamento_solicitado: true, cancelamento_motivo: motivo || 'Solicitado pelo vendedor via Carteira' } : v))
+      toast.success('Solicitação enviada para aprovação dos donos')
+      setSolicitarExclusaoId(null)
+      setMotivoExclusaoCart('')
+    } catch { toast.error('Erro ao solicitar') }
+    finally { setSolicitandoExclusao(false) }
   }
 
   const contasAtivas = useMemo(() => contas.filter(c => c.status === 'ativo'), [contas])
@@ -572,6 +604,24 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                                 <button onClick={() => { setTransferindoVendaId(null); setDestSingle('') }}
                                   className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
                               </>
+                            ) : solicitarExclusaoId === venda.id ? (
+                              <>
+                                <input
+                                  type="text"
+                                  placeholder="Motivo (opcional)..."
+                                  value={motivoExclusaoCart}
+                                  onChange={e => setMotivoExclusaoCart(e.target.value)}
+                                  className="h-7 text-xs rounded-md border border-input bg-background px-2 text-foreground w-36 min-w-0"
+                                  autoFocus
+                                />
+                                <Button size="sm" className="h-7 text-xs px-2.5 bg-orange-500/80 hover:bg-orange-500 text-white border-0"
+                                  disabled={solicitandoExclusao}
+                                  onClick={() => handleSolicitarExclusaoCarteira(venda.id, motivoExclusaoCart)}>
+                                  {solicitandoExclusao ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Solicitar'}
+                                </Button>
+                                <button onClick={() => { setSolicitarExclusaoId(null); setMotivoExclusaoCart('') }}
+                                  className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
+                              </>
                             ) : (
                               <>
                                 {lanc && (
@@ -580,6 +630,19 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                                     <ArrowRightLeft className="h-3 w-3" />
                                     Transferir
                                   </button>
+                                )}
+                                {/* Solicitar exclusão (usuário comum, própria venda, sem solicitação pendente) */}
+                                {!podeExcluirConcluida && venda.criado_por === userId && !venda.cancelamento_solicitado && (
+                                  <button onClick={() => setSolicitarExclusaoId(venda.id)}
+                                    className="p-1 rounded hover:bg-red-500/10 text-muted-foreground/40 hover:text-red-400 transition-colors"
+                                    title="Solicitar exclusão desta venda">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {!podeExcluirConcluida && venda.cancelamento_solicitado && (
+                                  <span className="text-[10px] text-orange-400 font-medium" title={venda.cancelamento_motivo ?? ''}>
+                                    Exclusão solicitada
+                                  </span>
                                 )}
                                 {podeExcluirConcluida && (
                                   <button onClick={() => setDeleteConfirmId(venda.id)}

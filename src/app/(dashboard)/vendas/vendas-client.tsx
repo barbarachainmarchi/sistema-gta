@@ -12,8 +12,11 @@ import { toast } from 'sonner'
 import { cn, norm } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown, MoreVertical, Star,
 } from 'lucide-react'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { resolverPrecoFaixas, type PrecoFaixa } from '@/lib/precoFaixas'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
@@ -36,6 +39,8 @@ type Venda = {
   estoque_descontado: boolean; created_at: string; itens: VendaItem[]
   cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
   cancelamento_solicitado_por: string | null
+  tags: string[] | null
+  cancelado_por: string | null; cancelado_por_nome: string | null; cancelado_em: string | null
 }
 type Faccao = { id: string; nome: string; sigla: string | null; telefone: string | null; desconto_padrao_pct: number; is_darkchat: boolean }
 type Loja   = { id: string; nome: string }
@@ -75,6 +80,7 @@ interface Props {
   faccaoServicos: { faccao_id: string; servico_id: string }[]
   lojaServicos: { loja_id: string; servico_id: string }[]
   isDono: boolean
+  exclusaoSuprema: boolean
   vendedores: { id: string; nome: string }[]
 }
 
@@ -95,13 +101,10 @@ const STATUS_INFO: Record<StatusVenda, { label: string; cls: string }> = {
   entregue:   { label: 'Entregue',   cls: 'text-emerald-400 bg-emerald-500/15' },
   cancelado:  { label: 'Cancelado',  cls: 'text-zinc-400 bg-zinc-500/15' },
 }
-const STATUS_TRANSICOES: Record<StatusVenda, StatusVenda[]> = {
-  fabricando: ['encomenda', 'separado', 'pronto', 'cancelado'],
-  encomenda:  ['fabricando', 'separado', 'pronto', 'cancelado'],
-  separado:   ['fabricando', 'encomenda', 'pronto', 'cancelado'],
-  pronto:     ['separado', 'cancelado'],
-  entregue:   ['pronto'],
-  cancelado:  ['fabricando'],
+const TAGS_INFO: Record<string, { label: string; cls: string }> = {
+  pronto:     { label: 'Pronto',     cls: 'text-green-400 bg-green-500/15' },
+  separado:   { label: 'Separado',   cls: 'text-orange-400 bg-orange-500/15' },
+  prioridade: { label: 'Prioridade', cls: 'text-red-400 bg-red-500/15' },
 }
 
 // ── Seletor de Produtos (modal separado) ──────────────────────────────────────
@@ -160,8 +163,8 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens, onItemQtdChange,
-  isDono, vendedores, onTrocarVendedor }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, onDeletePermanente, onTagToggle, servicos, servicoItens, onItemQtdChange,
+  isDono, exclusaoSuprema, vendedores, onTrocarVendedor }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -171,10 +174,13 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   onDesfazerEntrega: (id: string) => void; onEdit: (v: Venda) => void
   onSolicitarCancelamento: (id: string, motivo: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  onDeletePermanente?: (id: string) => Promise<void>
+  onTagToggle: (id: string, tag: string) => void
   servicos: Servico[]
   servicoItens: ServicoItemVenda[]
   onItemQtdChange: (itemId: string, newQtd: number) => void
   isDono?: boolean
+  exclusaoSuprema?: boolean
   vendedores?: { id: string; nome: string }[]
   onTrocarVendedor?: (vendaId: string, novoId: string, novoNome: string) => Promise<void>
 }) {
@@ -243,30 +249,45 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   })()
   const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
-  const podeEntregar = venda.status === 'encomenda' || venda.status === 'pronto'
+  const cancelado = venda.status === 'cancelado'
+  const ativo = !entregue && !cancelado
+  const podeEntregar = ativo
   const temFabricar = venda.itens.some(it => it.origem === 'fabricar')
-  const ativo = !entregue && venda.status !== 'cancelado'
+  const mainStatus: StatusVenda = (venda.status === 'pronto' || venda.status === 'separado') ? 'fabricando' : venda.status
+  const tags = venda.tags ?? []
+  const canDirectDelete = !!(isDono || exclusaoSuprema) || (isOwner && podeEditar && venda.status !== 'encomenda')
+  const canRequestCancel = podeEditar && !isDono && !exclusaoSuprema && (!isOwner || venda.status === 'encomenda')
 
   return (
     <div className={cn(
       'rounded-lg border overflow-hidden flex flex-col',
-      entregue ? 'border-emerald-500/20 bg-emerald-500/[0.02]' : 'border-border',
-      venda.status === 'cancelado' && 'opacity-60'
+      venda.status === 'entregue' ? 'border-emerald-500/20 bg-emerald-500/[0.02]'
+        : venda.status === 'cancelado' ? 'border-red-500/20 bg-red-500/[0.02] opacity-75'
+        : 'border-border'
     )}>
       {/* Header */}
       <div className="px-3 py-2.5 bg-white/[0.02] border-b border-border/50 flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap mb-1">
-            <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full', STATUS_INFO[venda.status].cls)}>
-              {STATUS_INFO[venda.status].label}
+            <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full', STATUS_INFO[mainStatus].cls)}>
+              {STATUS_INFO[mainStatus].label}
             </span>
             <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
               venda.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
             )}>
               {venda.tipo_dinheiro === 'sujo' ? 'Sujo' : 'Limpo'}
             </span>
-            {venda.data_encomenda && (
+            {venda.status === 'encomenda' && venda.data_encomenda && (
               <span className="text-[10px] text-muted-foreground/70">{fmtData(venda.data_encomenda)}</span>
+            )}
+            {tags.map(tag => TAGS_INFO[tag] && (
+              <span key={tag} className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full', TAGS_INFO[tag].cls)}>
+                {tag === 'prioridade' && <Star className="h-2 w-2 inline mr-0.5" />}
+                {TAGS_INFO[tag].label}
+              </span>
+            ))}
+            {cancelado && venda.cancelado_por_nome && (
+              <span className="text-[10px] text-red-400/70">Cancelado por {venda.cancelado_por_nome}</span>
             )}
           </div>
           <p className="text-sm font-semibold truncate">{venda.cliente_nome || empresaNome || '—'}</p>
@@ -470,15 +491,15 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
 
       {podeEditar && (
         <div className="px-3 py-2 border-t border-border/40 flex items-center gap-1.5 bg-white/[0.01] flex-wrap">
+          {/* Seletor principal: Fabricando / Encomenda */}
           {ativo && (
-            <Select value={venda.status}
+            <Select value={mainStatus}
               onValueChange={v => { setLoadingStatus(true); onStatusChange(venda.id, v as StatusVenda) }}
               disabled={loadingStatus}>
               <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {([venda.status, ...STATUS_TRANSICOES[venda.status]] as StatusVenda[])
-                  .filter((v, i, a) => a.indexOf(v) === i)
-                  .map(s => <SelectItem key={s} value={s}>{STATUS_INFO[s].label}</SelectItem>)}
+                <SelectItem value="fabricando">Fabricando</SelectItem>
+                <SelectItem value="encomenda">Encomenda</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -492,10 +513,31 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
               <RotateCcw className="h-3 w-3" />Desfazer
             </Button>
           )}
-          {venda.status === 'cancelado' && (
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onStatusChange(venda.id, 'fabricando')}>Reabrir</Button>
-          )}
           <div className="ml-auto flex items-center gap-1 flex-wrap justify-end">
+            {/* Menu 3 pontinhos — tags visuais (só pedidos ativos) */}
+            {ativo && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                    <MoreVertical className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-36">
+                  {(['pronto', 'separado', 'prioridade'] as const).map(tag => (
+                    <DropdownMenuItem key={tag} onClick={() => onTagToggle(venda.id, tag)}
+                      className="flex items-center gap-2 cursor-pointer">
+                      <span className={cn('h-2 w-2 rounded-full shrink-0', {
+                        'bg-green-400': tag === 'pronto',
+                        'bg-orange-400': tag === 'separado',
+                        'bg-red-400': tag === 'prioridade',
+                      })} />
+                      <span className="flex-1">{TAGS_INFO[tag].label}</span>
+                      {tags.includes(tag) && <Check className="h-3 w-3 text-primary" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {!cancelamentoAberto && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                 onClick={handleCompartilhar} disabled={compartilhando} title="Exportar para imgbb">
@@ -507,33 +549,45 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                 <Edit2 className="h-3 w-3" />
               </Button>
             )}
-            {isOwner && venda.status === 'fabricando' && !cancelamentoAberto && (
+            {/* Excluir direto: dono/exclusaoSuprema ou próprio pedido não-encomenda */}
+            {canDirectDelete && ativo && !cancelamentoAberto && (
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
-                title="Excluir pedido"
+                title="Cancelar pedido"
                 onClick={() => onDelete(venda.id)}>
                 <Trash2 className="h-3 w-3" />
               </Button>
             )}
-            {isOwner && ativo && venda.status !== 'fabricando' && !venda.cancelamento_solicitado && !cancelamentoAberto && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2 text-muted-foreground hover:text-orange-400"
+            {/* Solicitar exclusão: não-dono, ou próprio pedido com status encomenda */}
+            {canRequestCancel && ativo && !venda.cancelamento_solicitado && !cancelamentoAberto && (
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+                title="Solicitar exclusão"
                 onClick={() => setCancelamentoAberto(true)}>
-                <X className="h-3 w-3 mr-1" />Solicitar cancelamento
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+            {/* Apagar permanentemente (donos/exclusaoSuprema no Concluídos) */}
+            {(isDono || exclusaoSuprema) && !ativo && (
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/40 hover:text-red-400"
+                title="Apagar permanentemente"
+                onClick={() => onDeletePermanente?.(venda.id)}>
+                <Trash2 className="h-3 w-3" />
               </Button>
             )}
             {venda.cancelamento_solicitado && !cancelamentoAberto && (
               <span className="text-[10px] text-orange-400 font-medium px-1" title={venda.cancelamento_motivo ?? ''}>
-                Canc. solicitado
+                Exclusão solicitada
               </span>
             )}
             {cancelamentoAberto && (
               <div className="flex items-center gap-1 w-full mt-1">
                 <input
-                  type="text" placeholder="Motivo do cancelamento..."
+                  type="text"
+                  placeholder={isOwner ? 'Motivo (opcional)...' : 'Motivo obrigatório...'}
                   value={motivoCancelamento} onChange={e => setMotivoCancelamento(e.target.value)}
                   className="flex-1 h-7 text-xs rounded-md border border-input bg-background px-2 text-foreground min-w-0"
                 />
                 <Button size="sm" className="h-7 text-xs px-2.5 bg-orange-500/80 hover:bg-orange-500 text-white border-0"
-                  disabled={salvandoCanc || !motivoCancelamento.trim()}
+                  disabled={salvandoCanc || (!isOwner && !motivoCancelamento.trim())}
                   onClick={async () => {
                     setSalvandoCanc(true)
                     await onSolicitarCancelamento(venda.id, motivoCancelamento.trim())
@@ -1162,26 +1216,29 @@ function OrderDialog({
                   className="h-8 text-sm" />
               </div>
 
-              {/* Data */}
-              <div className="space-y-1">
-                <Label className="text-xs">Data</Label>
-                <Input type="date" value={form.data_encomenda}
-                  onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))}
-                  className="h-8 text-sm" />
-              </div>
-
               {/* Status */}
               <div className="space-y-1">
                 <Label className="text-xs">Status</Label>
-                <Select value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as StatusVenda }))}>
+                <Select
+                  value={form.status === 'pronto' || form.status === 'separado' ? 'fabricando' : form.status}
+                  onValueChange={v => setForm(prev => ({ ...prev, status: v as StatusVenda }))}>
                   <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(['fabricando', 'encomenda', 'separado', 'pronto'] as StatusVenda[]).map(s => (
-                      <SelectItem key={s} value={s}>{STATUS_INFO[s].label}</SelectItem>
-                    ))}
+                    <SelectItem value="fabricando">Fabricando</SelectItem>
+                    <SelectItem value="encomenda">Encomenda</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Data prevista — só para encomenda */}
+              {form.status === 'encomenda' && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Data prevista</Label>
+                  <Input type="date" value={form.data_encomenda}
+                    onChange={e => setForm(prev => ({ ...prev, data_encomenda: e.target.value }))}
+                    className="h-8 text-sm" />
+                </div>
+              )}
 
               {/* Notas */}
               <div className="space-y-1">
@@ -1697,7 +1754,7 @@ export function VendasClient({
   receitas, estoque: estoqueInicial, membros: membrosIniciais,
   meuFaccao, meuLoja, filtroInicial, podeEditar, ocultarConcluidosDias,
   servicos, servicoItens, favoritosIniciais, faccaoServicos, lojaServicos,
-  isDono, vendedores,
+  isDono, exclusaoSuprema, vendedores,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
@@ -1762,10 +1819,13 @@ export function VendasClient({
   const vendasFiltradas = useMemo(() => {
     if (filtro === 'todos') return vendas.filter(v => v.status !== 'entregue' && v.status !== 'cancelado')
     if (filtro === 'entregue') {
-      const entregues = vendas.filter(v => v.status === 'entregue')
-      if (mostrarTodosConcluidos || ocultarConcluidosDias <= 0) return entregues
+      const concluidas = vendas.filter(v => v.status === 'entregue' || v.status === 'cancelado')
+      if (mostrarTodosConcluidos || ocultarConcluidosDias <= 0) return concluidas
       const limite = new Date(Date.now() - ocultarConcluidosDias * 86400000).toISOString()
-      return entregues.filter(v => (v.entregue_em ?? v.created_at) >= limite)
+      return concluidas.filter(v => {
+        const dataRef = v.status === 'entregue' ? (v.entregue_em ?? v.created_at) : (v.cancelado_em ?? v.created_at)
+        return dataRef >= limite
+      })
     }
     return vendas.filter(v => v.status === filtro)
   }, [vendas, filtro, mostrarTodosConcluidos, ocultarConcluidosDias])
@@ -1971,20 +2031,55 @@ export function VendasClient({
     } : v))
   }
 
-  async function handleDeletarVendaAtiva(id: string) {
-    // Só permitido quando status ainda é 'fabricando' (inicial, sem mudança)
+  async function handleCancelarVenda(id: string) {
     const venda = vendas.find(v => v.id === id)
-    if (!venda || venda.status !== 'fabricando') return
-    const { error } = await sb().from('vendas').delete().eq('id', id)
-    if (error) { toast.error('Erro ao excluir'); return }
-    setVendas(prev => prev.filter(v => v.id !== id))
-    toast.success('Pedido excluído')
+    if (!venda) return
+    const agora = new Date().toISOString()
+    const { error } = await sb().from('vendas').update({
+      status: 'cancelado',
+      cancelado_por: userId,
+      cancelado_por_nome: userNome,
+      cancelado_em: agora,
+    }).eq('id', id)
+    if (error) { toast.error('Erro ao cancelar pedido'); return }
+    // Remover lançamento financeiro se houver (venda já entregue sendo cancelada)
+    await removerLancamentosVenda(id)
+    setVendas(prev => prev.map(v => v.id === id ? {
+      ...v, status: 'cancelado', cancelado_por: userId, cancelado_por_nome: userNome, cancelado_em: agora,
+    } : v))
+    toast.success('Pedido cancelado')
     sb().from('sistema_logs').insert({
-      tipo: 'venda_excluida', referencia_id: id, referencia_tipo: 'venda',
-      descricao: `Venda excluída (ativa): ${venda.cliente_nome || 'Sem identificação'}`,
+      tipo: 'venda_cancelada', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Venda cancelada: ${venda.cliente_nome || 'Sem identificação'}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: venda.cliente_nome, status_anterior: venda.status },
+    }).then(() => {})
+  }
+
+  async function handleDeletarPermanente(id: string) {
+    const venda = vendas.find(v => v.id === id)
+    if (!venda) return
+    await removerLancamentosVenda(id)
+    const { error } = await sb().from('vendas').delete().eq('id', id)
+    if (error) { toast.error('Erro ao apagar'); return }
+    setVendas(prev => prev.filter(v => v.id !== id))
+    toast.success('Apagado permanentemente')
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_apagada', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Venda apagada: ${venda.cliente_nome || 'Sem identificação'}`,
       usuario_id: userId, usuario_nome: userNome,
       dados: { cliente_nome: venda.cliente_nome, status: venda.status },
     }).then(() => {})
+  }
+
+  async function handleTagToggle(vendaId: string, tag: string) {
+    const venda = vendas.find(v => v.id === vendaId)
+    if (!venda) return
+    const current = venda.tags ?? []
+    const newTags = current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag]
+    const { error } = await sb().from('vendas').update({ tags: newTags }).eq('id', vendaId)
+    if (error) { toast.error('Erro ao atualizar tag'); return }
+    setVendas(prev => prev.map(v => v.id === vendaId ? { ...v, tags: newTags } : v))
   }
 
   async function handleTrocarVendedor(vendaId: string, novoId: string, novoNome: string) {
@@ -2015,7 +2110,7 @@ export function VendasClient({
       tipo: 'cancelamento_venda',
       referencia_id: id,
       referencia_tipo: 'venda',
-      descricao: `Cancelamento: ${venda?.cliente_nome ?? 'Venda'} (${venda?.status ?? ''})`,
+      descricao: `Exclusão: ${venda?.cliente_nome ?? 'Venda'} (${venda?.status ?? ''})`,
       solicitante_id: userId,
       solicitante_nome: userNome,
       dados: { cliente_nome: venda?.cliente_nome, status_atual: venda?.status, motivo },
@@ -2036,14 +2131,14 @@ export function VendasClient({
   async function handleDesfazerEntrega(id: string) {
     const vendaDesf = vendas.find(v => v.id === id)
     const { error } = await sb().from('vendas').update({
-      status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null,
+      status: 'fabricando', entregue_por: null, entregue_por_nome: null, entregue_em: null,
     }).eq('id', id)
     if (error) { toast.error('Erro ao desfazer entrega'); return }
     // Remover lançamento financeiro e reverter saldo — nova entrega vai recriar corretamente
     await removerLancamentosVenda(id)
     setVendas(prev => prev.map(v => v.id === id
-      ? { ...v, status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null } : v))
-    toast.success('Entrega desfeita — voltou para Pronto')
+      ? { ...v, status: 'fabricando', entregue_por: null, entregue_por_nome: null, entregue_em: null } : v))
+    toast.success('Entrega desfeita — voltou para Fabricando')
     sb().from('sistema_logs').insert({
       tipo: 'venda_entrega_desfeita', referencia_id: id, referencia_tipo: 'venda',
       descricao: `Entrega desfeita: ${vendaDesf?.cliente_nome || 'Sem identificação'}`,
@@ -2167,11 +2262,14 @@ export function VendasClient({
                       onDesfazerEntrega={handleDesfazerEntrega}
                       onEdit={v => { setEditando(v); setVendedorId(v.criado_por ?? ''); setFormOpen(true) }}
                       onSolicitarCancelamento={handleSolicitarCancelamento}
-                      onDelete={handleDeletarVendaAtiva}
+                      onDelete={handleCancelarVenda}
+                      onDeletePermanente={handleDeletarPermanente}
+                      onTagToggle={handleTagToggle}
                       servicos={servicos}
                       servicoItens={servicoItens}
                       onItemQtdChange={(itemId, qtd) => handleItemQtdChange(venda.id, itemId, qtd)}
                       isDono={isDono}
+                      exclusaoSuprema={exclusaoSuprema}
                       vendedores={vendedores}
                       onTrocarVendedor={handleTrocarVendedor}
                     />
