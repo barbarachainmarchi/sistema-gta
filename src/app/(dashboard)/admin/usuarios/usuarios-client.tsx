@@ -1650,15 +1650,15 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   <span className="text-xs text-muted-foreground">{formatDate(infoUsuario.created_at)}</span>
                 </div>
               </div>
-              {infoUsuario.id !== currentUserId && (
-                <div className="flex items-center gap-2 pt-2 border-t border-border">
-                  <Button
-                    variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1.5"
-                    onClick={() => { openEdit(infoUsuario); setInfoUsuario(null) }}
-                  >
-                    <Edit2 className="h-3 w-3" />
-                    Editar
-                  </Button>
+              <div className="flex items-center gap-2 pt-2 border-t border-border">
+                <Button
+                  variant="outline" size="sm" className="flex-1 h-8 text-xs gap-1.5"
+                  onClick={() => { openEdit(infoUsuario); setInfoUsuario(null) }}
+                >
+                  <Edit2 className="h-3 w-3" />
+                  Editar
+                </Button>
+                {infoUsuario.id !== currentUserId && (
                   <Button
                     variant="outline" size="sm" className="flex-1 h-8 text-xs"
                     onClick={async () => {
@@ -1677,8 +1677,8 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                   >
                     {infoUsuario.status === 'ativo' ? 'Desativar' : 'Ativar'}
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
