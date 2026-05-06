@@ -46,11 +46,12 @@ interface Props {
   userId: string; userNome: string | null
   logsIniciais: Log[]; solicitacoesIniciais: Solicitacao[]
   podeAprovar: boolean
+  podeExcluirLog: boolean
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciais, podeAprovar }: Props) {
+export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciais, podeAprovar, podeExcluirLog }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -58,6 +59,8 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
   const [logs, setLogs] = useState<Log[]>(logsIniciais)
   const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>(solicitacoesIniciais)
   const [resolvendo, setResolvendo] = useState<string | null>(null)
+  const [deletandoSol, setDeletandoSol] = useState<string | null>(null)
+  const [deletandoLog, setDeletandoLog] = useState<string | null>(null)
   const [confirmLimpar, setConfirmLimpar] = useState<'log' | 'solicitacoes' | null>(null)
   const [limpando, setLimpando] = useState(false)
 
@@ -96,15 +99,44 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
   }
 
   async function handleDeleteSolicitacao(id: string) {
-    const { error } = await sb().from('sistema_solicitacoes').delete().eq('id', id)
-    if (error) { toast.error(error.message); return }
+    setDeletandoSol(id)
+    // Optimistic: remove imediatamente da UI
     setSolicitacoes(prev => prev.filter(s => s.id !== id))
+    const { error } = await sb().from('sistema_solicitacoes').delete().eq('id', id)
+    if (error) {
+      // Rollback: restaurar o item se o DB falhou
+      setSolicitacoes(prev => {
+        const jaExiste = prev.some(s => s.id === id)
+        if (jaExiste) return prev
+        const original = solicitacoesIniciais.find(s => s.id === id)
+        return original ? [...prev, original].sort((a, b) => b.created_at.localeCompare(a.created_at)) : prev
+      })
+      toast.error('Erro ao excluir: ' + error.message)
+    }
+    setDeletandoSol(null)
+  }
+
+  async function handleDeleteLog(id: string) {
+    setDeletandoLog(id)
+    // Optimistic: remove imediatamente
+    setLogs(prev => prev.filter(l => l.id !== id))
+    const { error } = await sb().from('sistema_logs').delete().eq('id', id)
+    if (error) {
+      // Rollback
+      setLogs(prev => {
+        const jaExiste = prev.some(l => l.id === id)
+        if (jaExiste) return prev
+        const original = logsIniciais.find(l => l.id === id)
+        return original ? [...prev, original].sort((a, b) => b.created_at.localeCompare(a.created_at)) : prev
+      })
+      toast.error('Erro ao excluir: ' + error.message)
+    }
+    setDeletandoLog(null)
   }
 
   async function handleResolver(sol: Solicitacao, novoStatus: 'aprovado' | 'rejeitado') {
     setResolvendo(sol.id)
     try {
-      // Atualiza a solicitação
       const { error } = await sb().from('sistema_solicitacoes').update({
         status: novoStatus,
         aprovador_id: userId,
@@ -113,14 +145,12 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
       }).eq('id', sol.id)
       if (error) throw new Error(error.message)
 
-      // Se aprovado e é cancelamento de cotação → deleta a cotação
       if (novoStatus === 'aprovado' && sol.tipo === 'cancelamento_cotacao' && sol.referencia_id) {
         await sb().from('cotacao_itens').delete().eq('cotacao_id', sol.referencia_id)
         await sb().from('cotacao_pessoas').delete().eq('cotacao_id', sol.referencia_id)
         await sb().from('cotacoes').delete().eq('id', sol.referencia_id)
       }
 
-      // Se aprovado e é cancelamento de venda → reverte lançamentos e marca como cancelado
       if (novoStatus === 'aprovado' && sol.tipo === 'cancelamento_venda' && sol.referencia_id) {
         const vendaId = sol.referencia_id
         const { data: lancs } = await sb().from('financeiro_lancamentos')
@@ -228,19 +258,27 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                       )}
                     </div>
                     {podeAprovar && (
-                      <div className="flex gap-2 shrink-0">
+                      <div className="flex gap-2 shrink-0 items-center">
                         <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-400 border-red-500/30 hover:border-red-500/60"
-                          disabled={resolvendo === sol.id}
+                          disabled={resolvendo === sol.id || deletandoSol === sol.id}
                           onClick={() => handleResolver(sol, 'rejeitado')}>
                           {resolvendo === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                           Rejeitar
                         </Button>
                         <Button size="sm" className="h-7 text-xs gap-1"
-                          disabled={resolvendo === sol.id}
+                          disabled={resolvendo === sol.id || deletandoSol === sol.id}
                           onClick={() => handleResolver(sol, 'aprovado')}>
                           {resolvendo === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                           Aprovar
                         </Button>
+                        {/* Excluir pendente diretamente */}
+                        <button
+                          disabled={deletandoSol === sol.id || resolvendo === sol.id}
+                          onClick={() => handleDeleteSolicitacao(sol.id)}
+                          className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-colors disabled:opacity-30"
+                          title="Excluir solicitação">
+                          {deletandoSol === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                        </button>
                       </div>
                     )}
                     {!podeAprovar && (
@@ -273,7 +311,7 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                 ) : podeAprovar ? (
                   <button onClick={() => setConfirmLimpar('solicitacoes')}
                     className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-                    <Trash2 className="h-3 w-3" /> Limpar
+                    <Trash2 className="h-3 w-3" /> Limpar tudo
                   </button>
                 ) : null}
               </div>
@@ -295,10 +333,11 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                     </div>
                     {podeAprovar && (
                       <button
+                        disabled={deletandoSol === sol.id}
                         onClick={() => handleDeleteSolicitacao(sol.id)}
-                        className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-white/[0.06] transition-colors shrink-0"
+                        className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/30 hover:text-destructive hover:bg-white/[0.06] transition-colors disabled:opacity-30 shrink-0"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        {deletandoSol === sol.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                       </button>
                     )}
                   </div>
@@ -346,15 +385,27 @@ export function LogsClient({ userId, userNome, logsIniciais, solicitacoesIniciai
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground w-32">Tipo</th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">Descrição</th>
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground w-32">Usuário</th>
+                    {podeExcluirLog && <th className="px-3 py-2 w-8" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {logs.map(l => (
-                    <tr key={l.id} className="hover:bg-white/[0.02]">
+                    <tr key={l.id} className="hover:bg-white/[0.02] group">
                       <td className="px-3 py-2.5 text-muted-foreground tabular-nums whitespace-nowrap">{fmtDt(l.created_at)}</td>
                       <td className="px-3 py-2.5 text-muted-foreground">{l.tipo}</td>
                       <td className="px-3 py-2.5">{l.descricao ?? '—'}</td>
                       <td className="px-3 py-2.5 text-muted-foreground">{l.usuario_nome ?? '—'}</td>
+                      {podeExcluirLog && (
+                        <td className="px-2 py-2.5">
+                          <button
+                            disabled={deletandoLog === l.id}
+                            onClick={() => handleDeleteLog(l.id)}
+                            className="h-5 w-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-destructive hover:bg-white/[0.06] transition-all disabled:opacity-30"
+                            title="Excluir registro">
+                            {deletandoLog === l.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

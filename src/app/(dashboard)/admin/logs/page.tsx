@@ -13,16 +13,24 @@ export default async function LogsPage() {
     { data: solicitacoesData },
     { data: usuarioRow },
     { data: permRow },
+    { data: donoConfig },
   ] = await Promise.all([
     supabase.from('sistema_logs').select('*').order('created_at', { ascending: false }).limit(300),
     supabase.from('sistema_solicitacoes').select('*').order('created_at', { ascending: false }).limit(200),
-    supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('nome, exclusao_suprema').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
+    supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
-  const podeAprovar = perms == null ? true : (perms.find((p: { modulo: string; pode_editar: boolean }) => p.modulo === 'admin_logs')?.pode_editar ?? false)
+  const isDono = perms == null
+  const isDonoFantasma = !isDono && donoConfig?.valor === user.id
+  const podeAprovar = isDono || isDonoFantasma
+    || (perms?.find((p: { modulo: string; pode_editar: boolean }) => p.modulo === 'admin_logs')?.pode_editar ?? false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exclusaoSuprema = !!(usuarioRow as any)?.exclusao_suprema
+  const podeExcluirLog = isDono || isDonoFantasma || exclusaoSuprema
 
   return (
     <>
@@ -33,6 +41,7 @@ export default async function LogsPage() {
         logsIniciais={(logsData ?? []) as Log[]}
         solicitacoesIniciais={(solicitacoesData ?? []) as Solicitacao[]}
         podeAprovar={podeAprovar}
+        podeExcluirLog={podeExcluirLog}
       />
     </>
   )
