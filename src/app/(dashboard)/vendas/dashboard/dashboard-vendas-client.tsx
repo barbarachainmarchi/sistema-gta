@@ -46,11 +46,9 @@ function calcTotal(v: Venda): number {
   return sub * (1 - v.desconto_pct / 100)
 }
 
-type Shortcut = 'hoje' | '7d' | '30d' | 'mes' | '3m' | '6m' | 'ano' | 'tudo'
+type Shortcut = '7d' | 'mes' | 'tudo'
 const SHORTCUTS: [Shortcut, string][] = [
-  ['hoje', 'Hoje'], ['7d', '7 dias'], ['mes', 'Este mês'],
-  ['30d', '30 dias'], ['3m', '3 meses'], ['6m', '6 meses'],
-  ['ano', '1 ano'], ['tudo', 'Tudo'],
+  ['7d', 'Últimos 7 dias'], ['mes', 'Este mês'], ['tudo', 'Tudo'],
 ]
 
 function calcShortcut(s: Shortcut): [string, string] {
@@ -59,29 +57,12 @@ function calcShortcut(s: Shortcut): [string, string] {
   const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   const today = toISO(now)
 
-  if (s === 'hoje') return [today, today]
   if (s === '7d') {
     const d = new Date(now); d.setDate(d.getDate() - 6)
     return [toISO(d), today]
   }
-  if (s === '30d') {
-    const d = new Date(now); d.setDate(d.getDate() - 29)
-    return [toISO(d), today]
-  }
   if (s === 'mes') {
     const d = new Date(now.getFullYear(), now.getMonth(), 1)
-    return [toISO(d), today]
-  }
-  if (s === '3m') {
-    const d = new Date(now); d.setMonth(d.getMonth() - 3)
-    return [toISO(d), today]
-  }
-  if (s === '6m') {
-    const d = new Date(now); d.setMonth(d.getMonth() - 6)
-    return [toISO(d), today]
-  }
-  if (s === 'ano') {
-    const d = new Date(now); d.setFullYear(d.getFullYear() - 1)
     return [toISO(d), today]
   }
   return ['', '']
@@ -148,9 +129,9 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  const [shortcut, setShortcut] = useState<Shortcut>('30d')
-  const [dataDe, setDataDe] = useState(() => calcShortcut('30d')[0])
-  const [dataAte, setDataAte] = useState(() => calcShortcut('30d')[1])
+  const [shortcut, setShortcut] = useState<Shortcut>('tudo')
+  const [dataDe, setDataDe] = useState('')
+  const [dataAte, setDataAte] = useState('')
   const [empresaFiltro, setEmpresaFiltro] = useState('')
   const [produtoFiltro, setProdutoFiltro] = useState('')
   const [tipoDin, setTipoDin] = useState<'todos' | 'sujo' | 'limpo'>('todos')

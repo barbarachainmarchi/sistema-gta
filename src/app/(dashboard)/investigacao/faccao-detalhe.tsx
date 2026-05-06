@@ -21,7 +21,7 @@ const FACTION_COLORS = [
   '#10b981','#06b6d4','#3b82f6','#6b7280',
 ]
 
-export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; tem_parceria: boolean; parceria_obs: string | null; created_at: string; updated_at: string }
+export type Faccao      = { id: string; nome: string; sigla: string | null; descricao: string | null; territorio: string | null; cor_tag: string; deep: string | null; status: 'ativo' | 'inativo'; desconto_padrao_pct: number; telefone: string | null; observacoes: string | null; tem_parceria: boolean; parceria_obs: string | null; is_darkchat: boolean; created_at: string; updated_at: string }
 export type Membro      = { id: string; nome: string; vulgo: string | null; telefone: string | null; instagram: string | null; deep: string | null; faccao_id: string | null; cargo_faccao: string | null; status: 'ativo' | 'inativo'; observacoes: string | null; membro_proprio: boolean; data_entrada: string | null; data_saida: string | null; local_trabalho_loja_id: string | null; faccoes: { id: string; nome: string; cor_tag: string } | null }
 export type Veiculo     = { id: string; placa: string | null; modelo: string | null; cor: string | null; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido' | null; proprietario_id: string | null; observacoes: string | null }
 export type FaccaoPreco = {
@@ -72,11 +72,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
 
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
-  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '' })
+  const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '', is_darkchat: faccao.is_darkchat ?? false })
   const [geralSaving, setGeralSaving] = useState(false)
 
   function abrirEdicao() {
-    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '' })
+    setGeralForm({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '', is_darkchat: faccao.is_darkchat ?? false })
     setEditando(true)
   }
 
@@ -93,6 +93,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       observacoes: geralForm.observacoes.trim() || null,
       tem_parceria: geralForm.tem_parceria,
       parceria_obs: geralForm.tem_parceria ? (geralForm.parceria_obs.trim() || null) : null,
+      is_darkchat: geralForm.is_darkchat,
     }).eq('id', faccao.id).select().single()
     setGeralSaving(false)
     if (error) { toast.error('Erro ao salvar'); return }
@@ -652,6 +653,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
             <span className={cn('text-[11px] px-2 py-0.5 rounded-full', faccao.status === 'ativo' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-500/10 text-zinc-500')}>
               {faccao.status === 'ativo' ? 'Ativa' : 'Inativa'}
             </span>
+            {faccao.is_darkchat && (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 font-bold">DC</span>
+            )}
             {faccao.tem_parceria && (
               <span title={faccao.parceria_obs ?? 'Parceria ativa'} className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400">
                 <Handshake className="h-3 w-3" />
@@ -744,6 +748,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                     <Textarea value={geralForm.parceria_obs} onChange={e => setGeralForm(f => ({ ...f, parceria_obs: e.target.value }))} placeholder="Detalhes da parceria, acordos, condições..." rows={3} className="text-sm resize-none" />
                   </div>
                 )}
+              </div>
+              <div className="flex items-center gap-2 rounded-md border border-border/50 p-3 bg-cyan-500/[0.03]">
+                <Switch checked={geralForm.is_darkchat} onCheckedChange={v => setGeralForm(f => ({ ...f, is_darkchat: v }))} />
+                <span className="text-xs font-medium text-muted-foreground">Facção do Darkchat</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

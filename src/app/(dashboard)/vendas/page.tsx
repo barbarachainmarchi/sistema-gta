@@ -31,7 +31,7 @@ export default async function VendasPage() {
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*, servico_id'),
-    supabase.from('faccoes').select('id, nome, sigla, telefone, desconto_padrao_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('faccoes').select('id, nome, sigla, telefone, desconto_padrao_pct, is_darkchat').eq('status', 'ativo').order('nome'),
     supabase.from('items').select('id, nome, tem_craft, peso, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('estoque_movimentos').select('item_id, tipo, quantidade, created_at'),

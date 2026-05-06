@@ -37,7 +37,7 @@ type Venda = {
   cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
   cancelamento_solicitado_por: string | null
 }
-type Faccao = { id: string; nome: string; sigla: string | null; telefone: string | null; desconto_padrao_pct: number }
+type Faccao = { id: string; nome: string; sigla: string | null; telefone: string | null; desconto_padrao_pct: number; is_darkchat: boolean }
 type Loja   = { id: string; nome: string }
 type Membro = { id: string; nome: string; vulgo: string | null; telefone: string | null; faccao_id: string | null }
 type ItemSimples = { id: string; nome: string; tem_craft: boolean; peso: number | null; categorias_item: { nome: string } | null }
@@ -202,10 +202,12 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
     finally { setCompartilhando(false) }
   }
 
-  const faccaoNome = faccoes.find(f => f.id === venda.faccao_id)?.nome ?? null
+  const faccaoObj = faccoes.find(f => f.id === venda.faccao_id) ?? null
+  const faccaoNome = faccaoObj?.nome ?? null
   const lojaNome = lojas.find(l => l.id === venda.loja_id)?.nome ?? null
   const empresaNome = faccaoNome ?? lojaNome
   const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
+  const isDarkchat = faccaoObj?.is_darkchat ?? false
   // Subtotal usa preço definido do combo quando disponível (igual à exibição por item)
   const subtotal = (() => {
     const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
@@ -260,11 +262,12 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
               <span className="text-[10px] text-muted-foreground/70">{fmtData(venda.data_encomenda)}</span>
             )}
           </div>
-          <p className="text-sm font-semibold truncate">{venda.cliente_nome}</p>
+          <p className="text-sm font-semibold truncate">{venda.cliente_nome || empresaNome || '—'}</p>
           <div className="flex items-center gap-2.5 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
             {empresaNome && (
-              <span className={cn('font-medium text-[11px]', empresaTipo === 'loja' ? 'text-blue-400/80' : 'text-primary/70')}>
+              <span className={cn('font-medium text-[11px] flex items-center gap-1', empresaTipo === 'loja' ? 'text-blue-400/80' : 'text-primary/70')}>
                 {empresaTipo === 'loja' ? '[Loja] ' : ''}{empresaNome}
+                {isDarkchat && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400">DC</span>}
               </span>
             )}
             {venda.cliente_telefone && <span>{venda.cliente_telefone}</span>}
@@ -531,6 +534,7 @@ function OrderDialog({
 }) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
+  const membroBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [filterCategoria, setFilterCategoria] = useState('')
@@ -688,12 +692,12 @@ function OrderDialog({
   }
 
   // Empresa autocomplete
-  type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number } | { tipo: 'loja'; id: string; nome: string }
+  type EmpresaOpc = { tipo: 'faccao'; id: string; nome: string; sigla: string | null; desconto: number; is_darkchat: boolean } | { tipo: 'loja'; id: string; nome: string }
   const empresaSugestoes = useMemo((): EmpresaOpc[] => {
     if (!empresaAberta) return []
     const q = norm(empresaNome).trim()
     const ff = (q ? faccoes.filter(f => norm(f.nome).includes(q) || norm(f.sigla).includes(q)) : faccoes)
-      .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct }))
+      .map(f => ({ tipo: 'faccao' as const, id: f.id, nome: f.nome, sigla: f.sigla ?? null, desconto: f.desconto_padrao_pct, is_darkchat: f.is_darkchat }))
     const ll = (q ? lojas.filter(l => norm(l.nome).includes(q)) : lojas)
       .map(l => ({ tipo: 'loja' as const, id: l.id, nome: l.nome }))
     return [...ff, ...ll].slice(0, 12)
@@ -725,18 +729,19 @@ function OrderDialog({
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta) return []
     const q = norm(membroNome).trim()
-    const pool = form.faccao_id
-      ? membros.filter(m => m.faccao_id === form.faccao_id || m.faccao_id === null)
-      : membros
     const filtered = q
-      ? pool.filter(m => norm(m.nome).includes(q) || norm(m.vulgo).includes(q))
-      : pool
+      ? membros.filter(m => norm(m.nome).includes(q) || norm(m.vulgo).includes(q))
+      : membros
     return filtered
       .sort((a, b) => {
         // membros da facção selecionada primeiro
         const af = form.faccao_id && a.faccao_id === form.faccao_id ? 0 : 1
         const bf = form.faccao_id && b.faccao_id === form.faccao_id ? 0 : 1
         if (af !== bf) return af - bf
+        // depois civils (sem facção)
+        const ac = a.faccao_id === null ? 0 : 1
+        const bc = b.faccao_id === null ? 0 : 1
+        if (ac !== bc) return ac - bc
         return a.nome.localeCompare(b.nome)
       })
       .slice(0, 10)
@@ -1039,6 +1044,7 @@ function OrderDialog({
                           {e.tipo === 'faccao' ? 'F' : 'L'}
                         </span>
                         <span className="font-medium truncate">{e.nome}</span>
+                        {e.tipo === 'faccao' && e.is_darkchat && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400 shrink-0">DC</span>}
                         {e.tipo === 'faccao' && e.desconto > 0 && <span className="ml-auto text-green-400 shrink-0">{e.desconto}%</span>}
                       </button>
                     ))}
@@ -1048,12 +1054,12 @@ function OrderDialog({
 
               {/* Nome / Membro */}
               <div className="space-y-1 relative">
-                <Label className="text-xs">Nome / Membro <span className="text-destructive">*</span></Label>
+                <Label className="text-xs">Nome / Vulgo</Label>
                 <Input value={membroNome}
                   onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
-                  onFocus={() => setMembroAberta(true)}
-                  onBlur={() => setTimeout(() => setMembroAberta(false), 250)}
-                  placeholder={form.faccao_id ? 'Nome ou vulgo (facção)...' : form.loja_id ? 'Nome ou vulgo...' : 'Nome ou vulgo...'}
+                  onFocus={() => { if (membroBlurTimeout.current) { clearTimeout(membroBlurTimeout.current); membroBlurTimeout.current = null }; setMembroAberta(true) }}
+                  onBlur={() => { membroBlurTimeout.current = setTimeout(() => setMembroAberta(false), 250) }}
+                  placeholder="Nome, vulgo ou apelido..."
                   className="h-8 text-sm" />
                 {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
                   <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
@@ -1081,9 +1087,10 @@ function OrderDialog({
                           <Input placeholder="Telefone (opcional)" value={novoMembroTel}
                             onChange={e => setNovoMembroTel(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
+                            onFocus={() => { if (membroBlurTimeout.current) { clearTimeout(membroBlurTimeout.current); membroBlurTimeout.current = null } }}
                             className="h-7 text-xs flex-1" onMouseDown={e => e.stopPropagation()} />
                           <button type="button" disabled={criandoMembro}
-                            onMouseDown={e => { e.preventDefault(); handleCadastrarMembro() }}
+                            onMouseDown={e => { e.preventDefault(); if (membroBlurTimeout.current) { clearTimeout(membroBlurTimeout.current); membroBlurTimeout.current = null }; handleCadastrarMembro() }}
                             className="h-7 px-2.5 text-xs bg-primary text-primary-foreground rounded hover:opacity-90 disabled:opacity-50 shrink-0 flex items-center gap-1">
                             {criandoMembro ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                             Adicionar
@@ -1141,8 +1148,8 @@ function OrderDialog({
                   className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring resize-none" />
               </div>
 
-              {/* Vendedor (só donos, só novo pedido) */}
-              {isDono && !editando && (
+              {/* Vendedor (só donos) */}
+              {isDono && (
                 <div className="space-y-1 pt-1 border-t border-border/50">
                   <Label className="text-xs text-muted-foreground">Registrar como</Label>
                   <Select value={vendedorId || '_eu'} onValueChange={v => setVendedorId(v === '_eu' ? '' : v)}>
@@ -1608,7 +1615,7 @@ function OrderDialog({
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button size="sm"
             onClick={() => onSave({ ...form, itens: buildItens() })}
-            disabled={saving || !form.cliente_nome.trim() || cart.length === 0}>
+            disabled={saving || (!form.cliente_nome.trim() && !form.faccao_id && !form.loja_id) || cart.length === 0}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editando ? 'Salvar' : 'Criar Pedido'}
           </Button>
         </div>
@@ -1720,10 +1727,13 @@ export function VendasClient({
   }, [vendas, filtro, mostrarTodosConcluidos, ocultarConcluidosDias])
 
   async function handleSave(form: FormState) {
-    if (!form.cliente_nome.trim() || form.itens.length === 0) return
+    if ((!form.cliente_nome.trim() && !form.faccao_id && !form.loja_id) || form.itens.length === 0) return
     setSaving(true)
     try {
       if (editando) {
+        const novoVendedorNome = (isDono && vendedorId && vendedorId !== userId)
+          ? (vendedores.find(v => v.id === vendedorId)?.nome ?? userNome)
+          : userNome
         const { error } = await sb().from('vendas').update({
           faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
           cliente_nome: form.cliente_nome.trim(),
@@ -1732,6 +1742,8 @@ export function VendasClient({
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
+          criado_por: vendedorId || userId,
+          criado_por_nome: novoVendedorNome,
         }).eq('id', editando.id)
         if (error) { toast.error('Erro ao salvar: ' + error.message); return }
 
@@ -1751,6 +1763,8 @@ export function VendasClient({
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
+          criado_por: vendedorId || userId,
+          criado_por_nome: novoVendedorNome,
           itens: (itensData ?? []) as VendaItem[],
         } : v))
         toast.success('Pedido atualizado!')
@@ -2047,7 +2061,7 @@ export function VendasClient({
                       onStatusChange={handleStatusChange}
                       onEntregar={handleEntregar}
                       onDesfazerEntrega={handleDesfazerEntrega}
-                      onEdit={v => { setEditando(v); setFormOpen(true) }}
+                      onEdit={v => { setEditando(v); setVendedorId(v.criado_por ?? ''); setFormOpen(true) }}
                       onSolicitarCancelamento={handleSolicitarCancelamento}
                       onDelete={handleDeletarVendaAtiva}
                       servicos={servicos}
