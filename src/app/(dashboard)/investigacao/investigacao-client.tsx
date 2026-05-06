@@ -120,14 +120,18 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     setBuscando(true)
     const { data } = await sb()
       .from('loja_item_precos')
-      .select('preco, lojas(id, nome), items(nome)')
+      .select('preco, lojas(id, nome), items(nome, apelidos)')
       .order('preco')
     setBuscando(false)
     if (!data) return
     const termo_lower = norm(termo)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtrado = (data as any[])
-      .filter((r: any) => norm(r.items?.nome).includes(termo_lower))
+      .filter((r: any) => {
+        if (norm(r.items?.nome).includes(termo_lower)) return true
+        const apelidos = (r.items?.apelidos ?? '').split(',').map((a: string) => norm(a.trim()))
+        return apelidos.some((a: string) => a && a.includes(termo_lower))
+      })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((r: any) => ({ loja_id: r.lojas?.id ?? '', loja_nome: r.lojas?.nome ?? '—', item_nome: r.items?.nome ?? '—', preco: r.preco }))
     setResultadosBusca(filtrado)
