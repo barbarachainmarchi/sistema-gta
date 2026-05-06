@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown, Handshake } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Loader2, Users, Car, Check, ChevronDown, Handshake, Package } from 'lucide-react'
 import { cn, norm } from '@/lib/utils'
 import { FaccaoDetalhe, type Faccao, type Membro, type Veiculo, type FaccaoPreco, type Produto, type Servico } from './faccao-detalhe'
 import { LojaDetalhe } from './loja-detalhe'
@@ -31,6 +31,8 @@ const emptyMembroForm: { nome: string; vulgo: string; telefone: string; instagra
 const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietario_tipo: 'membro' | 'faccao' | 'desconhecido'; proprietario_id: string; observacoes: string } = { placa: '', modelo: '', cor: '', proprietario_tipo: 'desconhecido', proprietario_id: '', observacoes: '' }
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
+type LojaItemPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
+
 interface Props {
   initialFaccoes: Faccao[]
   initialMembros: Membro[]
@@ -41,6 +43,7 @@ interface Props {
   initialFaccaoPrecos: FaccaoPreco[]
   lojaPorMembro: Record<string, string[]>
   onlineMap: Record<string, boolean>
+  lojaItemPrecos: LojaItemPreco[]
 }
 
 function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
@@ -87,7 +90,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap, lojaItemPrecos }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -378,6 +381,29 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
       norm(v.observacoes).includes(q)
     )
   }, [veiculos, termoBusca])
+
+  const resultadosProdutos = useMemo(() => {
+    const q = norm(termoBusca.trim())
+    if (q.length < 2) return []
+    const produtosMatch = todosProdutos.filter(p => norm(p.nome).includes(q))
+    return produtosMatch.map(p => {
+      const emLojas = lojaItemPrecos
+        .filter(lip => lip.item_id === p.id)
+        .map(lip => {
+          const loja = lojas.find(l => l.id === lip.loja_id)
+          return loja ? { tipo: 'loja' as const, id: loja.id, nome: loja.nome, preco: lip.preco, preco_sujo: lip.preco_sujo } : null
+        })
+        .filter(Boolean) as { tipo: 'loja'; id: string; nome: string; preco: number; preco_sujo: number | null }[]
+      const emFaccoes = faccaoPrecos
+        .filter(fp => fp.item_id === p.id)
+        .map(fp => {
+          const f = faccoes.find(f => f.id === fp.faccao_id)
+          return f ? { tipo: 'faccao' as const, id: f.id, nome: f.nome, cor_tag: f.cor_tag, preco: fp.preco_limpo, preco_sujo: fp.preco_sujo } : null
+        })
+        .filter(Boolean) as { tipo: 'faccao'; id: string; nome: string; cor_tag: string; preco: number | null; preco_sujo: number | null }[]
+      return { produto: p, emLojas, emFaccoes }
+    })
+  }, [todosProdutos, termoBusca, lojaItemPrecos, faccaoPrecos, lojas, faccoes])
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -677,7 +703,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <div className="relative max-w-lg">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Nome, vulgo, telefone, placa, modelo, instagram, deep..."
+                placeholder="Nome, vulgo, telefone, placa, modelo, produto..."
                 value={termoBusca}
                 onChange={e => setTermoBusca(e.target.value)}
                 className="pl-9 h-10 text-sm"
@@ -691,7 +717,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
 
             {termoBusca.trim().length >= 2 && (
               <>
-                {resultadosMembros.length === 0 && resultadosVeiculos.length === 0 && (
+                {resultadosMembros.length === 0 && resultadosVeiculos.length === 0 && resultadosProdutos.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-10">Nenhum resultado para &quot;{termoBusca}&quot;</p>
                 )}
 
@@ -750,6 +776,58 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                 )}
 
                 {/* Veículos */}
+                {/* Produtos */}
+                {resultadosProdutos.length > 0 && (
+                  <section className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                      <Package className="h-3.5 w-3.5" />Produtos ({resultadosProdutos.length})
+                    </p>
+                    <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/40">
+                      {resultadosProdutos.map(({ produto, emLojas, emFaccoes }) => (
+                        <div key={produto.id} className="px-4 py-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold">{produto.nome}</span>
+                            {produto.categoria && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-muted-foreground">{produto.categoria}</span>
+                            )}
+                            {emLojas.length === 0 && emFaccoes.length === 0 && (
+                              <span className="text-xs text-muted-foreground ml-auto">Sem preços cadastrados</span>
+                            )}
+                          </div>
+                          {(emLojas.length > 0 || emFaccoes.length > 0) && (
+                            <div className="flex flex-wrap gap-2">
+                              {emLojas.map(l => (
+                                <div key={l.id} className="flex items-center gap-1.5 text-xs bg-blue-500/[0.07] border border-blue-500/20 rounded-md px-2.5 py-1.5">
+                                  <span className="text-blue-300 font-medium">{l.nome}</span>
+                                  <span className="text-muted-foreground">·</span>
+                                  <span className="text-emerald-400 font-mono">R$ {l.preco.toLocaleString('pt-BR')}</span>
+                                  {l.preco_sujo != null && l.preco_sujo !== l.preco && (
+                                    <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {l.preco_sujo.toLocaleString('pt-BR')} sujo</span>
+                                  )}
+                                </div>
+                              ))}
+                              {emFaccoes.map(f => (
+                                <div key={f.id} className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5 border" style={{ borderColor: f.cor_tag + '40', background: f.cor_tag + '0d' }}>
+                                  <span className="font-medium" style={{ color: f.cor_tag }}>{f.nome}</span>
+                                  {f.preco != null && (
+                                    <>
+                                      <span className="text-muted-foreground">·</span>
+                                      <span className="text-emerald-400 font-mono">R$ {f.preco.toLocaleString('pt-BR')}</span>
+                                    </>
+                                  )}
+                                  {f.preco_sujo != null && (
+                                    <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 {resultadosVeiculos.length > 0 && (
                   <section className="space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">

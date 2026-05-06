@@ -17,6 +17,7 @@ export default async function InvestigacaoPage() {
     { data: lojaMembrosRaw },
     { data: usuariosOnline },
     { data: servicosData },
+    { data: lojaItemPrecosData },
   ] = await Promise.all([
     supabase.from('faccoes').select('*').order('nome'),
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
@@ -27,6 +28,7 @@ export default async function InvestigacaoPage() {
     supabase.from('loja_membros').select('membro_id, loja_id'),
     supabase.from('usuarios').select('membro_id, ultimo_acesso').not('membro_id', 'is', null),
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
   ])
 
   // Monta mapa membro_id → nomes das lojas onde trabalha
@@ -62,6 +64,7 @@ export default async function InvestigacaoPage() {
       initialFaccaoPrecos={faccaoPrecos ?? []}
       lojaPorMembro={lojaPorMembro}
       onlineMap={onlineMap}
+      lojaItemPrecos={(lojaItemPrecosData ?? []) as { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }[]}
     />
   )
 }
