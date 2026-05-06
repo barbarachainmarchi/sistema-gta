@@ -1,15 +1,20 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Trophy } from 'lucide-react'
+import { Trophy, Loader2, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Acao, AcaoParticipante, Membro } from './acao-shared'
 
 interface Props {
   acoes: Acao[]
   participantes: AcaoParticipante[]
   membros: Membro[]
+  podeEditar: boolean
+  salvando: boolean
+  onZerarRanking: () => Promise<void>
 }
 
 type PeriodoPreset = '7d' | '30d' | '90d' | 'mes' | 'custom' | 'todos'
@@ -27,10 +32,11 @@ function startOf(preset: PeriodoPreset): string {
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
-export function TabRanking({ acoes, participantes, membros }: Props) {
+export function TabRanking({ acoes, participantes, membros, podeEditar, salvando, onZerarRanking }: Props) {
   const [preset, setPreset] = useState<PeriodoPreset>('todos')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [confirmZerar, setConfirmZerar] = useState(false)
 
   const rangeFrom = preset === 'custom' ? customFrom : (preset === 'todos' ? '' : startOf(preset))
   const rangeTo = preset === 'custom' ? customTo : ''
@@ -61,27 +67,35 @@ export function TabRanking({ acoes, participantes, membros }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Period filter */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Select value={preset} onValueChange={v => setPreset(v as PeriodoPreset)}>
-          <SelectTrigger className="h-8 text-xs w-44"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todo o período</SelectItem>
-            <SelectItem value="7d">Últimos 7 dias</SelectItem>
-            <SelectItem value="30d">Últimos 30 dias</SelectItem>
-            <SelectItem value="90d">Últimos 90 dias</SelectItem>
-            <SelectItem value="mes">Este mês</SelectItem>
-            <SelectItem value="custom">Período personalizado</SelectItem>
-          </SelectContent>
-        </Select>
-        {preset === 'custom' && (
-          <>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground" />
-            <span className="text-xs text-muted-foreground">até</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground" />
-          </>
+      {/* Period filter + zerar */}
+      <div className="flex items-center gap-3 flex-wrap justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={preset} onValueChange={v => setPreset(v as PeriodoPreset)}>
+            <SelectTrigger className="h-8 text-xs w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todo o período</SelectItem>
+              <SelectItem value="7d">Últimos 7 dias</SelectItem>
+              <SelectItem value="30d">Últimos 30 dias</SelectItem>
+              <SelectItem value="90d">Últimos 90 dias</SelectItem>
+              <SelectItem value="mes">Este mês</SelectItem>
+              <SelectItem value="custom">Período personalizado</SelectItem>
+            </SelectContent>
+          </Select>
+          {preset === 'custom' && (
+            <>
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground" />
+              <span className="text-xs text-muted-foreground">até</span>
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                className="h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground" />
+            </>
+          )}
+        </div>
+        {podeEditar && (
+          <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground"
+            onClick={() => setConfirmZerar(true)}>
+            <RotateCcw className="h-3.5 w-3.5" />Zerar Ranking
+          </Button>
         )}
       </div>
 
@@ -122,6 +136,23 @@ export function TabRanking({ acoes, participantes, membros }: Props) {
           {ranking.length} membro(s) · {ranking.reduce((s, r) => s + r.pontos, 0)} pontos distribuídos
         </p>
       )}
+
+      {/* Confirm zerar */}
+      <Dialog open={confirmZerar} onOpenChange={o => { if (!o) setConfirmZerar(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Zerar o ranking?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Todos os pontos de todas as ações serão zerados permanentemente. Os registros de ação continuam existindo, apenas a pontuação é removida.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmZerar(false)} disabled={salvando}>Cancelar</Button>
+            <Button variant="destructive" size="sm" disabled={salvando}
+              onClick={async () => { await onZerarRanking(); setConfirmZerar(false) }}>
+              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Zerar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -85,13 +85,15 @@ export const emptyTipoForm: TipoForm = {
 
 export type AcaoForm = {
   tipo_id: string; data_hora: string; participantes: string[]
-  para_caixa_faccao: boolean; observacoes: string; conta_pontuacao: boolean
+  para_caixa_faccao: boolean; valor_financeiro: string
+  observacoes: string; conta_pontuacao: boolean
   competicao_id: string; equipe_id: string; quantidade_item: string
 }
 
 export const emptyAcaoForm: AcaoForm = {
   tipo_id: '', data_hora: '', participantes: [],
-  para_caixa_faccao: false, observacoes: '', conta_pontuacao: true,
+  para_caixa_faccao: false, valor_financeiro: '',
+  observacoes: '', conta_pontuacao: false,
   competicao_id: '', equipe_id: '', quantidade_item: '',
 }
 
@@ -327,21 +329,20 @@ export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = []
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-3">
         <div className="flex items-center justify-between rounded-lg border border-border p-3 gap-2">
           <div>
             <p className="text-sm font-medium">Caixa da facção</p>
-            <p className="text-xs text-muted-foreground">Ganho vai para o caixa</p>
+            <p className="text-xs text-muted-foreground">Registrar entrada no financeiro</p>
           </div>
-          <Switch checked={form.para_caixa_faccao} onCheckedChange={v => setForm(f => ({ ...f, para_caixa_faccao: v }))} />
+          <Switch checked={form.para_caixa_faccao} onCheckedChange={v => setForm(f => ({ ...f, para_caixa_faccao: v, valor_financeiro: '' }))} />
         </div>
-        {tipoAtual?.conta_pontuacao && (
-          <div className="flex items-center justify-between rounded-lg border border-border p-3 gap-2">
-            <div>
-              <p className="text-sm font-medium">Contar pontos</p>
-              <p className="text-xs text-muted-foreground">{tipoAtual.pontos_valor} pts/participante</p>
-            </div>
-            <Switch checked={form.conta_pontuacao} onCheckedChange={v => setForm(f => ({ ...f, conta_pontuacao: v }))} />
+        {form.para_caixa_faccao && (
+          <div>
+            <Label>Valor doado para o caixa (R$) *</Label>
+            <Input type="number" min="1" step="1" value={form.valor_financeiro}
+              onChange={e => setForm(f => ({ ...f, valor_financeiro: e.target.value }))}
+              placeholder="Ex: 5000" className="mt-1 w-40" />
           </div>
         )}
       </div>

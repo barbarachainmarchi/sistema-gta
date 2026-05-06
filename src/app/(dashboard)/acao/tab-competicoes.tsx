@@ -69,6 +69,11 @@ export function TabCompeticoes({
     if (ok) { setFormOpen(false); setForm(emptyCompForm) }
   }
 
+  async function handleSaveAndNext() {
+    const ok = await onSave(form)
+    if (ok) setForm(emptyCompForm)
+  }
+
   function handleEncerrarComp(comp: Competicao) {
     const equipes = compEquipes.filter(e => e.competicao_id === comp.id)
     const scores = equipes.map(e => ({
@@ -295,11 +300,16 @@ export function TabCompeticoes({
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Nova Competição</DialogTitle></DialogHeader>
           <CompFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} />
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-between pt-2">
             <Button variant="outline" size="sm" onClick={() => { setFormOpen(false); setForm(emptyCompForm) }} disabled={salvando}>Cancelar</Button>
-            <Button size="sm" onClick={handleSave} disabled={salvando}>
-              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar Competição'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleSaveAndNext} disabled={salvando}>
+                {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar e criar outra'}
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={salvando}>
+                {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar Competição'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

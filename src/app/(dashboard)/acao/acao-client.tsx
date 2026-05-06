@@ -148,6 +148,39 @@ export function AcaoClient({
       setAcoes(updatedAcoes)
       setParticipantes(updatedParts)
 
+      // Lançar no financeiro se para_caixa_faccao com valor
+      if (form.para_caixa_faccao) {
+        const valorNum = parseFloat(form.valor_financeiro)
+        if (valorNum > 0) {
+          const { data: contaFaccao } = await sb()
+            .from('financeiro_contas')
+            .select('id, saldo_sujo')
+            .eq('tipo', 'faccao')
+            .eq('status', 'ativo')
+            .order('created_at')
+            .limit(1)
+            .maybeSingle()
+          if (contaFaccao) {
+            await sb().from('financeiro_lancamentos').insert({
+              conta_id: contaFaccao.id,
+              tipo: 'entrada',
+              tipo_dinheiro: 'sujo',
+              valor: valorNum,
+              descricao: `Ação: ${tipo?.nome ?? 'Ação'}`,
+              acao_referencia: tipo?.nome ?? null,
+              vai_para_faccao: true,
+              categoria: 'outro',
+              data: new Date().toISOString().split('T')[0],
+              created_by: userId,
+              responsavel_nome: userNome,
+            })
+            await sb().from('financeiro_contas').update({
+              saldo_sujo: (contaFaccao.saldo_sujo ?? 0) + valorNum,
+            }).eq('id', contaFaccao.id)
+          }
+        }
+      }
+
       if (escalacaoId) {
         await sb().from('escalacoes').update({ status: 'convertida', acao_id: novaAcao.id }).eq('id', escalacaoId)
         setEscalacoes(prev => prev.map(e => e.id === escalacaoId
@@ -410,6 +443,20 @@ export function AcaoClient({
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
   }
 
+  // ── Ranking ───────────────────────────────────────────────────────────────────
+
+  async function handleZerarRanking(): Promise<void> {
+    setSalvando(true)
+    try {
+      await sb().from('acao_participantes').update({ pontos_atribuidos: 0 }).neq('id', '00000000-0000-0000-0000-000000000000')
+      await sb().from('acoes').update({ conta_pontuacao: false }).eq('conta_pontuacao', true)
+      setParticipantes(prev => prev.map(p => ({ ...p, pontos_atribuidos: 0 })))
+      setAcoes(prev => prev.map(a => ({ ...a, conta_pontuacao: false })))
+      toast.success('Ranking zerado!')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setSalvando(false) }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -465,7 +512,11 @@ export function AcaoClient({
           />
         )}
         {aba === 'ranking' && (
-          <TabRanking acoes={acoes} participantes={participantes} membros={membrosIniciais} />
+          <TabRanking
+            acoes={acoes} participantes={participantes} membros={membrosIniciais}
+            podeEditar={podeEditar} salvando={salvando}
+            onZerarRanking={handleZerarRanking}
+          />
         )}
       </div>
     </div>
