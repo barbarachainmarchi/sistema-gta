@@ -43,7 +43,7 @@ export type Escalacao = {
 
 export type EscalacaoParticipante = {
   id: string; escalacao_id: string; membro_id: string; membro_nome: string
-  status: 'convocado' | 'confirmado' | 'recusado' | 'candidato'
+  status: 'convocado' | 'confirmado' | 'recusado' | 'candidato' | 'reserva'
 }
 
 export type Membro = {
@@ -112,11 +112,11 @@ export const emptyAcaoForm: AcaoForm = {
 
 export type EscalacaoForm = {
   tipo_id: string; data_hora_prevista: string; modo: 'manual' | 'aberta'
-  participantes: string[]; observacoes: string
+  participantes: string[]; reservas: string[]; observacoes: string
 }
 
 export const emptyEscalacaoForm: EscalacaoForm = {
-  tipo_id: '', data_hora_prevista: '', modo: 'manual', participantes: [], observacoes: '',
+  tipo_id: '', data_hora_prevista: '', modo: 'manual', participantes: [], reservas: [], observacoes: '',
 }
 
 export type CompForm = {
@@ -159,6 +159,7 @@ export const PART_STATUS_CFG = {
   confirmado: { label: 'Confirmado', cls: 'bg-emerald-500/15 text-emerald-400' },
   recusado:   { label: 'Recusado',   cls: 'bg-red-500/15 text-red-400' },
   candidato:  { label: 'Candidato',  cls: 'bg-purple-500/15 text-purple-400' },
+  reserva:    { label: 'Reserva',    cls: 'bg-orange-500/15 text-orange-400' },
 } as const
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

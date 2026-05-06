@@ -9,7 +9,7 @@ import {
   Search, ShoppingCart, BarChart2, Wallet,
   Calculator, TrendingUp, Target, DollarSign, Shield,
   Users, Database, Palette, FileText, LogOut,
-  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon, LayoutDashboard,
+  ChevronDown, Zap, Activity, HardDriveDownload, Home, Package, Sun, Moon, LayoutDashboard, UserCheck,
 } from 'lucide-react'
 import { TEMA_KEY } from '@/components/layout/theme-provider'
 
@@ -73,6 +73,7 @@ const navGroups = [
       { href: '/metas',             label: 'Metas',        icon: Target,       perm: 'metas' },
       { href: '/estoque',           label: 'Estoque',      icon: Package,      perm: 'estoque' },
       { href: '/acao',              label: 'Ação',         icon: Zap,          perm: 'acao' },
+      { href: '/presencas',         label: 'Presenças',    icon: UserCheck,    perm: 'acao', alwaysShow: true },
     ],
   },
 ]

@@ -18,6 +18,8 @@ import {
 
 type Conta = { id: string; saldo_sujo: number; saldo_limpo: number }
 
+type PresencaHoje = { id: string; presente: boolean; motivo: string | null }
+
 type MetaMembroItem = {
   id: string; item_nome: string
   quantidade_meta: number; quantidade_entregue: number
@@ -62,6 +64,7 @@ interface Props {
   membroId: string | null
   escalacoesPendentes: EscalacaoPendente[]
   minhasParticipacoes: MinhaParticipacao[]
+  presencaHoje: PresencaHoje | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -104,6 +107,7 @@ export function DashboardClient({
   userId, userNome, lojaNome, faccaoNome, conta, metaAtual, vendasSemana,
   disponibilidade: dispInicial, hoje, dispTodos, cotacoesAbertas, encomendasAbertas,
   membroId, escalacoesPendentes: escalacoesPendentesIniciais, minhasParticipacoes: minhasParticipacoesPendentes,
+  presencaHoje: presencaHojeInicial,
 }: Props) {
   const sb = useCallback(() => createClient(), [])
 
@@ -112,6 +116,11 @@ export function DashboardClient({
   const [modalHorario, setModalHorario] = useState(false)
   const [horaInicio, setHoraInicio] = useState('')
   const [horaFim, setHoraFim]       = useState('')
+
+  const [presenca, setPresenca]       = useState<PresencaHoje | null>(presencaHojeInicial)
+  const [modalAusencia, setModalAusencia] = useState(false)
+  const [textoMotivo, setTextoMotivo] = useState('')
+  const [salvandoPresenca, setSalvandoPresenca] = useState(false)
 
   const [escalacoes, setEscalacoes] = useState<EscalacaoPendente[]>(escalacoesPendentesIniciais)
   const [minhasParticipacoes, setMinhasParticipacoes] = useState<MinhaParticipacao[]>(minhasParticipacoesPendentes)
@@ -154,26 +163,69 @@ export function DashboardClient({
   }
 
   function handleClickSim() {
-    if (disp?.disponivel === true) return // já marcado, não abre modal de novo
+    if (presenca?.presente === true && disp?.disponivel === true) return
     setHoraInicio(disp?.hora_inicio ?? '')
     setHoraFim(disp?.hora_fim ?? '')
     setModalHorario(true)
   }
 
+  function handleClickNao() {
+    if (presenca?.presente === false && disp?.disponivel === false) return
+    setTextoMotivo(presenca?.motivo ?? '')
+    setModalAusencia(true)
+  }
+
   async function confirmarHorario() {
     setModalHorario(false)
+    if (membroId) {
+      setSalvandoPresenca(true)
+      try {
+        if (presenca) {
+          const { data: row, error } = await sb().from('presencas')
+            .update({ presente: true, motivo: null, registrado_por_user_id: userId })
+            .eq('id', presenca.id).select('id, presente, motivo').single()
+          if (!error && row) setPresenca(row as PresencaHoje)
+        } else {
+          const { data: row, error } = await sb().from('presencas')
+            .insert({ membro_id: membroId, data: hoje, presente: true, motivo: null, registrado_por_user_id: userId })
+            .select('id, presente, motivo').single()
+          if (!error && row) setPresenca(row as PresencaHoje)
+        }
+      } finally { setSalvandoPresenca(false) }
+    }
     await salvarDisponivel(true, horaInicio, horaFim)
+  }
+
+  async function confirmarAusencia() {
+    setModalAusencia(false)
+    if (membroId) {
+      setSalvandoPresenca(true)
+      try {
+        const motivo = textoMotivo.trim() || null
+        if (presenca) {
+          const { data: row, error } = await sb().from('presencas')
+            .update({ presente: false, motivo, registrado_por_user_id: userId })
+            .eq('id', presenca.id).select('id, presente, motivo').single()
+          if (!error && row) setPresenca(row as PresencaHoje)
+        } else {
+          const { data: row, error } = await sb().from('presencas')
+            .insert({ membro_id: membroId, data: hoje, presente: false, motivo, registrado_por_user_id: userId })
+            .select('id, presente, motivo').single()
+          if (!error && row) setPresenca(row as PresencaHoje)
+        }
+      } finally { setSalvandoPresenca(false) }
+    }
+    await salvarDisponivel(false, null, null)
   }
 
   const statusCfg = STATUS_META[minhaEntradaMeta?.status ?? 'em_andamento']
 
-  // Escalações: convocado vs aberta (sem participação)
+  // Escalações
   const partMap = Object.fromEntries(minhasParticipacoes.map(p => [p.escalacao_id, p]))
-  const convocadas = escalacoes.filter(e => {
-    const p = partMap[e.id]
-    return p && p.status === 'convocado'
-  })
-  const abertas = escalacoes.filter(e => e.modo === 'aberta' && !partMap[e.id])
+  const convocadas  = escalacoes.filter(e => partMap[e.id]?.status === 'convocado')
+  const confirmadas = escalacoes.filter(e => partMap[e.id]?.status === 'confirmado')
+  const reservas    = escalacoes.filter(e => partMap[e.id]?.status === 'reserva')
+  const abertas     = escalacoes.filter(e => e.modo === 'aberta' && !partMap[e.id])
 
   async function handleResponder(partId: string, escalacaoId: string, status: 'confirmado' | 'recusado') {
     setRespondendo(partId)
@@ -255,7 +307,7 @@ export function DashboardClient({
       )}
 
       {/* Escalações pendentes */}
-      {membroId && (convocadas.length > 0 || abertas.length > 0) && (
+      {membroId && (convocadas.length > 0 || abertas.length > 0 || confirmadas.length > 0 || reservas.length > 0) && (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/20">
             <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -292,6 +344,25 @@ export function DashboardClient({
                 </div>
               )
             })}
+            {confirmadas.map(esc => (
+              <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
+                  <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 shrink-0">Confirmado</span>
+              </div>
+            ))}
+            {reservas.map(esc => (
+              <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
+                  <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 shrink-0">Reserva</span>
+                <span className="text-[11px] text-muted-foreground/60 shrink-0">Aguardando vaga</span>
+              </div>
+            ))}
             {abertas.map(esc => {
               const isLoading = respondendo === esc.id
               const jaCandidatou = !!partMap[esc.id]
@@ -442,27 +513,29 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Disponibilidade para Ação */}
+      {/* Presença hoje */}
       <div className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <CalendarCheck className="h-4 w-4 text-muted-foreground shrink-0" />
             <div>
-              <p className="text-sm font-medium">Disponível para Ação hoje?</p>
+              <p className="text-sm font-medium">Presença hoje?</p>
               <p className="text-[11px] text-muted-foreground">
-                {disp?.disponivel === true && disp.hora_inicio
+                {presenca?.presente === true && disp?.hora_inicio
                   ? `${disp.hora_inicio.slice(0, 5)}${disp.hora_fim ? ` – ${disp.hora_fim.slice(0, 5)}` : ''}`
-                  : 'Informe sua disponibilidade para as operações de hoje.'}
+                  : presenca?.presente === false
+                    ? (presenca.motivo ? `Ausente — ${presenca.motivo}` : 'Ausente sem justificativa')
+                    : 'Registre sua presença de hoje.'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => salvarDisponivel(false, null, null)}
-              disabled={salvandoDisp}
+              onClick={handleClickNao}
+              disabled={salvandoDisp || salvandoPresenca}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
-                disp?.disponivel === false
+                presenca?.presente === false
                   ? 'bg-red-500/20 text-red-400 border-red-500/30'
                   : 'border-border text-muted-foreground hover:text-foreground hover:border-border/60'
               )}
@@ -471,10 +544,10 @@ export function DashboardClient({
             </button>
             <button
               onClick={handleClickSim}
-              disabled={salvandoDisp}
+              disabled={salvandoDisp || salvandoPresenca}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-colors border',
-                disp?.disponivel === true
+                presenca?.presente === true
                   ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                   : 'border-border text-muted-foreground hover:text-foreground hover:border-border/60'
               )}
@@ -539,6 +612,30 @@ export function DashboardClient({
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={() => setModalHorario(false)}>Cancelar</Button>
             <Button size="sm" onClick={confirmarHorario}>Confirmar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal motivo ausência */}
+      <Dialog open={modalAusencia} onOpenChange={o => { if (!o) setModalAusencia(false) }}>
+        <DialogContent className="max-w-xs" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Motivo da ausência</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Motivo <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <textarea
+              value={textoMotivo}
+              onChange={e => setTextoMotivo(e.target.value)}
+              placeholder="Ex: viagem, compromisso, doença..."
+              rows={2}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none focus:border-ring resize-none"
+            />
+            <p className="text-[11px] text-muted-foreground">Deixe em branco para ausência injustificada.</p>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => setModalAusencia(false)}>Cancelar</Button>
+            <Button size="sm" onClick={confirmarAusencia}>Confirmar</Button>
           </div>
         </DialogContent>
       </Dialog>

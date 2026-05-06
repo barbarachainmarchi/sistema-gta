@@ -344,14 +344,22 @@ export function AcaoClient({
       const novaEsc = escData as Escalacao
 
       const novosParts: EscalacaoParticipante[] = []
-      if (form.modo === 'manual' && form.participantes.length > 0) {
-        const parts = form.participantes.map(mId => {
-          const m = membrosIniciais.find(mb => mb.id === mId)
-          return { escalacao_id: novaEsc.id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'convocado' as const }
-        })
-        const { data: partsData, error: partsErr } = await sb().from('escalacao_participantes').insert(parts).select()
-        if (partsErr) throw partsErr
-        novosParts.push(...(partsData as EscalacaoParticipante[]))
+      if (form.modo === 'manual') {
+        const rows = [
+          ...form.participantes.map(mId => {
+            const m = membrosIniciais.find(mb => mb.id === mId)
+            return { escalacao_id: novaEsc.id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'convocado' as const }
+          }),
+          ...form.reservas.map(mId => {
+            const m = membrosIniciais.find(mb => mb.id === mId)
+            return { escalacao_id: novaEsc.id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'reserva' as const }
+          }),
+        ]
+        if (rows.length > 0) {
+          const { data: partsData, error: partsErr } = await sb().from('escalacao_participantes').insert(rows).select()
+          if (partsErr) throw partsErr
+          novosParts.push(...(partsData as EscalacaoParticipante[]))
+        }
       }
 
       setEscalacoes(prev => [novaEsc, ...prev])
@@ -377,17 +385,25 @@ export function AcaoClient({
       }).eq('id', id)
       if (error) throw error
 
-      // Reconcile convocados (para modo manual)
-      await sb().from('escalacao_participantes').delete().eq('escalacao_id', id).eq('status', 'convocado')
-      const novosConvocados: EscalacaoParticipante[] = []
-      if (form.modo === 'manual' && form.participantes.length > 0) {
-        const rows = form.participantes.map(mId => {
-          const m = membrosIniciais.find(mb => mb.id === mId)
-          return { escalacao_id: id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'convocado' as const }
-        })
-        const { data, error: pErr } = await sb().from('escalacao_participantes').insert(rows).select()
-        if (pErr) throw pErr
-        novosConvocados.push(...(data as EscalacaoParticipante[]))
+      // Reconcile convocados e reservas (preserva confirmados/recusados/candidatos)
+      await sb().from('escalacao_participantes').delete().eq('escalacao_id', id).in('status', ['convocado', 'reserva'])
+      const novosRows: EscalacaoParticipante[] = []
+      if (form.modo === 'manual') {
+        const rows = [
+          ...form.participantes.map(mId => {
+            const m = membrosIniciais.find(mb => mb.id === mId)
+            return { escalacao_id: id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'convocado' as const }
+          }),
+          ...form.reservas.map(mId => {
+            const m = membrosIniciais.find(mb => mb.id === mId)
+            return { escalacao_id: id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'reserva' as const }
+          }),
+        ]
+        if (rows.length > 0) {
+          const { data, error: pErr } = await sb().from('escalacao_participantes').insert(rows).select()
+          if (pErr) throw pErr
+          novosRows.push(...(data as EscalacaoParticipante[]))
+        }
       }
 
       setEscalacoes(prev => prev.map(e => e.id === id ? {
@@ -398,8 +414,8 @@ export function AcaoClient({
         observacoes: form.observacoes.trim() || null,
       } : e))
       setEscalacaoParticipantes(prev => [
-        ...prev.filter(p => !(p.escalacao_id === id && p.status === 'convocado')),
-        ...novosConvocados,
+        ...prev.filter(p => !(p.escalacao_id === id && (p.status === 'convocado' || p.status === 'reserva'))),
+        ...novosRows,
       ])
       toast.success('Escalação atualizada!')
       return true
@@ -436,12 +452,30 @@ export function AcaoClient({
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
   }
 
-  async function handleResponderConvocacao(partId: string, status: 'confirmado' | 'recusado'): Promise<void> {
+  async function handleResponderConvocacao(partId: string, escalacaoId: string, status: 'confirmado' | 'recusado'): Promise<void> {
     try {
       const { error } = await sb().from('escalacao_participantes').update({ status }).eq('id', partId)
       if (error) throw error
       setEscalacaoParticipantes(prev => prev.map(p => p.id === partId ? { ...p, status } : p))
       toast.success(status === 'confirmado' ? 'Presença confirmada!' : 'Convocação recusada')
+
+      // Auto-promover primeira reserva quando recusado
+      if (status === 'recusado') {
+        const reservas = escalacaoParticipantes
+          .filter(p => p.escalacao_id === escalacaoId && p.status === 'reserva')
+          .sort((a, b) => a.id.localeCompare(b.id))
+        if (reservas.length > 0) {
+          const primeira = reservas[0]!
+          const { error: rErr } = await sb().from('escalacao_participantes')
+            .update({ status: 'convocado' }).eq('id', primeira.id)
+          if (!rErr) {
+            setEscalacaoParticipantes(prev => prev.map(p =>
+              p.id === primeira.id ? { ...p, status: 'convocado' as const } : p
+            ))
+            toast.info(`${primeira.membro_nome} saiu do banco de reservas e foi convocado!`)
+          }
+        }
+      }
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
   }
 

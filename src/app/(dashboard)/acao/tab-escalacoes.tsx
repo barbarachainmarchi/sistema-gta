@@ -29,7 +29,7 @@ interface Props {
   onEditEscalacao: (id: string, form: EscalacaoForm) => Promise<boolean>
   onDeleteEscalacao: (id: string) => Promise<boolean>
   onCandidatar: (escalacaoId: string) => Promise<void>
-  onResponderConvocacao: (partId: string, status: 'confirmado' | 'recusado') => Promise<void>
+  onResponderConvocacao: (partId: string, escalacaoId: string, status: 'confirmado' | 'recusado') => Promise<void>
   onCancelarEscalacao: (id: string) => Promise<void>
   onSaveAcaoFromEscalacao: (form: AcaoForm, escalacaoId: string) => Promise<boolean>
 }
@@ -37,8 +37,8 @@ interface Props {
 export function TabEscalacoes({
   escalacoes, escalacaoParticipantes, tipos, membros, salvando, podeEditar, userFaccaoId,
   userId, membroId,
-  onSaveEscalacao, onEditEscalacao, onDeleteEscalacao, onCandidatar, onResponderConvocacao,
-  onCancelarEscalacao, onSaveAcaoFromEscalacao,
+  onSaveEscalacao, onEditEscalacao, onDeleteEscalacao, onCandidatar,
+  onResponderConvocacao, onCancelarEscalacao, onSaveAcaoFromEscalacao,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
   const [editingEscId, setEditingEscId] = useState<string | null>(null)
@@ -73,6 +73,7 @@ export function TabEscalacoes({
       data_hora_prevista: toDatetimeLocal(esc.data_hora_prevista),
       modo: esc.modo,
       participantes: parts.filter(p => p.status === 'convocado').map(p => p.membro_id),
+      reservas: parts.filter(p => p.status === 'reserva').map(p => p.membro_id),
       observacoes: esc.observacoes ?? '',
     })
     setEditingEscId(esc.id)
@@ -120,9 +121,9 @@ export function TabEscalacoes({
     if (ok) { setConvertendoId(null); setAcaoForm(emptyAcaoForm) }
   }
 
-  async function handleResponder(partId: string, status: 'confirmado' | 'recusado') {
+  async function handleResponder(partId: string, escalacaoId: string, status: 'confirmado' | 'recusado') {
     setRespondendo(partId)
-    await onResponderConvocacao(partId, status)
+    await onResponderConvocacao(partId, escalacaoId, status)
     setRespondendo(null)
   }
 
@@ -208,16 +209,16 @@ export function TabEscalacoes({
                         <Plus className="h-3 w-3" />Candidatar
                       </Button>
                     )}
-                    {minhaPart && minhaPart.status !== 'confirmado' && minhaPart.status !== 'recusado' && esc.status === 'pendente' && (
+                    {minhaPart && minhaPart.status === 'convocado' && esc.status === 'pendente' && (
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" className="h-7 text-xs text-red-400 border-red-500/30 px-2"
                           disabled={respondendo === minhaPart.id}
-                          onClick={() => handleResponder(minhaPart.id, 'recusado')}>
+                          onClick={() => handleResponder(minhaPart.id, esc.id, 'recusado')}>
                           {respondendo === minhaPart.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                         </Button>
                         <Button size="sm" className="h-7 text-xs px-2 gap-1"
                           disabled={respondendo === minhaPart.id}
-                          onClick={() => handleResponder(minhaPart.id, 'confirmado')}>
+                          onClick={() => handleResponder(minhaPart.id, esc.id, 'confirmado')}>
                           {respondendo === minhaPart.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                           Confirmar
                         </Button>
@@ -225,6 +226,9 @@ export function TabEscalacoes({
                     )}
                     {minhaPart?.status === 'confirmado' && esc.status === 'pendente' && (
                       <span className="text-xs text-emerald-400 font-medium">✓ Confirmado</span>
+                    )}
+                    {minhaPart?.status === 'reserva' && esc.status === 'pendente' && (
+                      <span className="text-xs text-orange-400 font-medium">Reserva</span>
                     )}
                     {minhaPart?.status === 'recusado' && (
                       <span className="text-xs text-muted-foreground">Recusado</span>
@@ -255,28 +259,59 @@ export function TabEscalacoes({
 
                 {/* Expanded: participants */}
                 {expanded && (
-                  <div className="border-t border-border/40 px-4 py-3 bg-muted/10 space-y-1.5">
+                  <div className="border-t border-border/40 px-4 py-3 bg-muted/10 space-y-2">
                     {esc.observacoes && (
-                      <p className="text-xs text-muted-foreground italic mb-2">{esc.observacoes}</p>
+                      <p className="text-xs text-muted-foreground italic">{esc.observacoes}</p>
                     )}
-                    {parts.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhum participante ainda.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {parts.map(p => {
-                          const cfg = PART_STATUS_CFG[p.status]
-                          const isMe = p.membro_id === membroId
-                          return (
-                            <div key={p.id} className={cn('flex items-center justify-between text-xs bg-card rounded px-2 py-1.5 border border-border/40',
-                              isMe && 'border-primary/30'
-                            )}>
-                              <span className={cn('truncate', isMe && 'font-medium')}>{p.membro_nome}</span>
-                              <span className={cn('text-[10px] px-1 py-0.5 rounded shrink-0 ml-2', cfg.cls)}>{cfg.label}</span>
+                    {(() => {
+                      const principais = parts.filter(p => p.status !== 'reserva')
+                      const reservasParts = parts.filter(p => p.status === 'reserva')
+                      return (
+                        <>
+                          {principais.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">Nenhum participante ainda.</p>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {principais.map(p => {
+                                const cfg = PART_STATUS_CFG[p.status]
+                                const isMe = p.membro_id === membroId
+                                return (
+                                  <div key={p.id} className={cn('flex items-center justify-between text-xs bg-card rounded px-2 py-1.5 border border-border/40',
+                                    isMe && 'border-primary/30'
+                                  )}>
+                                    <span className={cn('truncate', isMe && 'font-medium')}>{p.membro_nome}</span>
+                                    <span className={cn('text-[10px] px-1 py-0.5 rounded shrink-0 ml-2', cfg.cls)}>{cfg.label}</span>
+                                  </div>
+                                )
+                              })}
                             </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                          )}
+                          {reservasParts.length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1.5">
+                                Banco de Reservas ({reservasParts.length})
+                              </p>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {reservasParts.map((p, idx) => {
+                                  const isMe = p.membro_id === membroId
+                                  return (
+                                    <div key={p.id} className={cn('flex items-center justify-between text-xs bg-card rounded px-2 py-1.5 border border-orange-500/20',
+                                      isMe && 'border-orange-500/40'
+                                    )}>
+                                      <span className="flex items-center gap-1.5 truncate">
+                                        <span className="text-orange-400/50 text-[10px] shrink-0">{idx + 1}º</span>
+                                        <span className={cn('truncate', isMe && 'font-medium')}>{p.membro_nome}</span>
+                                      </span>
+                                      <span className="text-[10px] px-1 py-0.5 rounded shrink-0 ml-2 bg-orange-500/15 text-orange-400">Reserva</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
@@ -322,14 +357,27 @@ export function TabEscalacoes({
               </p>
             </div>
             {form.modo === 'manual' && (
-              <div>
-                <Label>Convocar membros</Label>
-                <div className="mt-1">
-                  <MembroSelector membros={membros} selected={form.participantes}
-                    onChange={ids => setForm(f => ({ ...f, participantes: ids }))}
+              <>
+                <div>
+                  <Label>Convocar membros</Label>
+                  <div className="mt-1">
+                    <MembroSelector
+                      membros={membros.filter(m => !form.reservas.includes(m.id))}
+                      selected={form.participantes}
+                      onChange={ids => setForm(f => ({ ...f, participantes: ids }))}
+                      faccaoId={userFaccaoId} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Banco de reservas <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 mb-1">Promovidos automaticamente se alguém desistir.</p>
+                  <MembroSelector
+                    membros={membros.filter(m => !form.participantes.includes(m.id))}
+                    selected={form.reservas}
+                    onChange={ids => setForm(f => ({ ...f, reservas: ids }))}
                     faccaoId={userFaccaoId} />
                 </div>
-              </div>
+              </>
             )}
             <div>
               <Label>Observações</Label>

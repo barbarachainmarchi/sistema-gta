@@ -55,6 +55,7 @@ export default async function DashboardPage() {
     { data: faccaoRow },
     { data: escalacoesPendentes },
     { data: minhasParticipacoes },
+    { data: presencaHojeRow },
   ] = await Promise.all([
     membroId
       ? supabase
@@ -94,6 +95,15 @@ export default async function DashboardPage() {
           .select('id, escalacao_id, status')
           .eq('membro_id', membroId)
       : Promise.resolve({ data: [] }),
+
+    membroId
+      ? supabase
+          .from('presencas')
+          .select('id, presente, motivo')
+          .eq('membro_id', membroId)
+          .eq('data', hoje)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,6 +132,7 @@ export default async function DashboardPage() {
         membroId={membroId}
         escalacoesPendentes={escalacoesPendentes ?? []}
         minhasParticipacoes={minhasParticipacoes ?? []}
+        presencaHoje={presencaHojeRow ?? null}
       />
     </>
   )
