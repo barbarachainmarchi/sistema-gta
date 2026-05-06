@@ -53,6 +53,8 @@ export default async function DashboardPage() {
     { data: vendasSemana },
     { data: lojaRow },
     { data: faccaoRow },
+    { data: escalacoesPendentes },
+    { data: minhasParticipacoes },
   ] = await Promise.all([
     membroId
       ? supabase
@@ -81,6 +83,17 @@ export default async function DashboardPage() {
       .order('created_at', { ascending: false }),
     lojaId   ? supabase.from('lojas').select('nome').eq('id', lojaId).maybeSingle()   : Promise.resolve({ data: null }),
     faccaoId ? supabase.from('faccoes').select('nome').eq('id', faccaoId).maybeSingle() : Promise.resolve({ data: null }),
+    supabase
+      .from('escalacoes')
+      .select('id, tipo_nome, data_hora_prevista, modo, observacoes')
+      .eq('status', 'pendente')
+      .order('data_hora_prevista'),
+    membroId
+      ? supabase
+          .from('escalacao_participantes')
+          .select('id, escalacao_id, status')
+          .eq('membro_id', membroId)
+      : Promise.resolve({ data: [] }),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +119,9 @@ export default async function DashboardPage() {
         dispTodos={dispTodos}
         cotacoesAbertas={cotacoesAbertas ?? 0}
         encomendasAbertas={encomendasAbertas ?? 0}
+        membroId={membroId}
+        escalacoesPendentes={escalacoesPendentes ?? []}
+        minhasParticipacoes={minhasParticipacoes ?? []}
       />
     </>
   )

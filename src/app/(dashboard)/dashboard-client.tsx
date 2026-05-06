@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import {
   TrendingUp, CheckCircle2, Clock, XCircle, Wallet, ShoppingCart,
   CalendarCheck, Target, ArrowRight, DollarSign, Users, AlertCircle,
+  Zap, Check, X, Plus,
 } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -40,6 +41,11 @@ type Venda = { id: string; status: string; created_at: string }
 type Disponibilidade = { id: string; disponivel: boolean; observacao: string | null; hora_inicio: string | null; hora_fim: string | null }
 type DispMembro = { nome: string; hora_inicio: string | null; hora_fim: string | null }
 
+type EscalacaoPendente = {
+  id: string; tipo_nome: string | null; data_hora_prevista: string; modo: string; observacoes: string | null
+}
+type MinhaParticipacao = { id: string; escalacao_id: string; status: string }
+
 interface Props {
   userId: string
   userNome: string | null
@@ -53,6 +59,9 @@ interface Props {
   dispTodos: DispMembro[]
   cotacoesAbertas: number
   encomendasAbertas: number
+  membroId: string | null
+  escalacoesPendentes: EscalacaoPendente[]
+  minhasParticipacoes: MinhaParticipacao[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -73,6 +82,16 @@ function fmtSemana(inicio: string, fim: string) {
   return `${fmt(inicio)} – ${fmt(fim)}`
 }
 
+function fmtEscalacao(iso: string) {
+  const d = new Date(iso)
+  const hoje = new Date()
+  const amanha = new Date(hoje); amanha.setDate(hoje.getDate() + 1)
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  if (d.toDateString() === hoje.toDateString()) return `Hoje às ${hora}`
+  if (d.toDateString() === amanha.toDateString()) return `Amanhã às ${hora}`
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ` às ${hora}`
+}
+
 function saudacao(nome: string | null) {
   const h = new Date().getHours()
   const parte = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
@@ -84,6 +103,7 @@ function saudacao(nome: string | null) {
 export function DashboardClient({
   userId, userNome, lojaNome, faccaoNome, conta, metaAtual, vendasSemana,
   disponibilidade: dispInicial, hoje, dispTodos, cotacoesAbertas, encomendasAbertas,
+  membroId, escalacoesPendentes: escalacoesPendentesIniciais, minhasParticipacoes: minhasParticipacoesPendentes,
 }: Props) {
   const sb = useCallback(() => createClient(), [])
 
@@ -92,6 +112,10 @@ export function DashboardClient({
   const [modalHorario, setModalHorario] = useState(false)
   const [horaInicio, setHoraInicio] = useState('')
   const [horaFim, setHoraFim]       = useState('')
+
+  const [escalacoes, setEscalacoes] = useState<EscalacaoPendente[]>(escalacoesPendentesIniciais)
+  const [minhasParticipacoes, setMinhasParticipacoes] = useState<MinhaParticipacao[]>(minhasParticipacoesPendentes)
+  const [respondendo, setRespondendo] = useState<string | null>(null)
 
   const minhaEntradaMeta = metaAtual?.metas_membros[0] ?? null
 
@@ -143,6 +167,42 @@ export function DashboardClient({
 
   const statusCfg = STATUS_META[minhaEntradaMeta?.status ?? 'em_andamento']
 
+  // Escalações: convocado vs aberta (sem participação)
+  const partMap = Object.fromEntries(minhasParticipacoes.map(p => [p.escalacao_id, p]))
+  const convocadas = escalacoes.filter(e => {
+    const p = partMap[e.id]
+    return p && p.status === 'convocado'
+  })
+  const abertas = escalacoes.filter(e => e.modo === 'aberta' && !partMap[e.id])
+
+  async function handleResponder(partId: string, escalacaoId: string, status: 'confirmado' | 'recusado') {
+    setRespondendo(partId)
+    try {
+      const { error } = await sb().from('escalacao_participantes').update({ status }).eq('id', partId)
+      if (error) { toast.error(error.message); return }
+      setMinhasParticipacoes(prev => prev.map(p => p.id === partId ? { ...p, status } : p))
+      toast.success(status === 'confirmado' ? 'Presença confirmada!' : 'Convocação recusada')
+    } catch { toast.error('Erro ao responder') }
+    finally { setRespondendo(null) }
+  }
+
+  async function handleCandidatar(escalacaoId: string) {
+    if (!membroId) return
+    setRespondendo(escalacaoId)
+    try {
+      const { data, error } = await sb().from('escalacao_participantes').insert({
+        escalacao_id: escalacaoId,
+        membro_id: membroId,
+        membro_nome: userNome ?? 'Desconhecido',
+        status: 'candidato',
+      }).select('id, escalacao_id, status').single()
+      if (error) { toast.error(error.message); return }
+      setMinhasParticipacoes(prev => [...prev, data as MinhaParticipacao])
+      toast.success('Candidatura enviada!')
+    } catch { toast.error('Erro ao se candidatar') }
+    finally { setRespondendo(null) }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl">
 
@@ -191,6 +251,71 @@ export function DashboardClient({
               <ArrowRight className="h-3.5 w-3.5 text-sky-400/60 shrink-0" />
             </Link>
           )}
+        </div>
+      )}
+
+      {/* Escalações pendentes */}
+      {membroId && (convocadas.length > 0 || abertas.length > 0) && (
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/20">
+            <Zap className="h-3.5 w-3.5 text-primary shrink-0" />
+            <p className="text-xs font-semibold text-foreground">Escalações</p>
+            <Link href="/acao" className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
+              Ver todas <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="divide-y divide-border/40">
+            {convocadas.map(esc => {
+              const part = partMap[esc.id]!
+              const isLoading = respondendo === part.id
+              return (
+                <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 shrink-0">Convocado</span>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button disabled={isLoading}
+                      onClick={() => handleResponder(part.id, esc.id, 'recusado')}
+                      className="h-7 px-2 rounded border border-red-500/30 text-red-400 text-xs hover:bg-red-500/10 transition-colors disabled:opacity-50 flex items-center gap-1">
+                      {isLoading ? <Clock className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                      Recusar
+                    </button>
+                    <button disabled={isLoading}
+                      onClick={() => handleResponder(part.id, esc.id, 'confirmado')}
+                      className="h-7 px-2 rounded bg-primary text-primary-foreground text-xs hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1">
+                      {isLoading ? <Clock className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Confirmar
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            {abertas.map(esc => {
+              const isLoading = respondendo === esc.id
+              const jaCandidatou = !!partMap[esc.id]
+              return (
+                <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 shrink-0">Aberta</span>
+                  {jaCandidatou ? (
+                    <span className="text-[11px] text-muted-foreground shrink-0">Candidatura enviada</span>
+                  ) : (
+                    <button disabled={isLoading}
+                      onClick={() => handleCandidatar(esc.id)}
+                      className="h-7 px-2.5 rounded border border-purple-500/30 text-purple-400 text-xs hover:bg-purple-500/10 transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0">
+                      {isLoading ? <Clock className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      Participar
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

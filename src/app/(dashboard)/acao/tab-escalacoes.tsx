@@ -24,6 +24,7 @@ interface Props {
   membroId: string | null
   salvando: boolean
   podeEditar: boolean
+  userFaccaoId?: string | null
   onSaveEscalacao: (form: EscalacaoForm) => Promise<boolean>
   onDeleteEscalacao: (id: string) => Promise<boolean>
   onCandidatar: (escalacaoId: string) => Promise<void>
@@ -33,7 +34,7 @@ interface Props {
 }
 
 export function TabEscalacoes({
-  escalacoes, escalacaoParticipantes, tipos, membros, salvando, podeEditar,
+  escalacoes, escalacaoParticipantes, tipos, membros, salvando, podeEditar, userFaccaoId,
   userId, membroId,
   onSaveEscalacao, onDeleteEscalacao, onCandidatar, onResponderConvocacao,
   onCancelarEscalacao, onSaveAcaoFromEscalacao,
@@ -294,7 +295,8 @@ export function TabEscalacoes({
                 <Label>Convocar membros</Label>
                 <div className="mt-1">
                   <MembroSelector membros={membros} selected={form.participantes}
-                    onChange={ids => setForm(f => ({ ...f, participantes: ids }))} />
+                    onChange={ids => setForm(f => ({ ...f, participantes: ids }))}
+                    faccaoId={userFaccaoId} />
                 </div>
               </div>
             )}
@@ -318,7 +320,7 @@ export function TabEscalacoes({
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Converter em Registro de Ação</DialogTitle></DialogHeader>
           <p className="text-xs text-muted-foreground -mt-1">Revise e ajuste os dados antes de registrar.</p>
-          <AcaoFormFields form={acaoForm} setForm={setAcaoForm} tipos={tipos} membros={membros} />
+          <AcaoFormFields form={acaoForm} setForm={setAcaoForm} tipos={tipos} membros={membros} userFaccaoId={userFaccaoId} />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => { setConvertendoId(null); setAcaoForm(emptyAcaoForm) }} disabled={salvando}>Cancelar</Button>
             <Button size="sm" onClick={handleConverter} disabled={salvando}>

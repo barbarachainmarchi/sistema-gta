@@ -18,13 +18,14 @@ interface Props {
   membros: Membro[]
   salvando: boolean
   podeEditar: boolean
+  userFaccaoId?: string | null
   onSaveAcao: (form: AcaoForm, escalacaoId?: string) => Promise<boolean>
   onDeleteAcao: (id: string) => Promise<boolean>
   onToggleContaPontuacao: (acao: Acao) => Promise<void>
 }
 
 export function TabRegistros({
-  acoes, participantes, tipos, membros, salvando, podeEditar,
+  acoes, participantes, tipos, membros, salvando, podeEditar, userFaccaoId,
   onSaveAcao, onDeleteAcao, onToggleContaPontuacao,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
@@ -184,7 +185,7 @@ export function TabRegistros({
       <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) { setFormOpen(false); setForm(emptyAcaoForm) } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Novo Registro de Ação</DialogTitle></DialogHeader>
-          <AcaoFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} />
+          <AcaoFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} userFaccaoId={userFaccaoId} />
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => { setFormOpen(false); setForm(emptyAcaoForm) }} disabled={salvando}>Cancelar</Button>
             <Button size="sm" onClick={handleSave} disabled={salvando}>

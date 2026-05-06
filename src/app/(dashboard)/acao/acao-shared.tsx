@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -195,43 +195,90 @@ interface MembroSelectorProps {
   membros: Membro[]
   selected: string[]
   onChange: (ids: string[]) => void
+  faccaoId?: string | null
 }
 
-export function MembroSelector({ membros, selected, onChange }: MembroSelectorProps) {
+export function MembroSelector({ membros, selected, onChange, faccaoId }: MembroSelectorProps) {
   const [busca, setBusca] = useState('')
+
   const filtrados = membros.filter(m =>
     !busca ||
     m.nome.toLowerCase().includes(busca.toLowerCase()) ||
     (m.vulgo?.toLowerCase().includes(busca.toLowerCase()) ?? false)
   )
+
+  const dafaccao = faccaoId ? filtrados.filter(m => m.faccao_id === faccaoId) : filtrados
+  const outros   = faccaoId ? filtrados.filter(m => m.faccao_id !== faccaoId) : []
+
+  function renderMembro(m: Membro) {
+    const sel = selected.includes(m.id)
+    return (
+      <button key={m.id} type="button"
+        onClick={() => onChange(sel ? selected.filter(id => id !== m.id) : [...selected, m.id])}
+        className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors',
+          sel ? 'bg-primary/10' : 'hover:bg-white/[0.04]'
+        )}>
+        <div className={cn('h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center',
+          sel ? 'bg-primary border-primary' : 'border-muted-foreground/40'
+        )}>
+          {sel && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+        </div>
+        <span className={cn('flex-1 truncate', sel && 'text-primary')}>{m.nome}</span>
+        {m.vulgo && <span className="text-muted-foreground shrink-0 text-[11px]">"{m.vulgo}"</span>}
+      </button>
+    )
+  }
+
   return (
     <div className="space-y-2">
+      {/* Chips dos selecionados */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map(id => {
+            const m = membros.find(mb => mb.id === id)
+            return (
+              <span key={id} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/20">
+                {m?.nome ?? id}
+                <button type="button" onClick={() => onChange(selected.filter(s => s !== id))}
+                  className="text-primary/60 hover:text-primary ml-0.5 shrink-0">
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            )
+          })}
+          <span className="inline-flex items-center text-[11px] text-muted-foreground px-1">
+            {selected.length} membro{selected.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
       <Input placeholder="Buscar membro..." value={busca} onChange={e => setBusca(e.target.value)} className="h-8 text-xs" />
-      <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border/30">
+      <div className="max-h-40 overflow-y-auto rounded-md border border-border divide-y divide-border/30">
         {filtrados.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-4">Nenhum membro encontrado</p>
-        ) : filtrados.map(m => {
-          const sel = selected.includes(m.id)
-          return (
-            <button key={m.id} type="button"
-              onClick={() => onChange(sel ? selected.filter(id => id !== m.id) : [...selected, m.id])}
-              className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors',
-                sel ? 'bg-primary/10' : 'hover:bg-white/[0.04]'
-              )}>
-              <div className={cn('h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center',
-                sel ? 'bg-primary border-primary' : 'border-muted-foreground/40'
-              )}>
-                {sel && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
-              </div>
-              <span className={cn('flex-1 truncate', sel && 'text-primary')}>{m.nome}</span>
-              {m.vulgo && <span className="text-muted-foreground shrink-0 text-[11px]">"{m.vulgo}"</span>}
-            </button>
-          )
-        })}
+        ) : faccaoId ? (
+          <>
+            {dafaccao.length > 0 && (
+              <>
+                <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider bg-muted/20 sticky top-0">
+                  Facção ({dafaccao.length})
+                </div>
+                {dafaccao.map(renderMembro)}
+              </>
+            )}
+            {outros.length > 0 && (
+              <>
+                <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider bg-muted/20 sticky top-0">
+                  Outros ({outros.length})
+                </div>
+                {outros.map(renderMembro)}
+              </>
+            )}
+          </>
+        ) : (
+          filtrados.map(renderMembro)
+        )}
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        {selected.length > 0 ? `${selected.length} selecionado(s)` : 'Nenhum selecionado'}
-      </p>
     </div>
   )
 }
@@ -245,9 +292,10 @@ interface AcaoFormFieldsProps {
   membros: Membro[]
   competicoes?: Competicao[]
   compEquipes?: CompEquipe[]
+  userFaccaoId?: string | null
 }
 
-export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = [], compEquipes = [] }: AcaoFormFieldsProps) {
+export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = [], compEquipes = [], userFaccaoId }: AcaoFormFieldsProps) {
   const tipoAtual = tipos.find(t => t.id === form.tipo_id)
 
   function handleTipoChange(tipoId: string) {
@@ -283,7 +331,8 @@ export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = []
         <Label>Participantes *</Label>
         <div className="mt-1">
           <MembroSelector membros={membros} selected={form.participantes}
-            onChange={ids => setForm(f => ({ ...f, participantes: ids }))} />
+            onChange={ids => setForm(f => ({ ...f, participantes: ids }))}
+            faccaoId={userFaccaoId} />
         </div>
       </div>
 

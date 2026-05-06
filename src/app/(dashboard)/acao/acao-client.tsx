@@ -54,6 +54,8 @@ export function AcaoClient({
     return sbRef.current
   }, [])
 
+  const userFaccaoId = membrosIniciais.find(m => m.id === membroId)?.faccao_id ?? null
+
   const [aba, setAba] = useState<Aba>('registros')
   const [tipos, setTipos] = useState<AcaoTipo[]>(tiposIniciais)
   const [acoes, setAcoes] = useState<Acao[]>(acoesIniciais)
@@ -479,7 +481,7 @@ export function AcaoClient({
         {aba === 'registros' && (
           <TabRegistros
             acoes={acoes} participantes={participantes} tipos={tipos} membros={membrosIniciais}
-            salvando={salvando} podeEditar={podeEditar}
+            salvando={salvando} podeEditar={podeEditar} userFaccaoId={userFaccaoId}
             onSaveAcao={handleSaveAcao}
             onDeleteAcao={handleDeleteAcao}
             onToggleContaPontuacao={handleToggleAcaoContaPontuacao}
@@ -490,7 +492,7 @@ export function AcaoClient({
             escalacoes={escalacoes} escalacaoParticipantes={escalacaoParticipantes}
             tipos={tipos} membros={membrosIniciais} acoes={acoes}
             userId={userId} membroId={membroId}
-            salvando={salvando} podeEditar={podeEditar}
+            salvando={salvando} podeEditar={podeEditar} userFaccaoId={userFaccaoId}
             onSaveEscalacao={handleSaveEscalacao}
             onDeleteEscalacao={handleDeleteEscalacao}
             onCandidatar={handleCandidatar}
