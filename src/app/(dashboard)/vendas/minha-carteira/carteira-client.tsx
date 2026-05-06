@@ -28,9 +28,10 @@ type Lancamento = {
   created_by: string | null; responsavel_nome: string | null
 }
 type Conta = {
-  id: string; nome: string; tipo: string
+  id: string; nome: string; tipo: string; membro_id?: string | null
   saldo_sujo: number; saldo_limpo: number; status: 'ativo' | 'inativo'
 }
+type MembroSemConta = { membroId: string; nome: string }
 type TransferPendente = {
   id: string
   solicitante_nome: string | null
@@ -65,18 +66,20 @@ interface Props {
   contas: Conta[]
   podeExcluirConcluida: boolean
   meuContaId: string | null
+  membrosSemContaIniciais: MembroSemConta[]
   transferPendentesIniciais: TransferPendente[]
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lancamentos: lancsIniciais, contas: contasIniciais, podeExcluirConcluida, meuContaId, transferPendentesIniciais }: Props) {
+export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lancamentos: lancsIniciais, contas: contasIniciais, podeExcluirConcluida, meuContaId, membrosSemContaIniciais, transferPendentesIniciais }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [vendas, setVendas] = useState<Venda[]>(vendasIniciais)
   const [lancamentos, setLancamentos] = useState<Lancamento[]>(lancsIniciais)
   const [contas, setContas] = useState<Conta[]>(contasIniciais)
+  const [membrosSemConta, setMembrosSemConta] = useState<MembroSemConta[]>(membrosSemContaIniciais)
 
   // Filtro de vendedores (admin): 'todos' | 'meu' | userId
   const [filtroVendedor, setFiltroVendedor] = useState<string>('meu')
@@ -192,15 +195,16 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     setLancamentos(prev => prev.map(l => l.id === lanc.id ? { ...l, conta_id: newContaId } : l))
   }
 
-  async function criarSolicitacaoTransfer(vendaId: string, contaDestinoId: string) {
+  async function criarSolicitacaoTransfer(vendaId: string, contaDestinoId: string, contaDestinoNome?: string) {
     const lanc = lancMap[vendaId]
     if (!lanc) throw new Error('Lançamento não encontrado')
     const venda = vendas.find(v => v.id === vendaId)
+    const nomeDestino = contaDestinoNome ?? contaMap[contaDestinoId]?.nome ?? 'conta'
     const { data, error } = await sb().from('sistema_solicitacoes').insert({
       tipo: 'transferencia_financeiro',
       referencia_id: lanc.id,
       referencia_tipo: 'financeiro_lancamento',
-      descricao: `Repasse: ${venda?.cliente_nome ?? 'Venda'} → ${contaMap[contaDestinoId]?.nome ?? 'conta'}`,
+      descricao: `Repasse: ${venda?.cliente_nome ?? 'Venda'} → ${nomeDestino}`,
       solicitante_id: userId,
       solicitante_nome: userNome,
       dados: {
@@ -217,19 +221,37 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     return data
   }
 
+  async function resolveContaDestino(value: string): Promise<{ id: string; nome: string; tipo: string }> {
+    if (value.startsWith('new:')) {
+      const membroId = value.slice(4)
+      const membro = membrosSemConta.find(m => m.membroId === membroId)
+      if (!membro) throw new Error('Membro não encontrado')
+      const { data, error } = await sb().from('financeiro_contas').insert({
+        nome: membro.nome, tipo: 'membro', membro_id: membroId,
+        saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
+      }).select().single()
+      if (error) throw new Error(error.message)
+      const nova = data as Conta
+      setContas(prev => [...prev, nova])
+      setMembrosSemConta(prev => prev.filter(m => m.membroId !== membroId))
+      return { id: nova.id, nome: nova.nome, tipo: nova.tipo }
+    }
+    const conta = contaMap[value]
+    if (!conta) throw new Error('Conta não encontrada')
+    return { id: conta.id, nome: conta.nome, tipo: conta.tipo }
+  }
+
   async function handleTransferirSingle(vendaId: string) {
     if (!destSingle) { toast.error('Escolha uma conta destino'); return }
-    const destConta = contaMap[destSingle]
     setSalvando(true)
     try {
-      if (destConta?.tipo === 'membro') {
-        // Conta com dono: pede aprovação
-        await criarSolicitacaoTransfer(vendaId, destSingle)
-        toast.success(`Solicitação enviada para ${destConta.nome} — aguardando confirmação`)
+      const { id: contaId, nome: contaNome, tipo: contaTipo } = await resolveContaDestino(destSingle)
+      if (contaTipo === 'membro') {
+        await criarSolicitacaoTransfer(vendaId, contaId, contaNome)
+        toast.success(`Solicitação enviada para ${contaNome} — aguardando confirmação`)
       } else {
-        // Conta sem dono (facção, caixa, setor…): transferir direto
-        await moverLancamento(vendaId, destSingle)
-        toast.success(`Transferido para ${destConta?.nome ?? 'conta'}`)
+        await moverLancamento(vendaId, contaId)
+        toast.success(`Transferido para ${contaNome}`)
       }
       setTransferindoVendaId(null); setDestSingle('')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
@@ -239,15 +261,15 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   async function handleTransferirTudo() {
     if (!destTudo) { toast.error('Escolha uma conta destino'); return }
     if (comigo.length === 0) { toast.info('Nenhuma venda com você'); return }
-    const destConta = contaMap[destTudo]
     setSalvando(true)
     try {
-      if (destConta?.tipo === 'membro') {
-        for (const v of comigo) await criarSolicitacaoTransfer(v.id, destTudo)
+      const { id: contaId, nome: contaNome, tipo: contaTipo } = await resolveContaDestino(destTudo)
+      if (contaTipo === 'membro') {
+        for (const v of comigo) await criarSolicitacaoTransfer(v.id, contaId, contaNome)
         toast.success(`${comigo.length} solicitação(ões) enviada(s) — aguardando confirmação`)
       } else {
-        for (const v of comigo) await moverLancamento(v.id, destTudo)
-        toast.success(`${comigo.length} venda(s) transferida(s) para ${destConta?.nome ?? 'conta'}`)
+        for (const v of comigo) await moverLancamento(v.id, contaId)
+        toast.success(`${comigo.length} venda(s) transferida(s) para ${contaNome}`)
       }
       setTransferTudoOpen(false); setDestTudo('')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
@@ -460,6 +482,9 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                     {contasAtivas.filter(c => c.id !== meuContaId).map(c => (
                       <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
                     ))}
+                    {membrosSemConta.map(m => (
+                      <SelectItem key={`new:${m.membroId}`} value={`new:${m.membroId}`}>{m.nome} (nova conta)</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button size="sm" className="h-7 text-xs" disabled={!destTudo || salvando} onClick={handleTransferirTudo}>
@@ -593,6 +618,9 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                                   <SelectContent>
                                     {contasAtivas.filter(c => c.id !== contaAtualId).map(c => (
                                       <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                                    ))}
+                                    {membrosSemConta.map(m => (
+                                      <SelectItem key={`new:${m.membroId}`} value={`new:${m.membroId}`}>{m.nome} (nova conta)</SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>

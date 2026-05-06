@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { Edit2, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers, Handshake } from 'lucide-react'
+import { Edit2, ExternalLink, Loader2, Plus, Check, X, Users, Car, Package, MapPin, Search, ImageUp, Copy, Trash2, Percent, ChevronDown, Layers, Handshake } from 'lucide-react'
 import { gerarImagemFaccao } from '@/lib/gerarImagem'
 import { uploadImgbb, getImgbbKey } from '@/lib/imgbb'
 import { cn, norm } from '@/lib/utils'
@@ -838,7 +838,19 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   return (
                   <div key={v.id} className={cn('grid grid-cols-[90px_1fr_60px_1fr_44px] gap-2 items-center px-3 py-2.5', idx < veiculosFiltrados.length - 1 && 'border-b border-border/40')}>
                     <span className="font-mono text-sm font-semibold">{v.placa ?? '—'}</span>
-                    <span className="text-sm text-muted-foreground truncate">{v.modelo ?? '—'}</span>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="text-sm text-muted-foreground truncate">{v.modelo ?? '—'}</span>
+                      {v.modelo && (
+                        <button
+                          type="button"
+                          title={`Buscar "${v.modelo} GTA" no Google Imagens`}
+                          onClick={() => window.open(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(v.modelo! + ' GTA')}`, '_blank')}
+                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                     <span className="text-sm text-muted-foreground">{v.cor ?? '—'}</span>
                     <span className="text-xs truncate">{dono ? dono.nome : v.proprietario_tipo === 'faccao' ? 'Facção' : <span className="text-muted-foreground/40 italic">Desconhecido</span>}</span>
                     <div className="flex gap-0.5">

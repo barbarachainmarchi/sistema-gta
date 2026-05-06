@@ -17,17 +17,38 @@ export default async function MinhaCarteiraPage() {
     { data: contasData },
   ] = await Promise.all([
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
-    supabase.from('usuarios').select('nome, membro_id').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('nome, membro_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('vendas').select('id, cliente_nome, tipo_dinheiro, desconto_pct, status, created_at, entregue_em, criado_por, criado_por_nome, cancelamento_solicitado, cancelamento_motivo').eq('status', 'entregue').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('id, venda_id, item_nome, quantidade, preco_unit'),
     supabase.from('financeiro_lancamentos').select('id, venda_id, conta_id, valor, tipo_dinheiro, created_by, responsavel_nome').eq('tipo', 'venda'),
-    supabase.from('financeiro_contas').select('id, nome, tipo, saldo_sujo, saldo_limpo, status').eq('status', 'ativo').order('nome'),
+    supabase.from('financeiro_contas').select('id, nome, tipo, membro_id, saldo_sujo, saldo_limpo, status').eq('status', 'ativo').order('nome'),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
+
+  // Membros da facção sem conta financeira (para aparecer no dropdown de transferência)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const faccaoId = (usuarioRow as any)?.local_trabalho_faccao_id ?? null
+  let membrosSemConta: { membroId: string; nome: string }[] = []
+  if (faccaoId) {
+    const { data: membrosData } = await supabase
+      .from('membros')
+      .select('id, nome')
+      .eq('faccao_id', faccaoId)
+      .eq('status', 'ativo')
+      .order('nome')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const membroIdsComConta = new Set((contasData ?? []).map((c: any) => c.membro_id).filter(Boolean))
+    membrosSemConta = (membrosData ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((m: any) => !membroIdsComConta.has(m.id))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((m: any) => ({ membroId: m.id, nome: m.nome }))
+  }
 
   // Conta do membro logado
   const membroId = usuarioRow?.membro_id ?? null
@@ -82,6 +103,7 @@ export default async function MinhaCarteiraPage() {
         contas={contasData ?? []}
         podeExcluirConcluida={podeExcluirConcluida}
         meuContaId={meuContaId}
+        membrosSemContaIniciais={membrosSemConta}
         transferPendentesIniciais={transferPendentes}
       />
     </>
