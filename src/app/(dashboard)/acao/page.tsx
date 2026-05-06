@@ -19,6 +19,9 @@ export default async function AcaoPage() {
     { data: competicoesData },
     { data: compEquipesData },
     { data: compEquipeMembrosData },
+    { data: compTiposData },
+    { data: compItensData },
+    { data: itemsData },
   ] = await Promise.all([
     supabase.from('acao_tipos').select('*').order('nome'),
     supabase.from('acoes').select('*').order('data_hora', { ascending: false }),
@@ -30,6 +33,9 @@ export default async function AcaoPage() {
     supabase.from('acao_competicoes').select('*').order('created_at', { ascending: false }),
     supabase.from('acao_competicao_equipes').select('*'),
     supabase.from('acao_competicao_equipe_membros').select('*'),
+    supabase.from('acao_competicao_tipos').select('*'),
+    supabase.from('acao_competicao_itens').select('*'),
+    supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
   ])
 
   // isDono = sem perfil vinculado (perms == null)
@@ -53,6 +59,9 @@ export default async function AcaoPage() {
         competicoesIniciais={competicoesData ?? []}
         compEquipesIniciais={compEquipesData ?? []}
         compEquipeMembrosIniciais={compEquipeMembrosData ?? []}
+        compTiposIniciais={compTiposData ?? []}
+        compItensIniciais={compItensData ?? []}
+        catalogItemsIniciais={itemsData ?? []}
       />
     </>
   )

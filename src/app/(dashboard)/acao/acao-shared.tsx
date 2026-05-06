@@ -23,8 +23,9 @@ export type Acao = {
   id: string; tipo_id: string | null; tipo_nome: string | null
   data_hora: string; observacoes: string | null
   para_caixa_faccao: boolean; conta_pontuacao: boolean
+  tipo_dinheiro: 'sujo' | 'limpo'
   competicao_id: string | null; equipe_id: string | null
-  quantidade_item: number | null
+  quantidade_item: number | null; item_id: string | null
   created_by: string | null; created_by_nome: string | null; created_at: string
 }
 
@@ -70,6 +71,18 @@ export type CompEquipeMembro = {
   id: string; equipe_id: string; membro_id: string; membro_nome: string
 }
 
+export type CompTipo = {
+  id: string; competicao_id: string; tipo_id: string; pontos_valor: number
+}
+
+export type CompItem = {
+  id: string; competicao_id: string; item_id: string
+}
+
+export type CatalogItem = {
+  id: string; nome: string
+}
+
 // ── Form types ─────────────────────────────────────────────────────────────────
 
 export type TipoForm = {
@@ -85,16 +98,16 @@ export const emptyTipoForm: TipoForm = {
 
 export type AcaoForm = {
   tipo_id: string; data_hora: string; participantes: string[]
-  para_caixa_faccao: boolean; valor_financeiro: string
+  para_caixa_faccao: boolean; valor_financeiro: string; tipo_dinheiro: 'sujo' | 'limpo'
   observacoes: string; conta_pontuacao: boolean
-  competicao_id: string; equipe_id: string; quantidade_item: string
+  competicao_id: string; equipe_id: string; quantidade_item: string; item_id: string
 }
 
 export const emptyAcaoForm: AcaoForm = {
   tipo_id: '', data_hora: '', participantes: [],
-  para_caixa_faccao: false, valor_financeiro: '',
+  para_caixa_faccao: false, valor_financeiro: '', tipo_dinheiro: 'sujo',
   observacoes: '', conta_pontuacao: false,
-  competicao_id: '', equipe_id: '', quantidade_item: '',
+  competicao_id: '', equipe_id: '', quantidade_item: '', item_id: '',
 }
 
 export type EscalacaoForm = {
@@ -108,9 +121,9 @@ export const emptyEscalacaoForm: EscalacaoForm = {
 
 export type CompForm = {
   nome: string; descricao: string
-  tipo_acao_id: string
+  tipos: { tipo_id: string; pontos_valor: string }[]
   modo_progresso: 'pontuacao' | 'item'
-  item_nome: string
+  itens: string[]
   tipo_encerramento: 'prazo' | 'meta' | 'prazo_ou_meta'
   prazo: string
   meta_valor: string
@@ -121,9 +134,9 @@ export const TEAM_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6
 
 export const emptyCompForm: CompForm = {
   nome: '', descricao: '',
-  tipo_acao_id: '',
+  tipos: [{ tipo_id: '', pontos_valor: '0' }],
   modo_progresso: 'pontuacao',
-  item_nome: '',
+  itens: [],
   tipo_encerramento: 'prazo',
   prazo: '',
   meta_valor: '',
@@ -177,13 +190,15 @@ export function calcTeamProgress(
   return participantes.filter(p => ids.has(p.acao_id)).reduce((s, p) => s + p.pontos_atribuidos, 0)
 }
 
-export function getCompLabel(comp: Competicao): string {
+export function getCompLabel(comp: Competicao, nomesItens?: string[]): string {
   const parts: string[] = []
   if (comp.tipo_encerramento !== 'meta') {
     parts.push(`Prazo: ${fmtDatetime(comp.prazo)}`)
   }
   if (comp.tipo_encerramento !== 'prazo') {
-    const unidade = comp.modo_progresso === 'item' ? (comp.item_nome ?? 'itens') : 'pontos'
+    const unidade = comp.modo_progresso === 'item'
+      ? (nomesItens?.join(', ') || comp.item_nome || 'itens')
+      : 'pontos'
     parts.push(`Meta: ${comp.meta_valor} ${unidade}`)
   }
   return parts.join(' · ')
@@ -292,20 +307,39 @@ interface AcaoFormFieldsProps {
   membros: Membro[]
   competicoes?: Competicao[]
   compEquipes?: CompEquipe[]
+  compTipos?: CompTipo[]
+  compItens?: CompItem[]
+  catalogItems?: CatalogItem[]
   userFaccaoId?: string | null
 }
 
-export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = [], compEquipes = [], userFaccaoId }: AcaoFormFieldsProps) {
+export function AcaoFormFields({
+  form, setForm, tipos, membros,
+  competicoes = [], compEquipes = [], compTipos = [], compItens = [], catalogItems = [],
+  userFaccaoId,
+}: AcaoFormFieldsProps) {
   const tipoAtual = tipos.find(t => t.id === form.tipo_id)
 
   function handleTipoChange(tipoId: string) {
-    const tipo = tipos.find(t => t.id === tipoId)
-    setForm(f => ({ ...f, tipo_id: tipoId, conta_pontuacao: tipo?.conta_pontuacao ?? false, competicao_id: '', equipe_id: '' }))
+    setForm(f => ({ ...f, tipo_id: tipoId, competicao_id: '', equipe_id: '', item_id: '' }))
   }
 
-  const competicoesAtivas = competicoes.filter(c => c.status === 'ativa' && c.tipo_acao_id === form.tipo_id)
+  // Competitions active that include this action type (multi-tipo or legacy single-tipo)
+  const competicoesAtivas = competicoes.filter(c =>
+    c.status === 'ativa' && (
+      c.tipo_acao_id === form.tipo_id ||
+      compTipos.some(ct => ct.competicao_id === c.id && ct.tipo_id === form.tipo_id)
+    )
+  )
   const compAtual = competicoesAtivas.find(c => c.id === form.competicao_id)
   const equipesDaComp = compEquipes.filter(e => e.competicao_id === form.competicao_id)
+
+  // Items allowed for the selected competition
+  const itensDaComp = compItens.filter(ci => ci.competicao_id === form.competicao_id)
+  const itensDaCompComNome = itensDaComp.map(ci => ({
+    ...ci,
+    nome: catalogItems.find(i => i.id === ci.item_id)?.nome ?? '?',
+  }))
 
   return (
     <div className="space-y-4 py-2">
@@ -336,43 +370,53 @@ export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = []
         </div>
       </div>
 
-      {/* Competição (opcional, aparece apenas se há competições ativas para o tipo) */}
+      {/* Competição (aparece apenas se há competições ativas para o tipo) */}
       {form.tipo_id && competicoesAtivas.length > 0 && (
         <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-3">
           <p className="text-xs font-semibold text-primary">Vincular à competição</p>
-          <div>
-            <Select value={form.competicao_id || 'none'} onValueChange={v => setForm(f => ({ ...f, competicao_id: v === 'none' ? '' : v, equipe_id: '' }))}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sem competição" /></SelectTrigger>
+          <Select value={form.competicao_id || 'none'} onValueChange={v => setForm(f => ({ ...f, competicao_id: v === 'none' ? '' : v, equipe_id: '', item_id: '' }))}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sem competição" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem competição</SelectItem>
+              {competicoesAtivas.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {form.competicao_id && (
+            <Select value={form.equipe_id || 'none'} onValueChange={v => setForm(f => ({ ...f, equipe_id: v === 'none' ? '' : v }))}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione a equipe..." /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sem competição</SelectItem>
-                {competicoesAtivas.map(c => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                <SelectItem value="none">Selecione a equipe...</SelectItem>
+                {equipesDaComp.map(e => (
+                  <SelectItem key={e.id} value={e.id}>
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full inline-block" style={{ background: e.cor }} />
+                      {e.nome}
+                    </span>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-          </div>
-          {form.competicao_id && (
-            <div>
-              <Select value={form.equipe_id || 'none'} onValueChange={v => setForm(f => ({ ...f, equipe_id: v === 'none' ? '' : v }))}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione a equipe..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Selecione a equipe...</SelectItem>
-                  {equipesDaComp.map(e => (
-                    <SelectItem key={e.id} value={e.id}>
-                      <span className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full inline-block" style={{ background: e.cor }} />
-                        {e.nome}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           )}
           {compAtual?.modo_progresso === 'item' && form.equipe_id && (
-            <div>
-              <Label className="text-xs">Quantidade de {compAtual.item_nome ?? 'itens'} *</Label>
-              <Input type="number" min="1" value={form.quantidade_item}
-                onChange={e => setForm(f => ({ ...f, quantidade_item: e.target.value }))}
-                className="mt-1 h-8 text-xs w-32" />
+            <div className="space-y-2">
+              {itensDaCompComNome.length > 0 && (
+                <div>
+                  <Label className="text-xs">Item *</Label>
+                  <Select value={form.item_id || 'none'} onValueChange={v => setForm(f => ({ ...f, item_id: v === 'none' ? '' : v }))}>
+                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Selecione o item..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Selecione o item...</SelectItem>
+                      {itensDaCompComNome.map(i => <SelectItem key={i.item_id} value={i.item_id}>{i.nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div>
+                <Label className="text-xs">Quantidade *</Label>
+                <Input type="number" min="1" value={form.quantidade_item}
+                  onChange={e => setForm(f => ({ ...f, quantidade_item: e.target.value }))}
+                  className="mt-1 h-8 text-xs w-32" />
+              </div>
             </div>
           )}
         </div>
@@ -387,12 +431,29 @@ export function AcaoFormFields({ form, setForm, tipos, membros, competicoes = []
           <Switch checked={form.para_caixa_faccao} onCheckedChange={v => setForm(f => ({ ...f, para_caixa_faccao: v, valor_financeiro: '' }))} />
         </div>
         {form.para_caixa_faccao && (
-          <div>
-            <Label>Valor doado para o caixa (R$) *</Label>
-            <Input type="number" min="1" step="1" value={form.valor_financeiro}
-              onChange={e => setForm(f => ({ ...f, valor_financeiro: e.target.value }))}
-              placeholder="Ex: 5000" className="mt-1 w-40" />
-          </div>
+          <>
+            <div>
+              <Label>Valor doado para o caixa (R$) *</Label>
+              <Input type="number" min="1" step="1" value={form.valor_financeiro}
+                onChange={e => setForm(f => ({ ...f, valor_financeiro: e.target.value }))}
+                placeholder="Ex: 5000" className="mt-1 w-40" />
+            </div>
+            <div>
+              <Label>Tipo de dinheiro</Label>
+              <div className="flex gap-2 mt-1">
+                {(['sujo', 'limpo'] as const).map(t => (
+                  <button key={t} type="button" onClick={() => setForm(f => ({ ...f, tipo_dinheiro: t }))}
+                    className={cn('flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors',
+                      form.tipo_dinheiro === t
+                        ? t === 'sujo' ? 'border-orange-500/50 bg-orange-500/15 text-orange-400' : 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400'
+                        : 'border-border text-muted-foreground hover:text-foreground'
+                    )}>
+                    {t === 'sujo' ? 'Sujo' : 'Limpo'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
       </div>
       <div>

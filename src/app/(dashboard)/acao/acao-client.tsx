@@ -8,6 +8,7 @@ import type {
   AcaoTipo, Acao, AcaoParticipante, Escalacao, EscalacaoParticipante,
   Membro, TipoForm, AcaoForm, EscalacaoForm,
   Competicao, CompEquipe, CompEquipeMembro, CompForm,
+  CompTipo, CompItem, CatalogItem,
 } from './acao-shared'
 import { calcTeamProgress } from './acao-shared'
 import { TabTipos } from './tab-tipos'
@@ -30,6 +31,9 @@ interface Props {
   competicoesIniciais: Competicao[]
   compEquipesIniciais: CompEquipe[]
   compEquipeMembrosIniciais: CompEquipeMembro[]
+  compTiposIniciais: CompTipo[]
+  compItensIniciais: CompItem[]
+  catalogItemsIniciais: CatalogItem[]
 }
 
 type Aba = 'registros' | 'escalacoes' | 'tipos' | 'ranking' | 'competicoes'
@@ -47,6 +51,7 @@ export function AcaoClient({
   tiposIniciais, acoesIniciais, participantesIniciais,
   escalacoesIniciais, escalacaoParticipantesIniciais, membrosIniciais,
   competicoesIniciais, compEquipesIniciais, compEquipeMembrosIniciais,
+  compTiposIniciais, compItensIniciais, catalogItemsIniciais,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => {
@@ -65,6 +70,8 @@ export function AcaoClient({
   const [competicoes, setCompeticoes] = useState<Competicao[]>(competicoesIniciais)
   const [compEquipes, setCompEquipes] = useState<CompEquipe[]>(compEquipesIniciais)
   const [compEquipeMembros, setCompEquipeMembros] = useState<CompEquipeMembro[]>(compEquipeMembrosIniciais)
+  const [compTipos, setCompTipos] = useState<CompTipo[]>(compTiposIniciais)
+  const [compItens, setCompItens] = useState<CompItem[]>(compItensIniciais)
   const [salvando, setSalvando] = useState(false)
 
   // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -120,7 +127,12 @@ export function AcaoClient({
     setSalvando(true)
     try {
       const tipo = tipos.find(t => t.id === form.tipo_id)
-      const pontos = (form.conta_pontuacao && tipo?.conta_pontuacao) ? (tipo.pontos_valor ?? 0) : 0
+      const compTipoEntry = form.competicao_id
+        ? compTipos.find(ct => ct.competicao_id === form.competicao_id && ct.tipo_id === form.tipo_id)
+        : null
+      const pontos = form.conta_pontuacao
+        ? (compTipoEntry?.pontos_valor ?? (tipo?.conta_pontuacao ? (tipo.pontos_valor ?? 0) : 0))
+        : 0
 
       const { data: acaoData, error: acaoErr } = await sb().from('acoes').insert({
         tipo_id: form.tipo_id,
@@ -129,9 +141,11 @@ export function AcaoClient({
         observacoes: form.observacoes.trim() || null,
         para_caixa_faccao: form.para_caixa_faccao,
         conta_pontuacao: form.conta_pontuacao,
+        tipo_dinheiro: form.tipo_dinheiro,
         competicao_id: form.competicao_id || null,
         equipe_id: form.equipe_id || null,
         quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
+        item_id: form.item_id || null,
         created_by: userId,
         created_by_nome: userNome,
       }).select().single()
@@ -156,7 +170,7 @@ export function AcaoClient({
         if (valorNum > 0) {
           const { data: contaFaccao } = await sb()
             .from('financeiro_contas')
-            .select('id, saldo_sujo')
+            .select('id, saldo_sujo, saldo_limpo')
             .eq('tipo', 'faccao')
             .eq('status', 'ativo')
             .order('created_at')
@@ -166,7 +180,7 @@ export function AcaoClient({
             await sb().from('financeiro_lancamentos').insert({
               conta_id: contaFaccao.id,
               tipo: 'entrada',
-              tipo_dinheiro: 'sujo',
+              tipo_dinheiro: form.tipo_dinheiro,
               valor: valorNum,
               descricao: `Ação: ${tipo?.nome ?? 'Ação'}`,
               acao_referencia: tipo?.nome ?? null,
@@ -176,9 +190,15 @@ export function AcaoClient({
               created_by: userId,
               responsavel_nome: userNome,
             })
-            await sb().from('financeiro_contas').update({
-              saldo_sujo: (contaFaccao.saldo_sujo ?? 0) + valorNum,
-            }).eq('id', contaFaccao.id)
+            if (form.tipo_dinheiro === 'limpo') {
+              await sb().from('financeiro_contas').update({
+                saldo_limpo: (contaFaccao.saldo_limpo ?? 0) + valorNum,
+              }).eq('id', contaFaccao.id)
+            } else {
+              await sb().from('financeiro_contas').update({
+                saldo_sujo: (contaFaccao.saldo_sujo ?? 0) + valorNum,
+              }).eq('id', contaFaccao.id)
+            }
           }
         }
       }
@@ -214,6 +234,67 @@ export function AcaoClient({
       }
 
       toast.success('Ação registrada!')
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
+    finally { setSalvando(false) }
+  }
+
+  async function handleEditAcao(id: string, form: AcaoForm): Promise<boolean> {
+    if (!form.tipo_id) { toast.error('Selecione o tipo de ação'); return false }
+    if (!form.data_hora) { toast.error('Informe a data e hora'); return false }
+    if (form.participantes.length === 0) { toast.error('Selecione pelo menos um participante'); return false }
+    setSalvando(true)
+    try {
+      const tipo = tipos.find(t => t.id === form.tipo_id)
+      const compTipoEntry = form.competicao_id
+        ? compTipos.find(ct => ct.competicao_id === form.competicao_id && ct.tipo_id === form.tipo_id)
+        : null
+      const pontos = form.conta_pontuacao
+        ? (compTipoEntry?.pontos_valor ?? (tipo?.conta_pontuacao ? (tipo.pontos_valor ?? 0) : 0))
+        : 0
+
+      const { error: acaoErr } = await sb().from('acoes').update({
+        tipo_id: form.tipo_id,
+        tipo_nome: tipo?.nome ?? null,
+        data_hora: new Date(form.data_hora).toISOString(),
+        observacoes: form.observacoes.trim() || null,
+        para_caixa_faccao: form.para_caixa_faccao,
+        conta_pontuacao: form.conta_pontuacao,
+        tipo_dinheiro: form.tipo_dinheiro,
+        competicao_id: form.competicao_id || null,
+        equipe_id: form.equipe_id || null,
+        quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
+        item_id: form.item_id || null,
+      }).eq('id', id)
+      if (acaoErr) throw acaoErr
+
+      await sb().from('acao_participantes').delete().eq('acao_id', id)
+
+      const parts = form.participantes.map(mId => {
+        const m = membrosIniciais.find(mb => mb.id === mId)
+        return { acao_id: id, membro_id: mId, membro_nome: m?.nome ?? mId, pontos_atribuidos: pontos }
+      })
+      const { data: partsData, error: partsErr } = await sb().from('acao_participantes').insert(parts).select()
+      if (partsErr) throw partsErr
+
+      setAcoes(prev => prev.map(a => a.id === id ? {
+        ...a,
+        tipo_id: form.tipo_id, tipo_nome: tipo?.nome ?? null,
+        data_hora: new Date(form.data_hora).toISOString(),
+        observacoes: form.observacoes.trim() || null,
+        para_caixa_faccao: form.para_caixa_faccao,
+        conta_pontuacao: form.conta_pontuacao,
+        tipo_dinheiro: form.tipo_dinheiro,
+        competicao_id: form.competicao_id || null,
+        equipe_id: form.equipe_id || null,
+        quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
+        item_id: form.item_id || null,
+      } : a))
+      setParticipantes(prev => [
+        ...prev.filter(p => p.acao_id !== id),
+        ...(partsData as AcaoParticipante[]),
+      ])
+      toast.success('Ação atualizada!')
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
     finally { setSalvando(false) }
@@ -281,6 +362,51 @@ export function AcaoClient({
     finally { setSalvando(false) }
   }
 
+  async function handleEditEscalacao(id: string, form: EscalacaoForm): Promise<boolean> {
+    if (!form.tipo_id) { toast.error('Selecione o tipo de ação'); return false }
+    if (!form.data_hora_prevista) { toast.error('Informe a data e hora previstas'); return false }
+    setSalvando(true)
+    try {
+      const tipo = tipos.find(t => t.id === form.tipo_id)
+      const { error } = await sb().from('escalacoes').update({
+        tipo_id: form.tipo_id,
+        tipo_nome: tipo?.nome ?? null,
+        data_hora_prevista: new Date(form.data_hora_prevista).toISOString(),
+        modo: form.modo,
+        observacoes: form.observacoes.trim() || null,
+      }).eq('id', id)
+      if (error) throw error
+
+      // Reconcile convocados (para modo manual)
+      await sb().from('escalacao_participantes').delete().eq('escalacao_id', id).eq('status', 'convocado')
+      const novosConvocados: EscalacaoParticipante[] = []
+      if (form.modo === 'manual' && form.participantes.length > 0) {
+        const rows = form.participantes.map(mId => {
+          const m = membrosIniciais.find(mb => mb.id === mId)
+          return { escalacao_id: id, membro_id: mId, membro_nome: m?.nome ?? mId, status: 'convocado' as const }
+        })
+        const { data, error: pErr } = await sb().from('escalacao_participantes').insert(rows).select()
+        if (pErr) throw pErr
+        novosConvocados.push(...(data as EscalacaoParticipante[]))
+      }
+
+      setEscalacoes(prev => prev.map(e => e.id === id ? {
+        ...e,
+        tipo_id: form.tipo_id, tipo_nome: tipo?.nome ?? null,
+        data_hora_prevista: new Date(form.data_hora_prevista).toISOString(),
+        modo: form.modo as 'aberta' | 'manual',
+        observacoes: form.observacoes.trim() || null,
+      } : e))
+      setEscalacaoParticipantes(prev => [
+        ...prev.filter(p => !(p.escalacao_id === id && p.status === 'convocado')),
+        ...novosConvocados,
+      ])
+      toast.success('Escalação atualizada!')
+      return true
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
+    finally { setSalvando(false) }
+  }
+
   async function handleDeleteEscalacao(id: string): Promise<boolean> {
     setSalvando(true)
     try {
@@ -333,19 +459,23 @@ export function AcaoClient({
   async function handleSaveCompeticao(form: CompForm): Promise<boolean> {
     if (!form.nome.trim()) { toast.error('Nome é obrigatório'); return false }
     if (form.equipes.length < 2) { toast.error('Adicione pelo menos 2 equipes'); return false }
+    if (form.tipos.filter(t => t.tipo_id).length === 0) { toast.error('Selecione pelo menos um tipo de ação'); return false }
     if (form.tipo_encerramento !== 'meta' && !form.prazo) { toast.error('Informe o prazo'); return false }
     if (form.tipo_encerramento !== 'prazo' && !form.meta_valor) { toast.error('Informe a meta'); return false }
-    if (form.modo_progresso === 'item' && !form.item_nome.trim()) { toast.error('Informe o nome do item'); return false }
+    if (form.modo_progresso === 'item' && form.itens.length === 0) { toast.error('Selecione pelo menos um item'); return false }
     setSalvando(true)
     try {
-      const tipoNome = tipos.find(t => t.id === form.tipo_acao_id)?.nome ?? null
+      const tiposValidos = form.tipos.filter(t => t.tipo_id)
+      const primeiroTipoId = tiposValidos[0]?.tipo_id ?? null
+      const primeiroTipoNome = primeiroTipoId ? tipos.find(t => t.id === primeiroTipoId)?.nome ?? null : null
+
       const { data: compData, error: compErr } = await sb().from('acao_competicoes').insert({
         nome: form.nome.trim(),
         descricao: form.descricao.trim() || null,
-        tipo_acao_id: form.tipo_acao_id || null,
-        tipo_acao_nome: tipoNome,
+        tipo_acao_id: primeiroTipoId,
+        tipo_acao_nome: primeiroTipoNome,
         modo_progresso: form.modo_progresso,
-        item_nome: form.modo_progresso === 'item' ? form.item_nome.trim() : null,
+        item_nome: null,
         tipo_encerramento: form.tipo_encerramento,
         prazo: form.prazo ? new Date(form.prazo).toISOString() : null,
         meta_valor: form.meta_valor ? parseInt(form.meta_valor) : null,
@@ -355,6 +485,25 @@ export function AcaoClient({
       }).select().single()
       if (compErr) throw compErr
       const novaComp = compData as Competicao
+
+      // Inserir tipos permitidos
+      const tiposRows = tiposValidos.map(t => ({
+        competicao_id: novaComp.id,
+        tipo_id: t.tipo_id,
+        pontos_valor: parseInt(t.pontos_valor) || 0,
+      }))
+      const { data: tiposData, error: tiposErr } = await sb().from('acao_competicao_tipos').insert(tiposRows).select()
+      if (tiposErr) throw tiposErr
+      const novosTipos = tiposData as CompTipo[]
+
+      // Inserir itens (modo item)
+      const novosItens: CompItem[] = []
+      if (form.modo_progresso === 'item' && form.itens.length > 0) {
+        const itensRows = form.itens.map(itemId => ({ competicao_id: novaComp.id, item_id: itemId }))
+        const { data: itensData, error: itensErr } = await sb().from('acao_competicao_itens').insert(itensRows).select()
+        if (itensErr) throw itensErr
+        novosItens.push(...(itensData as CompItem[]))
+      }
 
       const novasEquipes: CompEquipe[] = []
       const novosMembros: CompEquipeMembro[] = []
@@ -383,6 +532,8 @@ export function AcaoClient({
       setCompeticoes(prev => [novaComp, ...prev])
       setCompEquipes(prev => [...prev, ...novasEquipes])
       setCompEquipeMembros(prev => [...prev, ...novosMembros])
+      setCompTipos(prev => [...prev, ...novosTipos])
+      setCompItens(prev => [...prev, ...novosItens])
       toast.success('Competição criada!')
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
@@ -398,6 +549,8 @@ export function AcaoClient({
       setCompeticoes(prev => prev.filter(c => c.id !== id))
       setCompEquipes(prev => prev.filter(e => e.competicao_id !== id))
       setCompEquipeMembros(prev => prev.filter(m => !equipeIds.includes(m.equipe_id)))
+      setCompTipos(prev => prev.filter(ct => ct.competicao_id !== id))
+      setCompItens(prev => prev.filter(ci => ci.competicao_id !== id))
       toast.success('Competição excluída')
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
@@ -481,8 +634,11 @@ export function AcaoClient({
         {aba === 'registros' && (
           <TabRegistros
             acoes={acoes} participantes={participantes} tipos={tipos} membros={membrosIniciais}
+            competicoes={competicoes} compEquipes={compEquipes}
+            compTipos={compTipos} compItens={compItens} catalogItems={catalogItemsIniciais}
             salvando={salvando} podeEditar={podeEditar} userFaccaoId={userFaccaoId}
             onSaveAcao={handleSaveAcao}
+            onEditAcao={handleEditAcao}
             onDeleteAcao={handleDeleteAcao}
             onToggleContaPontuacao={handleToggleAcaoContaPontuacao}
           />
@@ -494,6 +650,7 @@ export function AcaoClient({
             userId={userId} membroId={membroId}
             salvando={salvando} podeEditar={podeEditar} userFaccaoId={userFaccaoId}
             onSaveEscalacao={handleSaveEscalacao}
+            onEditEscalacao={handleEditEscalacao}
             onDeleteEscalacao={handleDeleteEscalacao}
             onCandidatar={handleCandidatar}
             onResponderConvocacao={handleResponderConvocacao}
@@ -504,6 +661,7 @@ export function AcaoClient({
         {aba === 'competicoes' && (
           <TabCompeticoes
             competicoes={competicoes} compEquipes={compEquipes} compEquipeMembros={compEquipeMembros}
+            compTipos={compTipos} compItens={compItens} catalogItems={catalogItemsIniciais}
             acoes={acoes} participantes={participantes} tipos={tipos} membros={membrosIniciais}
             salvando={salvando} podeEditar={podeEditar}
             onSave={handleSaveCompeticao}

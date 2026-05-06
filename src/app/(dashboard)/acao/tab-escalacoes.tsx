@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { Plus, Trash2, Loader2, Calendar, Users, ChevronDown, ChevronRight, Check, X, ArrowRight } from 'lucide-react'
+import { Plus, Trash2, Loader2, Calendar, Users, ChevronDown, ChevronRight, Check, X, ArrowRight, Edit2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -26,6 +26,7 @@ interface Props {
   podeEditar: boolean
   userFaccaoId?: string | null
   onSaveEscalacao: (form: EscalacaoForm) => Promise<boolean>
+  onEditEscalacao: (id: string, form: EscalacaoForm) => Promise<boolean>
   onDeleteEscalacao: (id: string) => Promise<boolean>
   onCandidatar: (escalacaoId: string) => Promise<void>
   onResponderConvocacao: (partId: string, status: 'confirmado' | 'recusado') => Promise<void>
@@ -36,10 +37,11 @@ interface Props {
 export function TabEscalacoes({
   escalacoes, escalacaoParticipantes, tipos, membros, salvando, podeEditar, userFaccaoId,
   userId, membroId,
-  onSaveEscalacao, onDeleteEscalacao, onCandidatar, onResponderConvocacao,
+  onSaveEscalacao, onEditEscalacao, onDeleteEscalacao, onCandidatar, onResponderConvocacao,
   onCancelarEscalacao, onSaveAcaoFromEscalacao,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
+  const [editingEscId, setEditingEscId] = useState<string | null>(null)
   const [form, setForm] = useState<EscalacaoForm>(emptyEscalacaoForm)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -60,9 +62,32 @@ export function TabEscalacoes({
     setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
 
+  function abrirNova() {
+    setForm(emptyEscalacaoForm); setEditingEscId(null); setFormOpen(true)
+  }
+
+  function abrirEditar(esc: Escalacao) {
+    const parts = partsByEsc[esc.id] ?? []
+    setForm({
+      tipo_id: esc.tipo_id ?? '',
+      data_hora_prevista: toDatetimeLocal(esc.data_hora_prevista),
+      modo: esc.modo,
+      participantes: parts.filter(p => p.status === 'convocado').map(p => p.membro_id),
+      observacoes: esc.observacoes ?? '',
+    })
+    setEditingEscId(esc.id)
+    setFormOpen(true)
+  }
+
+  function fecharForm() {
+    setFormOpen(false); setEditingEscId(null); setForm(emptyEscalacaoForm)
+  }
+
   async function handleSave() {
-    const ok = await onSaveEscalacao(form)
-    if (ok) { setFormOpen(false); setForm(emptyEscalacaoForm) }
+    const ok = editingEscId
+      ? await onEditEscalacao(editingEscId, form)
+      : await onSaveEscalacao(form)
+    if (ok) fecharForm()
   }
 
   function abrirConverter(esc: Escalacao) {
@@ -78,11 +103,13 @@ export function TabEscalacoes({
       participantes: preSelected,
       para_caixa_faccao: false,
       valor_financeiro: '',
+      tipo_dinheiro: 'sujo',
       observacoes: esc.observacoes ?? '',
       conta_pontuacao: false,
       competicao_id: '',
       equipe_id: '',
       quantidade_item: '',
+      item_id: '',
     })
     setConvertendoId(esc.id)
   }
@@ -121,7 +148,7 @@ export function TabEscalacoes({
           ))}
         </div>
         {podeEditar && (
-          <Button size="sm" className="gap-1.5" onClick={() => { setForm(emptyEscalacaoForm); setFormOpen(true) }}>
+          <Button size="sm" className="gap-1.5" onClick={abrirNova}>
             <Plus className="h-3.5 w-3.5" />Nova Escalação
           </Button>
         )}
@@ -204,6 +231,10 @@ export function TabEscalacoes({
                     )}
                     {podeEditar && esc.status === 'pendente' && (
                       <>
+                        <button onClick={() => abrirEditar(esc)}
+                          className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
                         <Button size="sm" className="h-7 text-xs gap-1" onClick={() => abrirConverter(esc)}>
                           <ArrowRight className="h-3 w-3" />Converter
                         </Button>
@@ -254,10 +285,10 @@ export function TabEscalacoes({
         </div>
       )}
 
-      {/* Nova Escalação dialog */}
-      <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) { setFormOpen(false); setForm(emptyEscalacaoForm) } }}>
+      {/* Nova / Editar Escalação dialog */}
+      <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) fecharForm() }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Nova Escalação</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingEscId ? 'Editar Escalação' : 'Nova Escalação'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div>
               <Label>Tipo de ação *</Label>
@@ -307,9 +338,9 @@ export function TabEscalacoes({
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => { setFormOpen(false); setForm(emptyEscalacaoForm) }} disabled={salvando}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={fecharForm} disabled={salvando}>Cancelar</Button>
             <Button size="sm" onClick={handleSave} disabled={salvando}>
-              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Criar Escalação'}
+              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editingEscId ? 'Salvar' : 'Criar Escalação'}
             </Button>
           </div>
         </DialogContent>

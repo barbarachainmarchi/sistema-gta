@@ -1,34 +1,43 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { Plus, Trash2, Loader2, Calendar, Users, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Loader2, Calendar, Users, ChevronDown, ChevronRight, Edit2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import type { Acao, AcaoParticipante, AcaoTipo, Membro, AcaoForm } from './acao-shared'
-import { emptyAcaoForm, fmtDatetime, AcaoFormFields } from './acao-shared'
+import type { Acao, AcaoParticipante, AcaoTipo, Membro, AcaoForm, Competicao, CompEquipe, CompTipo, CompItem, CatalogItem } from './acao-shared'
+import { emptyAcaoForm, fmtDatetime, toDatetimeLocal, AcaoFormFields } from './acao-shared'
 
 interface Props {
   acoes: Acao[]
   participantes: AcaoParticipante[]
   tipos: AcaoTipo[]
   membros: Membro[]
+  competicoes: Competicao[]
+  compEquipes: CompEquipe[]
+  compTipos: CompTipo[]
+  compItens: CompItem[]
+  catalogItems: CatalogItem[]
   salvando: boolean
   podeEditar: boolean
   userFaccaoId?: string | null
   onSaveAcao: (form: AcaoForm, escalacaoId?: string) => Promise<boolean>
+  onEditAcao: (id: string, form: AcaoForm) => Promise<boolean>
   onDeleteAcao: (id: string) => Promise<boolean>
   onToggleContaPontuacao: (acao: Acao) => Promise<void>
 }
 
 export function TabRegistros({
-  acoes, participantes, tipos, membros, salvando, podeEditar, userFaccaoId,
-  onSaveAcao, onDeleteAcao, onToggleContaPontuacao,
+  acoes, participantes, tipos, membros,
+  competicoes, compEquipes, compTipos, compItens, catalogItems,
+  salvando, podeEditar, userFaccaoId,
+  onSaveAcao, onEditAcao, onDeleteAcao, onToggleContaPontuacao,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<AcaoForm>(emptyAcaoForm)
   const [filtroTipo, setFiltroTipo] = useState('todos')
   const [filtroFrom, setFiltroFrom] = useState('')
@@ -68,9 +77,43 @@ export function TabRegistros({
     setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
 
+  function abrirNovo() {
+    setForm(emptyAcaoForm)
+    setEditingId(null)
+    setFormOpen(true)
+  }
+
+  function abrirEditar(acao: Acao) {
+    const parts = partsByAcao[acao.id] ?? []
+    setForm({
+      tipo_id: acao.tipo_id ?? '',
+      data_hora: toDatetimeLocal(acao.data_hora),
+      participantes: parts.map(p => p.membro_id),
+      para_caixa_faccao: acao.para_caixa_faccao,
+      valor_financeiro: '',
+      tipo_dinheiro: acao.tipo_dinheiro ?? 'sujo',
+      observacoes: acao.observacoes ?? '',
+      conta_pontuacao: acao.conta_pontuacao,
+      competicao_id: acao.competicao_id ?? '',
+      equipe_id: acao.equipe_id ?? '',
+      quantidade_item: acao.quantidade_item != null ? String(acao.quantidade_item) : '',
+      item_id: acao.item_id ?? '',
+    })
+    setEditingId(acao.id)
+    setFormOpen(true)
+  }
+
+  function fecharForm() {
+    setFormOpen(false)
+    setEditingId(null)
+    setForm(emptyAcaoForm)
+  }
+
   async function handleSave() {
-    const ok = await onSaveAcao(form)
-    if (ok) { setFormOpen(false); setForm(emptyAcaoForm) }
+    const ok = editingId
+      ? await onEditAcao(editingId, form)
+      : await onSaveAcao(form)
+    if (ok) fecharForm()
   }
 
   return (
@@ -94,7 +137,7 @@ export function TabRegistros({
             onChange={e => setFiltroBusca(e.target.value)} className="h-8 text-xs w-44" />
         </div>
         {podeEditar && (
-          <Button size="sm" className="gap-1.5" onClick={() => { setForm(emptyAcaoForm); setFormOpen(true) }}>
+          <Button size="sm" className="gap-1.5" onClick={abrirNovo}>
             <Plus className="h-3.5 w-3.5" />Novo Registro
           </Button>
         )}
@@ -154,10 +197,16 @@ export function TabRegistros({
                       </div>
                     )}
                     {podeEditar && (
-                      <button onClick={() => setConfirmDeleteId(acao.id)}
-                        className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <>
+                        <button onClick={() => abrirEditar(acao)}
+                          className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={() => setConfirmDeleteId(acao.id)}
+                          className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -181,15 +230,22 @@ export function TabRegistros({
         </div>
       )}
 
-      {/* Novo registro dialog */}
-      <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) { setFormOpen(false); setForm(emptyAcaoForm) } }}>
+      {/* Create/Edit dialog */}
+      <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) fecharForm() }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Novo Registro de Ação</DialogTitle></DialogHeader>
-          <AcaoFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} userFaccaoId={userFaccaoId} />
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Editar Registro de Ação' : 'Novo Registro de Ação'}</DialogTitle>
+          </DialogHeader>
+          <AcaoFormFields
+            form={form} setForm={setForm} tipos={tipos} membros={membros}
+            competicoes={competicoes} compEquipes={compEquipes}
+            compTipos={compTipos} compItens={compItens} catalogItems={catalogItems}
+            userFaccaoId={userFaccaoId}
+          />
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => { setFormOpen(false); setForm(emptyAcaoForm) }} disabled={salvando}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={fecharForm} disabled={salvando}>Cancelar</Button>
             <Button size="sm" onClick={handleSave} disabled={salvando}>
-              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Registrar'}
+              {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editingId ? 'Salvar' : 'Registrar'}
             </Button>
           </div>
         </DialogContent>

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { Plus, Trash2, Loader2, Trophy, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Plus, Trash2, Loader2, Trophy, ChevronDown, ChevronRight, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import type {
   Competicao, CompEquipe, CompEquipeMembro,
   Acao, AcaoParticipante, AcaoTipo, Membro, CompForm,
+  CompTipo, CompItem, CatalogItem,
 } from './acao-shared'
 import {
   emptyCompForm, TEAM_COLORS, calcTeamProgress, getCompLabel, fmtDatetime,
@@ -22,6 +23,9 @@ interface Props {
   competicoes: Competicao[]
   compEquipes: CompEquipe[]
   compEquipeMembros: CompEquipeMembro[]
+  compTipos: CompTipo[]
+  compItens: CompItem[]
+  catalogItems: CatalogItem[]
   acoes: Acao[]
   participantes: AcaoParticipante[]
   tipos: AcaoTipo[]
@@ -37,6 +41,7 @@ interface Props {
 
 export function TabCompeticoes({
   competicoes, compEquipes, compEquipeMembros,
+  compTipos, compItens, catalogItems,
   acoes, participantes, tipos, membros,
   salvando, podeEditar,
   onSave, onDelete, onEncerrar, onAdicionarMembro, onRemoverMembro,
@@ -58,7 +63,6 @@ export function TabCompeticoes({
     setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
 
-  // Membros já alocados em alguma equipe da competição
   function membrosJaAlocados(competicaoId: string) {
     const equipeIds = new Set(compEquipes.filter(e => e.competicao_id === competicaoId).map(e => e.id))
     return new Set(compEquipeMembros.filter(m => equipeIds.has(m.equipe_id)).map(m => m.membro_id))
@@ -136,6 +140,10 @@ export function TabCompeticoes({
             const alreadyAllocated = membrosJaAlocados(comp.id)
             const membroDisponiveis = membros.filter(m => !alreadyAllocated.has(m.id))
 
+            const cTipos = compTipos.filter(ct => ct.competicao_id === comp.id)
+            const cItens = compItens.filter(ci => ci.competicao_id === comp.id)
+            const nomesItens = cItens.map(ci => catalogItems.find(i => i.id === ci.item_id)?.nome ?? '?')
+
             return (
               <div key={comp.id} className="rounded-lg border border-border overflow-hidden">
                 <div className="flex items-start gap-3 px-4 py-3">
@@ -161,14 +169,23 @@ export function TabCompeticoes({
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{getCompLabel(comp)}</p>
-                    {comp.tipo_acao_nome && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{getCompLabel(comp, nomesItens.length > 0 ? nomesItens : undefined)}</p>
+                    {/* Tipos vinculados */}
+                    {cTipos.length > 0 ? (
+                      <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                        {cTipos.map(ct => {
+                          const t = tipos.find(x => x.id === ct.tipo_id)
+                          return ct.pontos_valor > 0 ? `${t?.nome ?? '?'} (${ct.pontos_valor}pts)` : (t?.nome ?? '?')
+                        }).join(' · ')}
+                      </p>
+                    ) : comp.tipo_acao_nome ? (
                       <p className="text-[11px] text-muted-foreground/60 mt-0.5">Ação: {comp.tipo_acao_nome}</p>
-                    )}
+                    ) : null}
                     {/* Progress bars */}
                     <div className="mt-2 space-y-1.5">
                       {scores.map(({ equipe, progresso }) => {
                         const pct = Math.min(100, (progresso / maxScore) * 100)
+                        const unidade = comp.modo_progresso === 'item' ? (nomesItens[0] ?? comp.item_nome ?? 'itens') : 'pts'
                         return (
                           <div key={equipe.id}>
                             <div className="flex items-center justify-between text-[11px] mb-0.5">
@@ -179,9 +196,7 @@ export function TabCompeticoes({
                               <span className="tabular-nums font-medium">
                                 {progresso}
                                 {comp.meta_valor && <span className="text-muted-foreground"> / {comp.meta_valor}</span>}
-                                <span className="text-muted-foreground ml-1">
-                                  {comp.modo_progresso === 'item' ? (comp.item_nome ?? 'itens') : 'pts'}
-                                </span>
+                                <span className="text-muted-foreground ml-1">{unidade}</span>
                               </span>
                             </div>
                             <div className="h-1.5 rounded-full bg-border overflow-hidden">
@@ -272,13 +287,16 @@ export function TabCompeticoes({
                           <div className="space-y-1">
                             {compAcoes.map(a => {
                               const equipe = compEquipes.find(e => e.id === a.equipe_id)
+                              const itemNome = a.item_id ? (catalogItems.find(i => i.id === a.item_id)?.nome ?? null) : null
                               return (
                                 <div key={a.id} className="flex items-center gap-2 text-[11px] text-muted-foreground">
                                   {equipe && <span className="h-1.5 w-1.5 rounded-full" style={{ background: equipe.cor }} />}
                                   <span>{fmtDatetime(a.data_hora)}</span>
                                   {equipe && <span className="text-foreground/60">{equipe.nome}</span>}
                                   {comp.modo_progresso === 'item' && a.quantidade_item != null && (
-                                    <span className="text-primary font-medium">+{a.quantidade_item} {comp.item_nome ?? 'itens'}</span>
+                                    <span className="text-primary font-medium">
+                                      +{a.quantidade_item} {itemNome ?? nomesItens[0] ?? comp.item_nome ?? 'itens'}
+                                    </span>
                                   )}
                                 </div>
                               )
@@ -299,7 +317,7 @@ export function TabCompeticoes({
       <Dialog open={formOpen} onOpenChange={o => { if (!o && !salvando) { setFormOpen(false); setForm(emptyCompForm) } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Nova Competição</DialogTitle></DialogHeader>
-          <CompFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} />
+          <CompFormFields form={form} setForm={setForm} tipos={tipos} membros={membros} catalogItems={catalogItems} />
           <div className="flex justify-between pt-2">
             <Button variant="outline" size="sm" onClick={() => { setFormOpen(false); setForm(emptyCompForm) }} disabled={salvando}>Cancelar</Button>
             <div className="flex gap-2">
@@ -336,11 +354,12 @@ export function TabCompeticoes({
 
 // ── Formulário de competição ──────────────────────────────────────────────────
 
-function CompFormFields({ form, setForm, tipos, membros }: {
+function CompFormFields({ form, setForm, tipos, membros, catalogItems }: {
   form: CompForm
   setForm: React.Dispatch<React.SetStateAction<CompForm>>
   tipos: AcaoTipo[]
   membros: Membro[]
+  catalogItems: CatalogItem[]
 }) {
   function setEquipe(i: number, patch: Partial<CompForm['equipes'][number]>) {
     setForm(f => {
@@ -361,12 +380,36 @@ function CompFormFields({ form, setForm, tipos, membros }: {
     setForm(f => ({ ...f, equipes: f.equipes.filter((_, idx) => idx !== i) }))
   }
 
-  // Membros já alocados em qualquer equipe do form
+  function addTipo() {
+    setForm(f => ({ ...f, tipos: [...f.tipos, { tipo_id: '', pontos_valor: '0' }] }))
+  }
+
+  function setTipo(i: number, patch: Partial<CompForm['tipos'][number]>) {
+    setForm(f => {
+      const tipos = [...f.tipos]
+      tipos[i] = { ...tipos[i]!, ...patch }
+      return { ...f, tipos }
+    })
+  }
+
+  function removeTipo(i: number) {
+    setForm(f => ({ ...f, tipos: f.tipos.filter((_, idx) => idx !== i) }))
+  }
+
+  function toggleItem(itemId: string) {
+    setForm(f => ({
+      ...f,
+      itens: f.itens.includes(itemId) ? f.itens.filter(id => id !== itemId) : [...f.itens, itemId],
+    }))
+  }
+
   const jaAlocados = useMemo(() => {
     const s = new Set<string>()
     form.equipes.forEach(e => e.membros.forEach(m => s.add(m)))
     return s
   }, [form.equipes])
+
+  const tiposJaSelecionados = new Set(form.tipos.map(t => t.tipo_id).filter(Boolean))
 
   return (
     <div className="space-y-5 py-2">
@@ -382,16 +425,48 @@ function CompFormFields({ form, setForm, tipos, membros }: {
           <Textarea value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))}
             placeholder="Descrição opcional..." rows={2} className="mt-1 resize-none" />
         </div>
-        <div className="sm:col-span-2">
-          <Label>Tipo de ação vinculada *</Label>
-          <Select value={form.tipo_acao_id || 'none'} onValueChange={v => setForm(f => ({ ...f, tipo_acao_id: v === 'none' ? '' : v }))}>
-            <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione o tipo..." /></SelectTrigger>
-            <SelectContent>
-              {tipos.filter(t => t.ativo).map(t => <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground mt-1">Ações deste tipo alimentam o placar da competição.</p>
+      </div>
+
+      {/* Tipos de ação permitidos */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <Label>Tipos de ação permitidos *</Label>
+          <button type="button" onClick={addTipo}
+            className="text-xs text-primary hover:underline flex items-center gap-1">
+            <Plus className="h-3 w-3" />Adicionar tipo
+          </button>
         </div>
+        <div className="space-y-2">
+          {form.tipos.map((t, i) => {
+            const disponiveis = tipos.filter(tp => tp.ativo && (!tiposJaSelecionados.has(tp.id) || tp.id === t.tipo_id))
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <Select value={t.tipo_id || 'none'} onValueChange={v => setTipo(i, { tipo_id: v === 'none' ? '' : v })}>
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue placeholder="Selecione o tipo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione...</SelectItem>
+                    {disponiveis.map(tp => <SelectItem key={tp.id} value={tp.id}>{tp.nome}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs text-muted-foreground">pts:</span>
+                  <Input type="number" min="0" value={t.pontos_valor}
+                    onChange={e => setTipo(i, { pontos_valor: e.target.value })}
+                    className="h-8 text-xs w-20" />
+                </div>
+                {form.tipos.length > 1 && (
+                  <button type="button" onClick={() => removeTipo(i)}
+                    className="text-muted-foreground hover:text-red-400 shrink-0">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">Ações desses tipos alimentam o placar da competição.</p>
       </div>
 
       {/* Modo de progresso */}
@@ -399,7 +474,7 @@ function CompFormFields({ form, setForm, tipos, membros }: {
         <Label>O que conta como progresso?</Label>
         <div className="grid grid-cols-2 gap-2 mt-2">
           {(['pontuacao', 'item'] as const).map(m => (
-            <button key={m} type="button" onClick={() => setForm(f => ({ ...f, modo_progresso: m }))}
+            <button key={m} type="button" onClick={() => setForm(f => ({ ...f, modo_progresso: m, itens: [] }))}
               className={cn('py-2.5 rounded-lg border text-sm font-medium transition-colors',
                 form.modo_progresso === m ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
               )}>
@@ -408,10 +483,34 @@ function CompFormFields({ form, setForm, tipos, membros }: {
           ))}
         </div>
         {form.modo_progresso === 'item' && (
-          <div className="mt-2">
-            <Label>Nome do item</Label>
-            <Input value={form.item_nome} onChange={e => setForm(f => ({ ...f, item_nome: e.target.value }))}
-              placeholder="Ex: Item Reciclável, Droga Confiscada..." className="mt-1" />
+          <div className="mt-3">
+            <Label className="text-sm">Itens da competição *</Label>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-2">Selecione os itens do catálogo que contam como progresso.</p>
+            {catalogItems.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">Nenhum item encontrado no catálogo.</p>
+            ) : (
+              <div className="max-h-40 overflow-y-auto rounded-md border border-border divide-y divide-border/30">
+                {catalogItems.map(item => {
+                  const sel = form.itens.includes(item.id)
+                  return (
+                    <button key={item.id} type="button" onClick={() => toggleItem(item.id)}
+                      className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors',
+                        sel ? 'bg-primary/10' : 'hover:bg-white/[0.04]'
+                      )}>
+                      <div className={cn('h-3.5 w-3.5 rounded border shrink-0 flex items-center justify-center',
+                        sel ? 'bg-primary border-primary' : 'border-muted-foreground/40'
+                      )}>
+                        {sel && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+                      </div>
+                      <span className={cn(sel && 'text-primary')}>{item.nome}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {form.itens.length > 0 && (
+              <p className="text-xs text-primary mt-1">{form.itens.length} item(ns) selecionado(s)</p>
+            )}
           </div>
         )}
       </div>
@@ -444,7 +543,7 @@ function CompFormFields({ form, setForm, tipos, membros }: {
           )}
           {form.tipo_encerramento !== 'prazo' && (
             <div>
-              <Label>Meta ({form.modo_progresso === 'item' ? (form.item_nome || 'itens') : 'pontos'}) *</Label>
+              <Label>Meta ({form.modo_progresso === 'item' ? 'itens' : 'pontos'}) *</Label>
               <Input type="number" min="1" value={form.meta_valor}
                 onChange={e => setForm(f => ({ ...f, meta_valor: e.target.value }))}
                 placeholder="Ex: 100" className="mt-1" />
@@ -468,7 +567,6 @@ function CompFormFields({ form, setForm, tipos, membros }: {
             return (
               <div key={i} className="rounded-lg border border-border p-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  {/* Color picker */}
                   <div className="flex gap-1 shrink-0">
                     {TEAM_COLORS.map(cor => (
                       <button key={cor} type="button" onClick={() => setEquipe(i, { cor })}
