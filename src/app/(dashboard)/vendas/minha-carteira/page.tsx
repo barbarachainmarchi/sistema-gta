@@ -74,17 +74,27 @@ export default async function MinhaCarteiraPage() {
     transferPendentes = (solData ?? []).filter((s: any) => s.dados?.conta_destino_id === meuId)
   }
 
-  // Filtrar: sem perm → só próprias vendas; com perm → todas
+  // Filtrar: sem perm → vendas que eu entreguei (lancamento na minha conta OU criadas por mim sem lancamento); com perm → todas
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
   for (const it of vendaItensData ?? []) {
     if (!itensPorVenda[it.venda_id]) itensPorVenda[it.venda_id] = []
     itensPorVenda[it.venda_id]!.push(it)
   }
 
+  // Mapa venda_id → lancamento (para checar a qual conta o dinheiro foi)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lancPorVenda: Record<string, { conta_id: string | null }> = {}
+  for (const l of lancsData ?? []) {
+    if (l.venda_id) lancPorVenda[l.venda_id] = l
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let vendas = (vendasData ?? []).map((v: any) => ({ ...v, itens: itensPorVenda[v.id] ?? [] }))
   if (!podeExcluirConcluida) {
-    vendas = vendas.filter((v: { criado_por: string | null }) => v.criado_por === user.id)
+    vendas = vendas.filter((v: { criado_por: string | null; id: string }) =>
+      v.criado_por === user.id ||
+      (meuContaId !== null && lancPorVenda[v.id]?.conta_id === meuContaId)
+    )
   }
 
   // Filtrar lancamentos apenas das vendas visíveis

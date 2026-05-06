@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest) {
   const { user } = await getAuthUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { id, nome, cargo, perfil_id, status, local_trabalho_loja_id, local_trabalho_faccao_id, membro_id, trabalho_principal } = await req.json()
+  const { id, nome, cargo, perfil_id, status, local_trabalho_loja_id, local_trabalho_faccao_id, membro_id, trabalho_principal, apelido } = await req.json()
   if (!id) return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 })
 
   const admin = createAdminClient()
@@ -154,8 +154,15 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { error } = await admin.from('usuarios').upsert(updates, { onConflict: 'id' })
-
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Atualiza o email de autenticação (login) se um novo apelido foi fornecido
+  if (apelido) {
+    const novoEmail = `${apelido}@gta.local`
+    const { error: authError } = await admin.auth.admin.updateUserById(id, { email: novoEmail })
+    if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
+  }
+
   return NextResponse.json({ ok: true })
 }
 

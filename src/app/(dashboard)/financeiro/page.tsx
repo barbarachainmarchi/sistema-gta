@@ -8,14 +8,32 @@ export default async function FinanceiroPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // 1) dados do usuário primeiro — precisamos da facção para filtrar membros
+  const { data: userInfo } = await supabase
+    .from('usuarios')
+    .select('nome, local_trabalho_faccao_id, perfis_acesso(perfil_permissoes(modulo, pode_editar, pode_excluir))')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const faccaoId = userInfo?.local_trabalho_faccao_id ?? null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const perms = (userInfo as any)?.perfis_acesso?.perfil_permissoes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_editar ?? false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const podeExcluir = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_excluir ?? false)
+
+  // 2) restante em paralelo, membros filtrados pela facção
+  let membrosQuery = supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').order('nome')
+  if (faccaoId) membrosQuery = membrosQuery.eq('faccao_id', faccaoId)
+
   const [
     { data: contas },
     { data: lancamentos },
     { data: lavagens },
     { data: membros },
     { data: cotacoesFinaliz },
-    { data: userRow },
-    { data: permRow },
     { data: temaRow },
     { data: repassesData },
   ] = await Promise.all([
@@ -25,19 +43,12 @@ export default async function FinanceiroPage() {
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('financeiro_lavagem').select('*').order('created_at', { ascending: false }).limit(200),
-    supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').order('nome'),
+    membrosQuery,
     supabase.from('cotacoes').select('id, titulo, fornecedor_nome, fornecedor_tipo').eq('status', 'finalizada').order('created_at', { ascending: false }),
-    supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
-    supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar, pode_excluir))').eq('id', user.id).maybeSingle(),
     supabase.from('config_sistema').select('valor').eq('chave', 'tema').maybeSingle(),
     supabase.from('sistema_solicitacoes').select('*').eq('tipo', 'transferencia_financeiro').order('created_at', { ascending: false }).limit(300),
   ])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
-  const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_editar ?? false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const podeExcluir = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_excluir ?? false)
   const tema = temaRow ? JSON.parse(temaRow.valor) : {}
   const tabPadrao = tema.financeiroTabPadrao ?? 'extrato'
 
@@ -46,7 +57,7 @@ export default async function FinanceiroPage() {
       <Header title="Financeiro" />
       <FinanceiroClient
         userId={user.id}
-        userNome={userRow?.nome ?? null}
+        userNome={userInfo?.nome ?? null}
         contasIniciais={contas ?? []}
         lancamentosIniciais={lancamentos ?? []}
         lavagensIniciais={lavagens ?? []}

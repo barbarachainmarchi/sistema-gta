@@ -472,7 +472,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
   // ── Editar usuário ─────────────────────────────────────────────────────────
   const [editUsuario, setEditUsuario] = useState<Usuario | null>(null)
   const [editForm, setEditForm] = useState({
-    nome: '', cargo: '', perfil_id: '', status: 'ativo' as 'ativo' | 'inativo',
+    nome: '', login: '', cargo: '', perfil_id: '', status: 'ativo' as 'ativo' | 'inativo',
     local_trabalho_loja_id: '',
     local_trabalho_faccao_id: '',
     trabalho_principal: '' as '' | 'loja' | 'faccao',
@@ -485,7 +485,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const membroVinculado = membrosState.find(m => m.id === u.membro_id)
     setEditUsuario(u)
     setEditForm({
-      nome: u.nome, cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '',
+      nome: u.nome, login: u.email.split('@')[0] ?? '', cargo: u.cargo ?? '', perfil_id: u.perfil_id ?? '',
       status: u.status === 'pendente' ? 'ativo' : u.status,
       local_trabalho_loja_id: u.local_trabalho_loja_id ?? defaultLojaId ?? '',
       local_trabalho_faccao_id: u.local_trabalho_faccao_id ?? defaultFaccaoId ?? '',
@@ -501,17 +501,22 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     const novoLojaId = editForm.local_trabalho_loja_id || null
     const novoFaccaoId = editForm.local_trabalho_faccao_id || null
     const membroIdFinal = editUsuario.membro_id ?? (editForm.membro_id_vincular || null)
+    const loginAtual = editUsuario.email.split('@')[0] ?? ''
+    const loginNovo = editForm.login.trim().toLowerCase()
+    const body: Record<string, unknown> = {
+      id: editUsuario.id,
+      nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status,
+      local_trabalho_loja_id: novoLojaId,
+      local_trabalho_faccao_id: novoFaccaoId,
+      trabalho_principal: editForm.trabalho_principal || null,
+      membro_id: membroIdFinal,
+    }
+    if (loginNovo && loginNovo !== loginAtual) body.apelido = loginNovo
+
     const res = await fetch('/api/admin/usuarios', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: editUsuario.id,
-        nome: editForm.nome, cargo: editForm.cargo, perfil_id: editForm.perfil_id, status: editForm.status,
-        local_trabalho_loja_id: novoLojaId,
-        local_trabalho_faccao_id: novoFaccaoId,
-        trabalho_principal: editForm.trabalho_principal || null,
-        membro_id: membroIdFinal,
-      }),
+      body: JSON.stringify(body),
     })
     const json = await res.json()
     if (!res.ok) { setEditSaving(false); toast.error(json.error ?? 'Erro ao salvar'); return }
@@ -530,9 +535,10 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
     setEditSaving(false)
     toast.success('Usuário atualizado')
     const perfilNome = perfis.find(p => p.id === editForm.perfil_id)?.nome ?? null
+    const novoEmail = loginNovo && loginNovo !== loginAtual ? `${loginNovo}@gta.local` : editUsuario.email
     setUsuarios(prev => prev.map(u =>
       u.id === editUsuario.id
-        ? { ...u, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status, membro_id: membroIdFinal, local_trabalho_loja_id: novoLojaId, local_trabalho_faccao_id: novoFaccaoId }
+        ? { ...u, email: novoEmail, nome: editForm.nome, cargo: editForm.cargo || null, perfil_id: editForm.perfil_id || null, perfil_nome: perfilNome, status: editForm.status, membro_id: membroIdFinal, local_trabalho_loja_id: novoLojaId, local_trabalho_faccao_id: novoFaccaoId }
         : u
     ))
     setEditUsuario(null)
@@ -1392,7 +1398,17 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs">Apelido</Label>
+              <Label className="text-xs">Login <span className="text-muted-foreground font-normal">(para entrar no sistema)</span></Label>
+              <Input
+                value={editForm.login}
+                onChange={e => setEditForm(f => ({ ...f, login: e.target.value.toLowerCase().replace(/\s/g, '') }))}
+                className="h-8 text-sm font-mono"
+                placeholder="ex: babi"
+              />
+              <p className="text-[11px] text-muted-foreground">Usado na tela de login. Sem espaços, sem @.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Apelido <span className="text-muted-foreground font-normal">(nome exibido no sistema)</span></Label>
               <Input value={editForm.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
             </div>
             {editUsuario?.membro_id ? (
