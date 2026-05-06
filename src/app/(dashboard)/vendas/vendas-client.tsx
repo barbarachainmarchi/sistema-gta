@@ -160,7 +160,8 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 // ── Card de Venda ─────────────────────────────────────────────────────────────
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
-  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens, onItemQtdChange }: {
+  onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, servicos, servicoItens, onItemQtdChange,
+  isDono, vendedores, onTrocarVendedor }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -173,6 +174,9 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   servicos: Servico[]
   servicoItens: ServicoItemVenda[]
   onItemQtdChange: (itemId: string, newQtd: number) => void
+  isDono?: boolean
+  vendedores?: { id: string; nome: string }[]
+  onTrocarVendedor?: (vendaId: string, novoId: string, novoNome: string) => Promise<void>
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [combosColapsados, setCombosColapsados] = useState<Set<string>>(new Set())
@@ -183,6 +187,9 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const [compartilhando, setCompartilhando] = useState(false)
   const [linkCopiado, setLinkCopiado] = useState(false)
   const [linkImagem, setLinkImagem] = useState<string | null>(null)
+  const [trocandoVendedor, setTrocandoVendedor] = useState(false)
+  const [novoVendedorId, setNovoVendedorId] = useState('')
+  const [salvandoVendedor, setSalvandoVendedor] = useState(false)
 
   async function handleCompartilhar() {
     setCompartilhando(true)
@@ -274,10 +281,47 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
             {venda.desconto_pct > 0 && <span className="text-green-400">-{venda.desconto_pct}%</span>}
           </div>
         </div>
-        <span className="text-[10px] text-muted-foreground/40 shrink-0 cursor-default"
-          title={`Criado: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue: ${venda.entregue_por_nome}` : ''}`}>
-          {venda.criado_por_nome ?? '—'}
-        </span>
+        {isDono && !trocandoVendedor ? (
+          <button
+            onClick={() => { setNovoVendedorId(venda.criado_por ?? ''); setTrocandoVendedor(true) }}
+            className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground shrink-0 flex items-center gap-0.5 group transition-colors"
+            title={`Criado: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue: ${venda.entregue_por_nome}` : ''} — Clique para trocar`}
+          >
+            {venda.criado_por_nome ?? '—'}
+            <ArrowUpDown className="h-2 w-2 opacity-0 group-hover:opacity-70 transition-opacity" />
+          </button>
+        ) : trocandoVendedor ? (
+          <div className="flex items-center gap-1 shrink-0">
+            <select
+              value={novoVendedorId}
+              onChange={e => setNovoVendedorId(e.target.value)}
+              className="h-6 text-[10px] rounded border border-input bg-background px-1 text-foreground max-w-[7rem]"
+            >
+              {vendedores?.map(v => (
+                <option key={v.id} value={v.id}>{v.nome}</option>
+              ))}
+            </select>
+            <button
+              disabled={salvandoVendedor || !novoVendedorId}
+              onClick={async () => {
+                const novoNome = vendedores?.find(v => v.id === novoVendedorId)?.nome ?? ''
+                setSalvandoVendedor(true)
+                await onTrocarVendedor?.(venda.id, novoVendedorId, novoNome)
+                setSalvandoVendedor(false)
+                setTrocandoVendedor(false)
+              }}
+              className="text-[10px] text-green-400 hover:text-green-300 px-0.5 disabled:opacity-40"
+            >
+              {salvandoVendedor ? '…' : '✓'}
+            </button>
+            <button onClick={() => setTrocandoVendedor(false)} className="text-[10px] text-muted-foreground hover:text-foreground">✕</button>
+          </div>
+        ) : (
+          <span className="text-[10px] text-muted-foreground/40 shrink-0 cursor-default"
+            title={`Criado: ${venda.criado_por_nome ?? '—'}${venda.entregue_por_nome ? ` · Entregue: ${venda.entregue_por_nome}` : ''}`}>
+            {venda.criado_por_nome ?? '—'}
+          </span>
+        )}
       </div>
 
       {/* Itens */}
@@ -1768,6 +1812,13 @@ export function VendasClient({
           itens: (itensData ?? []) as VendaItem[],
         } : v))
         toast.success('Pedido atualizado!')
+        const labelCliente = form.cliente_nome.trim() || faccoes.find(f => f.id === form.faccao_id)?.nome || lojas.find(l => l.id === form.loja_id)?.nome || 'Sem identificação'
+        sb().from('sistema_logs').insert({
+          tipo: 'venda_editada', referencia_id: editando.id, referencia_tipo: 'venda',
+          descricao: `Venda editada: ${labelCliente}`,
+          usuario_id: userId, usuario_nome: userNome,
+          dados: { status: form.status, tipo_dinheiro: form.tipo_dinheiro, num_itens: form.itens.length },
+        }).then(() => {})
       } else {
         const { data: venda, error: vendaErr } = await sb().from('vendas').insert({
           faccao_id: form.faccao_id || null, loja_id: form.loja_id || null,
@@ -1790,6 +1841,13 @@ export function VendasClient({
         if (itensErr) { toast.error('Erro nos itens'); return }
         setVendas(prev => [{ ...(venda as Venda), itens: (itensData ?? []) as VendaItem[] }, ...prev])
         toast.success('Pedido criado!')
+        const labelClienteNovo = form.cliente_nome.trim() || faccoes.find(f => f.id === form.faccao_id)?.nome || lojas.find(l => l.id === form.loja_id)?.nome || 'Sem identificação'
+        sb().from('sistema_logs').insert({
+          tipo: 'venda_criada', referencia_id: (venda as Venda).id, referencia_tipo: 'venda',
+          descricao: `Venda criada: ${labelClienteNovo}`,
+          usuario_id: userId, usuario_nome: userNome,
+          dados: { status: form.status, tipo_dinheiro: form.tipo_dinheiro },
+        }).then(() => {})
         // Notificação Telegram para encomendas
         if (filtroInicial === 'encomenda') {
           const subtotal = form.itens.reduce((s, it) => s + (parseFloat(it.quantidade) || 0) * (parseFloat(it.preco_unit) || 0), 0)
@@ -1815,9 +1873,16 @@ export function VendasClient({
   }
 
   async function handleStatusChange(id: string, status: StatusVenda) {
+    const vendaAntes = vendas.find(v => v.id === id)
     const { error } = await sb().from('vendas').update({ status }).eq('id', id)
     if (error) { toast.error('Erro ao mudar status'); return }
     setVendas(prev => prev.map(v => v.id === id ? { ...v, status } : v))
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_status', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Status "${STATUS_INFO[status].label}": ${vendaAntes?.cliente_nome || 'Sem identificação'}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { status_anterior: vendaAntes?.status, status_novo: status, cliente_nome: vendaAntes?.cliente_nome },
+    }).then(() => {})
   }
 
   async function handleEntregar(venda: Venda) {
@@ -1829,6 +1894,12 @@ export function VendasClient({
     setVendas(prev => prev.map(v => v.id === venda.id
       ? { ...v, status: 'entregue', entregue_por: userId, entregue_por_nome: userNome, entregue_em: agora } : v))
     toast.success('Entrega registrada!')
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_entregue', referencia_id: venda.id, referencia_tipo: 'venda',
+      descricao: `Venda entregue: ${venda.cliente_nome || 'Sem identificação'}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro },
+    }).then(() => {})
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
     await registrarLancamentoFinanceiro(venda)
   }
@@ -1908,6 +1979,26 @@ export function VendasClient({
     if (error) { toast.error('Erro ao excluir'); return }
     setVendas(prev => prev.filter(v => v.id !== id))
     toast.success('Pedido excluído')
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_excluida', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Venda excluída (ativa): ${venda.cliente_nome || 'Sem identificação'}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: venda.cliente_nome, status: venda.status },
+    }).then(() => {})
+  }
+
+  async function handleTrocarVendedor(vendaId: string, novoId: string, novoNome: string) {
+    const vendaAntes = vendas.find(v => v.id === vendaId)
+    const { error } = await sb().from('vendas').update({ criado_por: novoId, criado_por_nome: novoNome }).eq('id', vendaId)
+    if (error) { toast.error('Erro ao trocar vendedor'); return }
+    setVendas(prev => prev.map(v => v.id === vendaId ? { ...v, criado_por: novoId, criado_por_nome: novoNome } : v))
+    toast.success(`Vendedor alterado para ${novoNome}`)
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_vendedor_alterado', referencia_id: vendaId, referencia_tipo: 'venda',
+      descricao: `Vendedor alterado: ${vendaAntes?.criado_por_nome ?? '?'} → ${novoNome}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { vendedor_anterior: vendaAntes?.criado_por_nome, vendedor_novo: novoNome, cliente_nome: vendaAntes?.cliente_nome },
+    }).then(() => {})
   }
 
   async function handleSolicitarCancelamento(id: string, motivo: string) {
@@ -1929,6 +2020,12 @@ export function VendasClient({
       solicitante_nome: userNome,
       dados: { cliente_nome: venda?.cliente_nome, status_atual: venda?.status, motivo },
     })
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_cancelamento_solicitado', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Cancelamento solicitado: ${venda?.cliente_nome ?? 'Venda'} — ${motivo}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: venda?.cliente_nome, status_atual: venda?.status, motivo },
+    }).then(() => {})
     setVendas(prev => prev.map(v => v.id === id ? {
       ...v, cancelamento_solicitado: true, cancelamento_motivo: motivo,
       cancelamento_solicitado_por: userId,
@@ -1937,6 +2034,7 @@ export function VendasClient({
   }
 
   async function handleDesfazerEntrega(id: string) {
+    const vendaDesf = vendas.find(v => v.id === id)
     const { error } = await sb().from('vendas').update({
       status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null,
     }).eq('id', id)
@@ -1946,6 +2044,12 @@ export function VendasClient({
     setVendas(prev => prev.map(v => v.id === id
       ? { ...v, status: 'pronto', entregue_por: null, entregue_por_nome: null, entregue_em: null } : v))
     toast.success('Entrega desfeita — voltou para Pronto')
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_entrega_desfeita', referencia_id: id, referencia_tipo: 'venda',
+      descricao: `Entrega desfeita: ${vendaDesf?.cliente_nome || 'Sem identificação'}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: vendaDesf?.cliente_nome },
+    }).then(() => {})
   }
 
   async function handleDescontarEstoque(venda: Venda) {
@@ -2067,6 +2171,9 @@ export function VendasClient({
                       servicos={servicos}
                       servicoItens={servicoItens}
                       onItemQtdChange={(itemId, qtd) => handleItemQtdChange(venda.id, itemId, qtd)}
+                      isDono={isDono}
+                      vendedores={vendedores}
+                      onTrocarVendedor={handleTrocarVendedor}
                     />
                   </div>
                 ))}

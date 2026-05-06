@@ -21,6 +21,8 @@ interface Props {
   lojas: Loja[]
   allItems: ItemSimples[]
   podeExcluirConcluida?: boolean
+  userId: string
+  userNome: string | null
 }
 
 function fmt(v: number) { return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` }
@@ -30,7 +32,7 @@ function fmtData(s: string | null) {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
-export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExcluirConcluida }: Props) {
+export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExcluirConcluida, userId, userNome }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -72,11 +74,18 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
   async function handleDelete(vendaId: string) {
     setDeletando(true)
     try {
+      const vendaExcluida = vendas.find(v => v.id === vendaId)
       await removerLancamentosVenda(vendaId)
       const { error } = await sb().from('vendas').delete().eq('id', vendaId)
       if (error) { toast.error('Erro ao excluir'); return }
       setVendas(prev => prev.filter(v => v.id !== vendaId))
       toast.success('Venda excluída do sistema')
+      sb().from('sistema_logs').insert({
+        tipo: 'venda_excluida', referencia_id: vendaId, referencia_tipo: 'venda',
+        descricao: `Venda excluída (concluída): ${vendaExcluida?.cliente_nome || 'Sem identificação'}`,
+        usuario_id: userId, usuario_nome: userNome,
+        dados: { cliente_nome: vendaExcluida?.cliente_nome, motivo: vendaExcluida?.cancelamento_motivo ?? null },
+      }).then(() => {})
     } catch { toast.error('Erro ao excluir') }
     finally { setDeletando(false); setDeleteConfirmId(null) }
   }

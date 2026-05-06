@@ -97,6 +97,7 @@ export default async function VendasPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
   const isDono = perms == null
+  const isDonoFantasma = !isDono && donoId !== null && donoId === user.id
   const ocultarConcluidosDias = configOcultar?.valor ? parseInt(configOcultar.valor) || 0 : 7
 
   const itensPorVenda: Record<string, typeof vendaItensData> = {}
@@ -146,7 +147,7 @@ export default async function VendasPage() {
         favoritosIniciais={(favoritosData ?? []).map((f: { item_id: string }) => f.item_id)}
         faccaoServicos={(faccaoServicosData ?? []) as { faccao_id: string; servico_id: string }[]}
         lojaServicos={(lojaServicosData ?? []) as { loja_id: string; servico_id: string }[]}
-        isDono={isDono}
+        isDono={isDono || isDonoFantasma}
         vendedores={(todosUsuariosData ?? []) as { id: string; nome: string }[]}
       />
     </>

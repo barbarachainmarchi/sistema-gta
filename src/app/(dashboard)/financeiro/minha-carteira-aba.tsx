@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2 } from 'lucide-react'
+import { ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2, X } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,6 +56,12 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
   const [tipoValor, setTipoValor] = useState<'sujo' | 'limpo'>('limpo')
 
   const [salvando, setSalvando] = useState(false)
+
+  // Cancelamento
+  const [cancelandoId, setCancelandoId] = useState<string | null>(null)
+  const [motivoCancel, setMotivoCancel] = useState('')
+  const [salvandoCancel, setSalvandoCancel] = useState(false)
+  const [cancelamentosSolicitados, setCancelamentosSolicitados] = useState<Set<string>>(new Set())
 
   // Buscar conta do usuário
   useEffect(() => {
@@ -187,6 +193,46 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
       toast.success(`${fmt(valor)} repassado para ${contaMap[destValor]?.nome ?? 'conta'}`)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
+  }
+
+  // ── Solicitar cancelamento ────────────────────────────────────────────────
+
+  async function handleSolicitarCancelamento(lanc: Lancamento) {
+    if (!motivoCancel.trim()) { toast.error('Informe o motivo'); return }
+    if (!lanc.venda_id) { toast.error('Venda não identificada'); return }
+    setSalvandoCancel(true)
+    try {
+      const nomeCliente = lanc.descricao?.replace('Venda: ', '') ?? 'Venda'
+      await sb().from('vendas').update({
+        cancelamento_solicitado: true,
+        cancelamento_motivo: motivoCancel.trim(),
+        cancelamento_solicitado_por: userId,
+        cancelamento_solicitado_em: new Date().toISOString(),
+      }).eq('id', lanc.venda_id)
+      await sb().from('sistema_solicitacoes').insert({
+        tipo: 'cancelamento_venda',
+        referencia_id: lanc.venda_id,
+        referencia_tipo: 'venda',
+        descricao: `Cancelamento: ${nomeCliente} (entregue)`,
+        solicitante_id: userId,
+        solicitante_nome: userNome,
+        dados: { cliente_nome: nomeCliente, motivo: motivoCancel.trim(), lancamento_id: lanc.id },
+      })
+      sb().from('sistema_logs').insert({
+        tipo: 'venda_cancelamento_solicitado',
+        referencia_id: lanc.venda_id,
+        referencia_tipo: 'venda',
+        descricao: `Cancelamento solicitado: ${nomeCliente} — ${motivoCancel.trim()}`,
+        usuario_id: userId,
+        usuario_nome: userNome,
+        dados: { cliente_nome: nomeCliente, motivo: motivoCancel.trim() },
+      }).then(() => {})
+      setCancelamentosSolicitados(prev => new Set([...prev, lanc.id]))
+      setCancelandoId(null)
+      setMotivoCancel('')
+      toast.success('Cancelamento solicitado! Um dono irá analisar.')
+    } catch { toast.error('Erro ao solicitar cancelamento') }
+    finally { setSalvandoCancel(false) }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -345,6 +391,8 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
                   const valor = l.total ?? l.valor
                   const eComigo = isComigo(l)
                   const isOpen = transferindoId === l.id
+                  const isCancelando = cancelandoId === l.id
+                  const cancelSolicitado = cancelamentosSolicitados.has(l.id)
 
                   return (
                     <tr key={l.id} className={cn('hover:bg-white/[0.02] transition-colors', isOpen && 'bg-primary/[0.03]')}>
@@ -400,12 +448,37 @@ export function MinhaCarteiraAba({ userId, userNome, contas, setContas, lancamen
                             <button onClick={() => { setTransferindoId(null); setDestSingle('') }}
                               className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
                           </div>
+                        ) : isCancelando ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text" placeholder="Motivo do cancelamento..."
+                              value={motivoCancel} onChange={e => setMotivoCancel(e.target.value)}
+                              className="flex-1 h-7 text-[10px] rounded-md border border-input bg-background px-2 text-foreground min-w-0"
+                            />
+                            <Button size="sm" className="h-7 text-xs px-2.5 shrink-0 bg-orange-500/80 hover:bg-orange-500 text-white border-0"
+                              disabled={!motivoCancel.trim() || salvandoCancel}
+                              onClick={() => handleSolicitarCancelamento(l)}>
+                              {salvandoCancel ? <Loader2 className="h-3 w-3 animate-spin" /> : 'OK'}
+                            </Button>
+                            <button onClick={() => { setCancelandoId(null); setMotivoCancel('') }}
+                              className="text-xs text-muted-foreground hover:text-foreground px-1 shrink-0">✕</button>
+                          </div>
                         ) : (
-                          <button onClick={() => { setTransferindoId(l.id); setDestSingle('') }}
-                            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors ml-auto">
-                            <ArrowRightLeft className="h-3 w-3" />
-                            Transferir
-                          </button>
+                          <div className="flex items-center gap-3 justify-end">
+                            {cancelSolicitado ? (
+                              <span className="text-[10px] text-orange-400 font-medium">Canc. solicitado</span>
+                            ) : l.venda_id ? (
+                              <button
+                                onClick={() => { setCancelandoId(l.id); setMotivoCancel(''); setTransferindoId(null) }}
+                                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-orange-400 transition-colors">
+                                <X className="h-3 w-3" />Solicitar canc.
+                              </button>
+                            ) : null}
+                            <button onClick={() => { setTransferindoId(l.id); setDestSingle(''); setCancelandoId(null) }}
+                              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
+                              <ArrowRightLeft className="h-3 w-3" />Transferir
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

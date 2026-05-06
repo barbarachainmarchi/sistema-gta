@@ -30,7 +30,7 @@ export type Lancamento = {
   item_descricao: string | null; descricao: string | null
   categoria: string | null
   preco: number | null; quantidade: number | null; total: number | null
-  conta_destino_id: string | null; cotacao_id: string | null
+  conta_destino_id: string | null; cotacao_id: string | null; venda_id: string | null
   vai_para_faccao: boolean; acao_referencia: string | null
   origem: string | null
   created_by: string | null; created_at: string

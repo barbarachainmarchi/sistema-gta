@@ -15,6 +15,7 @@ export default async function RelatoriosPage() {
     { data: lojasData },
     { data: itemsData },
     { data: permRow },
+    { data: usuarioRow },
   ] = await Promise.all([
     supabase.from('vendas').select('*').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('*'),
@@ -22,6 +23,7 @@ export default async function RelatoriosPage() {
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('items').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('nome').eq('id', user.id).maybeSingle(),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +49,8 @@ export default async function RelatoriosPage() {
           lojas={lojasData ?? []}
           allItems={itemsData ?? []}
           podeExcluirConcluida={podeExcluirConcluida}
+          userId={user.id}
+          userNome={(usuarioRow as { nome: string | null } | null)?.nome ?? null}
         />
       </div>
     </>
