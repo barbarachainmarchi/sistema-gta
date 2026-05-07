@@ -32,6 +32,7 @@ const emptyVeiculoForm: { placa: string; modelo: string; cor: string; proprietar
 const emptyLojaForm: { nome: string; localizacao: string; tipo: string; status: 'ativo' | 'inativo' } = { nome: '', localizacao: '', tipo: '', status: 'ativo' }
 
 type LojaItemPreco = { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }
+type FaixaPrecoSimples = { faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 
 interface Props {
   initialFaccoes: Faccao[]
@@ -44,6 +45,7 @@ interface Props {
   lojaPorMembro: Record<string, string[]>
   onlineMap: Record<string, boolean>
   lojaItemPrecos: LojaItemPreco[]
+  faixasPrecos: FaixaPrecoSimples[]
 }
 
 function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
@@ -90,7 +92,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap, lojaItemPrecos }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap, lojaItemPrecos, faixasPrecos }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -360,6 +362,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   // ── Pesquisa Geral ─────────────────────────────────────────────────────────
   const [termoBusca, setTermoBusca] = useState('')
   const [fichaMembroAberta, setFichaMembroAberta] = useState<Membro | null>(null)
+  const [expandidosProdutos, setExpandidosProdutos] = useState<Set<string>>(new Set())
+  function toggleExpandido(id: string) {
+    setExpandidosProdutos(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
 
   const resultadosMembros = useMemo(() => {
     const q = norm(termoBusca.trim())
@@ -406,12 +412,16 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
         .filter(fp => fp.item_id === p.id)
         .map(fp => {
           const f = faccoes.find(f => f.id === fp.faccao_id)
-          return f ? { tipo: 'faccao' as const, id: f.id, nome: f.nome, cor_tag: f.cor_tag, preco: fp.preco_limpo, preco_sujo: fp.preco_sujo, desconto_padrao_pct: f.desconto_padrao_pct ?? 0 } : null
+          if (!f) return null
+          const faixas = faixasPrecos
+            .filter(fx => fx.faccao_id === f.id && fx.item_id === p.id)
+            .sort((a, b) => a.quantidade_min - b.quantidade_min)
+          return { tipo: 'faccao' as const, id: f.id, nome: f.nome, cor_tag: f.cor_tag, preco: fp.preco_limpo, preco_sujo: fp.preco_sujo, desconto_padrao_pct: f.desconto_padrao_pct ?? 0, faixas }
         })
-        .filter(Boolean) as { tipo: 'faccao'; id: string; nome: string; cor_tag: string; preco: number | null; preco_sujo: number | null; desconto_padrao_pct: number }[]
+        .filter(Boolean) as { tipo: 'faccao'; id: string; nome: string; cor_tag: string; preco: number | null; preco_sujo: number | null; desconto_padrao_pct: number; faixas: FaixaPrecoSimples[] }[]
       return { produto: p, emLojas, emFaccoes }
     })
-  }, [todosProdutos, termoBusca, lojaItemPrecos, faccaoPrecos, lojas, faccoes])
+  }, [todosProdutos, termoBusca, lojaItemPrecos, faccaoPrecos, lojas, faccoes, faixasPrecos])
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -791,7 +801,10 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                       <Package className="h-3.5 w-3.5" />Produtos ({resultadosProdutos.length})
                     </p>
                     <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/40">
-                      {resultadosProdutos.map(({ produto, emLojas, emFaccoes }) => (
+                      {resultadosProdutos.map(({ produto, emLojas, emFaccoes }) => {
+                        const temFaixas = emFaccoes.some(f => f.faixas.length > 0)
+                        const expandido = expandidosProdutos.has(produto.id)
+                        return (
                         <div key={produto.id} className="px-4 py-3 space-y-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold">{produto.nome}</span>
@@ -803,6 +816,12 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                             ))}
                             {emLojas.length === 0 && emFaccoes.length === 0 && (
                               <span className="text-xs text-muted-foreground ml-auto">Sem preços cadastrados</span>
+                            )}
+                            {(emLojas.length > 0 || emFaccoes.length > 0) && (
+                              <button type="button" onClick={() => toggleExpandido(produto.id)} className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                                {temFaixas && !expandido && <span className="text-amber-400/80">📦 faixas</span>}
+                                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expandido && 'rotate-180')} />
+                              </button>
                             )}
                           </div>
                           {(emLojas.length > 0 || emFaccoes.length > 0) && (
@@ -827,6 +846,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                                 return (
                                   <button key={f.id} type="button" onClick={() => faccaoObj && abrirDetalhe(faccaoObj)} className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5 border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: f.cor_tag + '40', background: f.cor_tag + '0d' }}>
                                     <span className="font-medium" style={{ color: f.cor_tag }}>{f.nome}</span>
+                                    {f.faixas.length > 0 && <span className="text-[10px] text-amber-400/70">📦</span>}
                                     {f.preco != null && (
                                       <>
                                         <span className="text-muted-foreground">·</span>
@@ -849,8 +869,32 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                               })}
                             </div>
                           )}
+                          {expandido && emFaccoes.some(f => f.faixas.length > 0) && (
+                            <div className="mt-1 space-y-2 pl-1 border-l-2 border-amber-500/20">
+                              {emFaccoes.filter(f => f.faixas.length > 0).map(f => (
+                                <div key={f.id} className="space-y-1">
+                                  <p className="text-[11px] font-medium" style={{ color: f.cor_tag }}>{f.nome} — faixas de quantidade</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {f.preco != null && (
+                                      <span className="text-[11px] bg-white/[0.04] border border-white/10 rounded px-2 py-1 font-mono text-muted-foreground">
+                                        1 – {f.faixas[0].quantidade_min - 1} un.: R$ {f.preco.toLocaleString('pt-BR')}
+                                        {f.preco_sujo != null && <span className="text-orange-400/70"> / R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>}
+                                      </span>
+                                    )}
+                                    {f.faixas.map((fx, i) => (
+                                      <span key={i} className="text-[11px] bg-amber-500/[0.07] border border-amber-500/20 rounded px-2 py-1 font-mono text-amber-300/90">
+                                        ≥{fx.quantidade_min} un.: {fx.preco_limpo != null ? `R$ ${fx.preco_limpo.toLocaleString('pt-BR')}` : '—'}
+                                        {fx.preco_sujo != null && <span className="text-orange-400/70"> / R$ {fx.preco_sujo.toLocaleString('pt-BR')} sujo</span>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </section>
                 )}
