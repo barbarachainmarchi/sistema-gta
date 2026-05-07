@@ -307,10 +307,10 @@ export function ExtratoAba({
 
       {/* ── Cards de resumo ── */}
       <div className="shrink-0 px-6 pt-5 pb-3 grid grid-cols-4 gap-3">
+        <SaldoCard  limpo={saldoLimpo} sujo={saldoSujo} />
         <ResumoCard label="Entradas" limpo={resumo.entLimpo} sujo={resumo.entSujo} cor="emerald" />
         <ResumoCard label="Vendas"   limpo={resumo.venLimpo} sujo={resumo.venSujo} cor="blue" />
         <ResumoCard label="Gastos"   limpo={resumo.gasLimpo} sujo={resumo.gasSujo} cor="red" negativo />
-        <SaldoCard  limpo={saldoLimpo} sujo={saldoSujo} />
       </div>
 
       {/* ── Filtros + botão ── */}
@@ -732,23 +732,19 @@ function ResumoCard({ label, limpo, sujo, cor, negativo }: {
 }
 
 function SaldoCard({ limpo, sujo }: { limpo: number; sujo: number }) {
-  const total = limpo + sujo
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3">
       <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-2">Saldo</p>
-      <p className={cn('text-xl font-bold tabular-nums', total >= 0 ? 'text-foreground' : 'text-red-400')}>
-        {total < 0 ? '-' : ''}R$ {Math.abs(total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-      </p>
-      <div className="mt-1.5 space-y-0.5">
+      <div className="space-y-1">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-muted-foreground">Limpo</span>
-          <span className={cn('text-xs tabular-nums', limpo >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+          <span className={cn('text-sm font-bold tabular-nums', limpo >= 0 ? 'text-emerald-400' : 'text-red-400')}>
             {limpo < 0 ? '-' : ''}R$ {Math.abs(limpo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-muted-foreground">Sujo</span>
-          <span className={cn('text-xs tabular-nums', sujo >= 0 ? 'text-orange-400' : 'text-red-400')}>
+          <span className={cn('text-sm font-bold tabular-nums', sujo >= 0 ? 'text-orange-400' : 'text-red-400')}>
             {sujo < 0 ? '-' : ''}R$ {Math.abs(sujo).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
           </span>
         </div>
