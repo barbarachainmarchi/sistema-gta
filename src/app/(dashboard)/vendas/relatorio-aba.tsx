@@ -48,6 +48,7 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deletando, setDeletando] = useState(false)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [highlightIdx, setHighlightIdx] = useState(0)
   function toggleRow(id: string) {
     setExpandedRows(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
@@ -157,6 +158,22 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
     return fromVendas + fromAvulsas
   }, [vendasFiltradas, avulsasFiltradas])
 
+  const receitaSujo = useMemo(() => {
+    const v = vendasFiltradas.filter(v => v.tipo_dinheiro === 'sujo').reduce((s, v) => {
+      const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
+      return s + sub * (1 - v.desconto_pct / 100)
+    }, 0)
+    return v + avulsasFiltradas.filter(a => a.tipo_dinheiro === 'sujo').reduce((s, a) => s + a.valor, 0)
+  }, [vendasFiltradas, avulsasFiltradas])
+
+  const receitaLimpo = useMemo(() => {
+    const v = vendasFiltradas.filter(v => v.tipo_dinheiro === 'limpo').reduce((s, v) => {
+      const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
+      return s + sub * (1 - v.desconto_pct / 100)
+    }, 0)
+    return v + avulsasFiltradas.filter(a => a.tipo_dinheiro === 'limpo').reduce((s, a) => s + a.valor, 0)
+  }, [vendasFiltradas, avulsasFiltradas])
+
   // Item breakdown
   const itensSummary = useMemo(() => {
     const map: Record<string, { nome: string; qtd: number; receita: number }> = {}
@@ -171,6 +188,37 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
     }
     return Object.values(map).sort((a, b) => b.receita - a.receita)
   }, [vendasFiltradas])
+
+  const highlights = useMemo(() => {
+    const maisVendido = [...itensSummary].sort((a, b) => b.qtd - a.qtd)[0]
+    const maisLucrativo = itensSummary[0]
+    const facMap: Record<string, number> = {}
+    for (const v of vendasFiltradas) {
+      if (!v.faccao_id) continue
+      const total = v.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0) * (1 - v.desconto_pct / 100)
+      facMap[v.faccao_id] = (facMap[v.faccao_id] ?? 0) + total
+    }
+    const topFacEntry = Object.entries(facMap).sort(([, a], [, b]) => b - a)[0]
+    const topFacNome = topFacEntry ? faccoes.find(f => f.id === topFacEntry[0])?.nome ?? '—' : '—'
+    const matMap: Record<string, { nome: string; pedidos: number }> = {}
+    for (const v of vendasFiltradas) {
+      const vistos = new Set<string>()
+      for (const it of v.itens) {
+        const key = it.item_id ?? it.item_nome
+        if (vistos.has(key)) continue
+        vistos.add(key)
+        if (!matMap[key]) matMap[key] = { nome: it.item_nome, pedidos: 0 }
+        matMap[key].pedidos++
+      }
+    }
+    const topMat = Object.values(matMap).sort((a, b) => b.pedidos - a.pedidos)[0]
+    return [
+      { label: 'Mais Vendido',          nome: maisVendido?.nome ?? '—',  valor: maisVendido  ? `${maisVendido.qtd} un.`          : '—' },
+      { label: 'Mais Lucrativo',        nome: maisLucrativo?.nome ?? '—', valor: maisLucrativo ? fmt(maisLucrativo.receita)       : '—' },
+      { label: 'Facção Que Mais Comprou', nome: topFacNome,              valor: topFacEntry   ? fmt(topFacEntry[1])              : '—' },
+      { label: 'Material Mais Usado',   nome: topMat?.nome ?? '—',       valor: topMat        ? `${topMat.pedidos} pedidos`     : '—' },
+    ]
+  }, [itensSummary, vendasFiltradas, faccoes])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -205,18 +253,49 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
       </div>
 
       {/* Stats */}
-      <div className="px-6 py-3 border-b border-border shrink-0 grid grid-cols-3 gap-3">
+      <div className="px-6 py-3 border-b border-border shrink-0 grid grid-cols-4 gap-3">
         <div className="rounded-lg border border-border bg-white/[0.02] px-4 py-3">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Vendas entregues</p>
           <p className="text-2xl font-bold tabular-nums">{vendasFiltradas.length}</p>
         </div>
         <div className="rounded-lg border border-border bg-white/[0.02] px-4 py-3">
-          <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Receita total</p>
-          <p className="text-2xl font-bold tabular-nums text-primary">{fmt(totalReceita)}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">Receita total</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Sujo</span>
+              <span className="text-lg font-bold tabular-nums text-primary">{fmt(receitaSujo)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Limpo</span>
+              <span className="text-lg font-bold tabular-nums text-primary">{fmt(receitaLimpo)}</span>
+            </div>
+          </div>
         </div>
         <div className="rounded-lg border border-border bg-white/[0.02] px-4 py-3">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Itens vendidos</p>
           <p className="text-2xl font-bold tabular-nums">{vendasFiltradas.reduce((s, v) => s + v.itens.reduce((ss, it) => ss + it.quantidade, 0), 0)}</p>
+        </div>
+        {/* Carousel de destaques */}
+        <div className="rounded-lg border border-border bg-white/[0.02] px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">
+              {highlights[highlightIdx].label}
+            </p>
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setHighlightIdx(i => (i + 3) % 4)}
+                className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-white/[0.06] text-sm">‹</button>
+              <button onClick={() => setHighlightIdx(i => (i + 1) % 4)}
+                className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-white/[0.06] text-sm">›</button>
+            </div>
+          </div>
+          <p className="text-xl font-bold tabular-nums text-primary">{highlights[highlightIdx].valor}</p>
+          <p className="text-xs text-muted-foreground truncate mt-0.5">{highlights[highlightIdx].nome}</p>
+          <div className="flex gap-1 mt-2">
+            {[0, 1, 2, 3].map(i => (
+              <button key={i} onClick={() => setHighlightIdx(i)}
+                className={cn('h-1 rounded-full transition-all', i === highlightIdx ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30')} />
+            ))}
+          </div>
         </div>
       </div>
 

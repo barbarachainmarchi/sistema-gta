@@ -403,19 +403,25 @@ export function ExtratoAba({
                         ) : '—'}
                       </td>
                       <td className="px-3 py-2.5 max-w-[200px]">
-                        <p className="truncate font-medium">
-                          {l.item_descricao ?? l.descricao
-                            ?? (l.cotacoes ? `Compra: ${l.cotacoes.titulo ?? l.cotacoes.fornecedor_nome}` : '—')}
-                        </p>
-                        {l.origem && (
-                          <p className="text-[10px] text-muted-foreground truncate">{l.origem}</p>
-                        )}
-                        {isTrans && destNome && <p className="text-[10px] text-muted-foreground">→ {destNome}</p>}
-                        {isVenda && (
-                          <p className="text-[10px] text-blue-400">
-                            venda{l.vendas?.faccoes?.nome ? ` · ${l.vendas.faccoes.nome}` : ''}
-                            {l.vendas?.cliente_nome ? ` · ${l.vendas.cliente_nome}` : ''}
-                          </p>
+                        {isVenda ? (
+                          <>
+                            <p className="truncate font-medium text-blue-300">
+                              Venda{l.vendas?.faccoes?.nome ? ` · ${l.vendas.faccoes.nome}` : ''}
+                              {l.vendas?.cliente_nome ? ` · ${l.vendas.cliente_nome}` : ''}
+                            </p>
+                            {(l.item_descricao ?? l.descricao) && (
+                              <p className="text-[10px] text-muted-foreground truncate">{l.item_descricao ?? l.descricao}</p>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <p className="truncate font-medium">
+                              {l.item_descricao ?? l.descricao
+                                ?? (l.cotacoes ? `Compra: ${l.cotacoes.titulo ?? l.cotacoes.fornecedor_nome}` : '—')}
+                            </p>
+                            {l.origem && <p className="text-[10px] text-muted-foreground truncate">{l.origem}</p>}
+                            {isTrans && destNome && <p className="text-[10px] text-muted-foreground">→ {destNome}</p>}
+                          </>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{l.categoria ?? '—'}</td>

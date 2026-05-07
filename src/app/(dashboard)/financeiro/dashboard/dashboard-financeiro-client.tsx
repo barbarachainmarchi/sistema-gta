@@ -324,21 +324,22 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
         {/* ── KPIs globais ── */}
         <div className="grid grid-cols-4 gap-4">
           {([
-            { label: 'Entradas',  k: kpis.entradas, color: 'text-emerald-400' },
-            { label: 'Vendas',    k: kpis.vendas,   color: 'text-emerald-400' },
-            { label: 'Gastos',    k: kpis.gastos,   color: 'text-red-400'     },
-            { label: 'Saldo',     k: kpis.saldo,    color: kpis.saldo.total >= 0 ? 'text-emerald-400' : 'text-red-400' },
-          ] as const).map(({ label, k, color }) => (
+            { label: 'Saldo',    k: kpis.saldo,    corSujo: kpis.saldo.sujo  >= 0 ? 'text-emerald-400' : 'text-red-400', corLimpo: kpis.saldo.limpo >= 0 ? 'text-emerald-400' : 'text-red-400' },
+            { label: 'Entradas', k: kpis.entradas, corSujo: 'text-emerald-400', corLimpo: 'text-emerald-400' },
+            { label: 'Vendas',   k: kpis.vendas,   corSujo: 'text-emerald-400', corLimpo: 'text-emerald-400' },
+            { label: 'Gastos',   k: kpis.gastos,   corSujo: 'text-red-400',     corLimpo: 'text-red-400'     },
+          ] as const).map(({ label, k, corSujo, corLimpo }) => (
             <div key={label} className="rounded-lg border border-border bg-card px-5 py-4">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">{label}</p>
-              <p className={cn('text-2xl font-bold tabular-nums', color)}>{fmt(k.total)}</p>
-              <div className="flex gap-3 mt-1.5">
-                <span className="text-[11px] text-muted-foreground">
-                  Sujo: <span className="tabular-nums text-foreground/70">{fmt(k.sujo)}</span>
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  Limpo: <span className="tabular-nums text-foreground/70">{fmt(k.limpo)}</span>
-                </span>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-3">{label}</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Sujo</span>
+                  <span className={cn('text-xl font-bold tabular-nums', corSujo)}>{fmt(k.sujo)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Limpo</span>
+                  <span className={cn('text-xl font-bold tabular-nums', corLimpo)}>{fmt(k.limpo)}</span>
+                </div>
               </div>
             </div>
           ))}
