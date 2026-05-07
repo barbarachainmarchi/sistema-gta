@@ -111,6 +111,13 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
+function formatDateTime(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
 function formatExpiry(iso: string) {
   const d = new Date(iso)
   const now = new Date()
@@ -836,7 +843,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                       <TableCell><StatusBadge status={u.status} /></TableCell>
                       {(isFantasma || isDonoSecundario) && (
                         <TableCell className="text-xs text-muted-foreground">
-                          <div>{formatDate(u.ultimo_acesso)}</div>
+                          <div>{formatDateTime(u.ultimo_acesso)}</div>
                           {u.ultima_pagina && (
                             <div className="font-mono text-[10px] opacity-60 truncate max-w-[140px]" title={u.ultima_pagina}>
                               {u.ultima_pagina}
@@ -1636,7 +1643,7 @@ export function UsuariosClient({ usuarios: initialUsuarios, perfis: initialPerfi
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground shrink-0">Último acesso</span>
                   <div className="text-right">
-                    <div className="text-xs text-muted-foreground">{formatDate(infoUsuario.ultimo_acesso)}</div>
+                    <div className="text-xs text-muted-foreground">{formatDateTime(infoUsuario.ultimo_acesso)}</div>
                     {infoUsuario.ultima_pagina && (
                       <div className="font-mono text-[10px] text-muted-foreground/50 truncate max-w-[160px]" title={infoUsuario.ultima_pagina}>
                         {infoUsuario.ultima_pagina}
