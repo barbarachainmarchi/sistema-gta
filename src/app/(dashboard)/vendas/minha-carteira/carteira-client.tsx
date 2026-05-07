@@ -108,6 +108,11 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
 
   const [salvando, setSalvando] = useState(false)
 
+  // Multi-select
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [transferSelecionadosOpen, setTransferSelecionadosOpen] = useState(false)
+  const [destSelecionados, setDestSelecionados] = useState('')
+
   // Transferências pendentes para mim
   const [transferPendentes, setTransferPendentes] = useState<TransferPendente[]>(transferPendentesIniciais)
   const [aceitando, setAceitando] = useState<string | null>(null)
@@ -272,6 +277,31 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
         toast.success(`${comigo.length} venda(s) transferida(s) para ${contaNome}`)
       }
       setTransferTudoOpen(false); setDestTudo('')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
+    finally { setSalvando(false) }
+  }
+
+  async function handleTransferirSelecionados() {
+    if (!destSelecionados || selecionados.size === 0) return
+    setSalvando(true)
+    try {
+      const { id: contaId, nome: contaNome, tipo: contaTipo } = await resolveContaDestino(destSelecionados)
+      let ok = 0
+      for (const vendaId of selecionados) {
+        try {
+          if (!podeExcluirConcluida && contaTipo === 'membro') {
+            await criarSolicitacaoTransfer(vendaId, contaId, contaNome)
+          } else {
+            await moverLancamento(vendaId, contaId)
+          }
+          ok++
+        } catch { /* continua com o próximo */ }
+      }
+      const solicitou = !podeExcluirConcluida && contaTipo === 'membro'
+      toast.success(solicitou ? `${ok} solicitação(ões) enviada(s)` : `${ok} venda(s) transferida(s) para ${contaNome}`)
+      setSelecionados(new Set())
+      setTransferSelecionadosOpen(false)
+      setDestSelecionados('')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro') }
     finally { setSalvando(false) }
   }
@@ -476,9 +506,10 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
             {transferTudoOpen ? (
               <div className="flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/20">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">Transferir {comigo.length} venda(s) para:</span>
-                <Select value={destTudo} onValueChange={setDestTudo}>
+                <Select value={destTudo || 'sem'} onValueChange={v => setDestTudo(v === 'sem' ? '' : v)}>
                   <SelectTrigger className="h-7 text-xs w-40"><SelectValue placeholder="Conta..." /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="sem">Selecione a conta...</SelectItem>
                     {contasAtivas.filter(c => c.id !== meuContaId).map(c => (
                       <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
                     ))}
@@ -498,6 +529,43 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                 Transferir tudo ({comigo.length})
               </Button>
             )}
+          </div>
+        )}
+
+        {/* ── Transferir selecionados ── */}
+        {selecionados.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {transferSelecionadosOpen ? (
+              <div className="flex items-center gap-2 p-2 rounded-lg border border-primary/30 bg-primary/[0.03]">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  Transferir {selecionados.size} selecionada(s) para:
+                </span>
+                <Select value={destSelecionados || 'sem'} onValueChange={v => setDestSelecionados(v === 'sem' ? '' : v)}>
+                  <SelectTrigger className="h-7 text-xs w-40"><SelectValue placeholder="Conta..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sem">Selecione a conta...</SelectItem>
+                    {contasAtivas.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                    ))}
+                    {membrosSemConta.map(m => (
+                      <SelectItem key={`new:${m.membroId}`} value={`new:${m.membroId}`}>{m.nome} (nova conta)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" className="h-7 text-xs" disabled={!destSelecionados || salvando} onClick={handleTransferirSelecionados}>
+                  {salvando ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirmar'}
+                </Button>
+                <button onClick={() => { setTransferSelecionadosOpen(false); setDestSelecionados('') }} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-primary/30 text-primary/80" onClick={() => setTransferSelecionadosOpen(true)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                Transferir selecionados ({selecionados.size})
+              </Button>
+            )}
+            <button onClick={() => setSelecionados(new Set())} className="text-xs text-muted-foreground hover:text-foreground">
+              Limpar seleção
+            </button>
           </div>
         )}
 
@@ -529,6 +597,16 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
             <table className="w-full text-xs">
               <thead className="bg-muted/30 border-b border-border sticky top-0">
                 <tr>
+                  <th className="px-2 py-2 w-8">
+                    <input type="checkbox"
+                      className="rounded border-border cursor-pointer"
+                      checked={vendasFiltradas.length > 0 && vendasFiltradas.every(v => selecionados.has(v.id))}
+                      onChange={e => {
+                        if (e.target.checked) setSelecionados(new Set(vendasFiltradas.map(v => v.id)))
+                        else setSelecionados(new Set())
+                      }}
+                    />
+                  </th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground w-20">Data</th>
                   {podeExcluirConcluida && <th className="px-3 py-2 text-left font-medium text-muted-foreground w-28">Vendedor</th>}
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cliente</th>
@@ -548,15 +626,30 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                   const isTransferindo = transferindoVendaId === venda.id
                   const contaAtualId = lanc?.conta_id ?? null
                   const expanded = expandedRows.has(venda.id)
-                  const colSpan = podeExcluirConcluida ? 8 : 7
+                  const colSpan = podeExcluirConcluida ? 9 : 8
+                  const isSelecionado = selecionados.has(venda.id)
 
                   return (
                     <React.Fragment key={venda.id}>
                       <tr onClick={() => !isTransferindo && toggleRow(venda.id)} className={cn(
                         'transition-colors cursor-pointer',
                         isTransferindo ? 'bg-primary/[0.03]' : 'hover:bg-white/[0.02]',
+                        isSelecionado && 'bg-primary/[0.04]',
                         venda.cancelamento_solicitado && 'bg-orange-500/[0.03]'
                       )}>
+                        <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox"
+                            className="rounded border-border cursor-pointer"
+                            checked={isSelecionado}
+                            onChange={e => {
+                              setSelecionados(prev => {
+                                const n = new Set(prev)
+                                e.target.checked ? n.add(venda.id) : n.delete(venda.id)
+                                return n
+                              })
+                            }}
+                          />
+                        </td>
                         <td className="px-3 py-2.5 text-muted-foreground tabular-nums whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             {expanded
@@ -589,15 +682,22 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                           {fmt(valor)}
                         </td>
                         <td className="px-3 py-2.5">
-                          {eComigo ? (
+                          {filtroVendedor === 'todos' ? (
+                            conta ? (
+                              <span className="text-[11px] font-medium text-foreground/80 truncate block max-w-[9rem]">{conta.nome}</span>
+                            ) : (
+                              <span className="text-[10px] text-yellow-400 font-medium">Não repassado</span>
+                            )
+                          ) : eComigo ? (
                             <span className="flex items-center gap-1 text-yellow-400 text-[10px] font-medium">
-                              <TrendingUp className="h-3 w-3" />Com você
+                              <TrendingUp className="h-3 w-3" /><span>Com você</span>
                             </span>
                           ) : (
                             <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-medium">
                               <CheckCircle2 className="h-3 w-3 shrink-0" />
                               <span className="truncate">
-                                Repassado{conta ? <span className="text-muted-foreground"> → {conta.nome}</span> : null}
+                                <span>Repassado</span>
+                                {conta && <span className="text-muted-foreground"> → {conta.nome}</span>}
                               </span>
                             </span>
                           )}
@@ -611,11 +711,12 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                           <div className="flex items-center gap-1.5 justify-end">
                             {isTransferindo ? (
                               <>
-                                <Select value={destSingle} onValueChange={setDestSingle}>
+                                <Select value={destSingle || 'sem'} onValueChange={v => setDestSingle(v === 'sem' ? '' : v)}>
                                   <SelectTrigger className="h-7 text-xs w-36">
                                     <SelectValue placeholder="Conta destino..." />
                                   </SelectTrigger>
                                   <SelectContent>
+                                    <SelectItem value="sem">Selecione...</SelectItem>
                                     {contasAtivas.filter(c => c.id !== contaAtualId).map(c => (
                                       <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
                                     ))}

@@ -15,7 +15,7 @@ import {
   Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown, MoreVertical, Star,
 } from 'lucide-react'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { resolverPrecoFaixas, type PrecoFaixa } from '@/lib/precoFaixas'
 import { gerarImagemVenda } from '@/lib/gerarImagem'
@@ -164,7 +164,7 @@ function MaterialsPanel({ venda, receitaMap, estoqueMap, itemMap }: {
 
 function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, podeEditar, isOwner,
   onStatusChange, onEntregar, onDesfazerEntrega, onEdit, onSolicitarCancelamento, onDelete, onDeletePermanente, onTagToggle, servicos, servicoItens, onItemQtdChange,
-  isDono, exclusaoSuprema, vendedores, onTrocarVendedor }: {
+  isDono, exclusaoSuprema, vendedores, onTrocarVendedor, onEntregarEmNomeDe }: {
   venda: Venda
   faccoes: Faccao[]
   lojas: Loja[]
@@ -183,6 +183,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   exclusaoSuprema?: boolean
   vendedores?: { id: string; nome: string }[]
   onTrocarVendedor?: (vendaId: string, novoId: string, novoNome: string) => Promise<void>
+  onEntregarEmNomeDe?: (v: Venda, pessoaId: string, pessoaNome: string) => Promise<void>
 }) {
   const [materiaisAberto, setMateriaisAberto] = useState(false)
   const [combosColapsados, setCombosColapsados] = useState<Set<string>>(new Set())
@@ -196,6 +197,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const [trocandoVendedor, setTrocandoVendedor] = useState(false)
   const [novoVendedorId, setNovoVendedorId] = useState('')
   const [salvandoVendedor, setSalvandoVendedor] = useState(false)
+  const [nomeDeDialogOpen, setNomeDeDialogOpen] = useState(false)
+  const [nomeDePessoaId, setNomeDePessoaId] = useState('')
 
   async function handleCompartilhar() {
     setCompartilhando(true)
@@ -522,7 +525,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                     <MoreVertical className="h-3 w-3" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuContent align="end" className="w-44">
                   {(['pronto', 'separado', 'prioridade'] as const).map(tag => (
                     <DropdownMenuItem key={tag} onClick={() => onTagToggle(venda.id, tag)}
                       className="flex items-center gap-2 cursor-pointer">
@@ -535,6 +538,17 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                       {tags.includes(tag) && <Check className="h-3 w-3 text-primary" />}
                     </DropdownMenuItem>
                   ))}
+                  {isDono && onEntregarEmNomeDe && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => { setNomeDePessoaId(''); setNomeDeDialogOpen(true) }}
+                        className="flex items-center gap-2 cursor-pointer text-primary/80">
+                        <Truck className="h-3 w-3" />
+                        <span className="flex-1">Entregar em nome de</span>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -604,6 +618,36 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
           </div>
         </div>
       )}
+
+      {/* Dialog: Entregar em nome de (só donos) */}
+      <Dialog open={nomeDeDialogOpen} onOpenChange={setNomeDeDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Entregar em nome de</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground mb-1">Selecione quem vai receber o crédito desta entrega.</p>
+          <Select value={nomeDePessoaId || 'sem'} onValueChange={v => setNomeDePessoaId(v === 'sem' ? '' : v)}>
+            <SelectTrigger><SelectValue placeholder="Selecione a pessoa..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sem">Selecione...</SelectItem>
+              {vendedores?.map(v => (
+                <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex justify-end gap-2 mt-3">
+            <Button variant="outline" size="sm" onClick={() => setNomeDeDialogOpen(false)}>Cancelar</Button>
+            <Button size="sm" className="gap-1.5"
+              disabled={!nomeDePessoaId || nomeDePessoaId === 'sem'}
+              onClick={async () => {
+                const pessoa = vendedores?.find(v => v.id === nomeDePessoaId)
+                if (!pessoa) return
+                await onEntregarEmNomeDe?.(venda, pessoa.id, pessoa.nome)
+                setNomeDeDialogOpen(false)
+              }}>
+              <Truck className="h-3.5 w-3.5" />Confirmar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1964,7 +2008,7 @@ export function VendasClient({
     await registrarLancamentoFinanceiro(venda)
   }
 
-  async function registrarLancamentoFinanceiro(venda: Venda) {
+  async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null) {
     const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
     const totalVenda = subtotal * (1 - venda.desconto_pct / 100)
     if (totalVenda <= 0) return
@@ -1974,19 +2018,22 @@ export function VendasClient({
       .select('id').eq('venda_id', venda.id).maybeSingle()
     if (jaExiste) return
 
+    const efetivId = entregadorId ?? userId
+    const efetivNome = entregadorNome ?? userNome
+
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
     let contaId: string | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: usuRow } = await sb().from('usuarios').select('membro_id').eq('id', userId).maybeSingle() as any
+    const { data: usuRow } = await sb().from('usuarios').select('membro_id').eq('id', efetivId).maybeSingle() as any
     const membroId: string | null = usuRow?.membro_id ?? null
     if (membroId) {
       const { data: contaExistente } = await sb().from('financeiro_contas')
         .select('id').eq('membro_id', membroId).eq('status', 'ativo').maybeSingle()
       if (contaExistente) {
         contaId = (contaExistente as { id: string }).id
-      } else if (userNome) {
+      } else if (efetivNome) {
         const { data: novaConta } = await sb().from('financeiro_contas').insert({
-          nome: userNome, tipo: 'membro', membro_id: membroId,
+          nome: efetivNome, tipo: 'membro', membro_id: membroId,
           saldo_sujo: 0, saldo_limpo: 0, status: 'ativo',
         }).select('id').single()
         if (novaConta) contaId = (novaConta as { id: string }).id
@@ -2006,10 +2053,29 @@ export function VendasClient({
       data: new Date().toISOString().split('T')[0],
       vai_para_faccao: !!venda.faccao_id,
       origem: 'venda',
-      created_by: userId,
-      responsavel_nome: userNome,
+      created_by: efetivId,
+      responsavel_nome: efetivNome,
     })
     if (error) { toast.error('Erro ao registrar no financeiro: ' + error.message); return }
+  }
+
+  async function handleEntregarEmNomeDe(venda: Venda, pessoaId: string, pessoaNome: string) {
+    const agora = new Date().toISOString()
+    const { error } = await sb().from('vendas').update({
+      status: 'entregue', entregue_por: pessoaId, entregue_por_nome: pessoaNome, entregue_em: agora,
+    }).eq('id', venda.id)
+    if (error) { toast.error('Erro ao registrar entrega'); return }
+    setVendas(prev => prev.map(v => v.id === venda.id
+      ? { ...v, status: 'entregue', entregue_por: pessoaId, entregue_por_nome: pessoaNome, entregue_em: agora } : v))
+    toast.success(`Entregue em nome de ${pessoaNome}!`)
+    sb().from('sistema_logs').insert({
+      tipo: 'venda_entregue', referencia_id: venda.id, referencia_tipo: 'venda',
+      descricao: `Venda entregue em nome de ${pessoaNome}: ${venda.cliente_nome}`,
+      usuario_id: userId, usuario_nome: userNome,
+      dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro, em_nome_de: pessoaNome },
+    }).then(() => {})
+    if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
+    await registrarLancamentoFinanceiro(venda, pessoaId, pessoaNome)
   }
 
   async function removerLancamentosVenda(vendaId: string) {
@@ -2272,6 +2338,7 @@ export function VendasClient({
                       exclusaoSuprema={exclusaoSuprema}
                       vendedores={vendedores}
                       onTrocarVendedor={handleTrocarVendedor}
+                      onEntregarEmNomeDe={isDono ? handleEntregarEmNomeDe : undefined}
                     />
                   </div>
                 ))}

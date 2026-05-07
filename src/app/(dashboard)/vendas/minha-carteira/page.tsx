@@ -15,6 +15,7 @@ export default async function MinhaCarteiraPage() {
     { data: vendaItensData },
     { data: lancsData },
     { data: contasData },
+    { data: donoConfig },
   ] = await Promise.all([
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, membro_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
@@ -22,12 +23,15 @@ export default async function MinhaCarteiraPage() {
     supabase.from('venda_itens').select('id, venda_id, item_nome, quantidade, preco_unit'),
     supabase.from('financeiro_lancamentos').select('id, venda_id, conta_id, valor, tipo_dinheiro, created_by, responsavel_nome').eq('tipo', 'venda'),
     supabase.from('financeiro_contas').select('id, nome, tipo, membro_id, saldo_sujo, saldo_limpo, status').eq('status', 'ativo').order('nome'),
+    supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes
+  const donoId = donoConfig?.valor || null
+  const isDono = perms == null || (donoId !== null && donoId === user.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const podeExcluirConcluida = perms == null ? true : (perms.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
+  const podeExcluirConcluida = isDono ? true : (perms?.find((p: any) => p.modulo === 'vendas_excluir_concluida')?.pode_editar ?? false)
 
   // Membros da facção sem conta financeira (para aparecer no dropdown de transferência)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
