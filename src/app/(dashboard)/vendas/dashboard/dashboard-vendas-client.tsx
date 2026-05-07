@@ -137,6 +137,7 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
 
   const [sortItens, setSortItens] = useState<'qtd' | 'receita'>('qtd')
   const [sortClientes, setSortClientes] = useState<'pedidos' | 'receita'>('receita')
+  const [highlightIdx, setHighlightIdx] = useState(0)
 
   function aplicarShortcut(s: Shortcut) {
     setShortcut(s)
@@ -166,7 +167,8 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
 
   const totalPedidos = vendasFiltradas.length
   const totalReceita = useMemo(() => vendasFiltradas.reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
-  const totalSujo = useMemo(() => vendasFiltradas.filter(v => v.tipo_dinheiro === 'sujo').reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
+  const totalSujo  = useMemo(() => vendasFiltradas.filter(v => v.tipo_dinheiro === 'sujo' ).reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
+  const totalLimpo = useMemo(() => vendasFiltradas.filter(v => v.tipo_dinheiro === 'limpo').reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
   const ticketMedio = totalPedidos > 0 ? totalReceita / totalPedidos : 0
 
   // ── Dados para gráfico de evolução ────────────────────────────────────────
@@ -247,6 +249,39 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
     return Object.values(map).sort((a, b) => b.qtd - a.qtd)
   }, [vendasFiltradas, receitas])
 
+  // ── Destaques (carousel) ──────────────────────────────────────────────────
+
+  const highlights = useMemo(() => {
+    const qtyMap: Record<string, { nome: string; qtd: number }> = {}
+    const recMap: Record<string, { nome: string; receita: number }> = {}
+    const cliMap: Record<string, { nome: string; receita: number }> = {}
+    for (const v of vendasFiltradas) {
+      const fator = 1 - v.desconto_pct / 100
+      const empresa = v.faccao_id
+        ? (faccoes.find(f => f.id === v.faccao_id)?.nome ?? v.cliente_nome)
+        : v.loja_id ? (lojas.find(l => l.id === v.loja_id)?.nome ?? v.cliente_nome) : v.cliente_nome
+      if (!cliMap[empresa]) cliMap[empresa] = { nome: empresa, receita: 0 }
+      cliMap[empresa].receita += calcTotal(v)
+      for (const it of v.itens) {
+        const key = it.item_id ?? it.item_nome
+        if (!qtyMap[key]) qtyMap[key] = { nome: it.item_nome, qtd: 0 }
+        qtyMap[key].qtd += it.quantidade
+        if (!recMap[key]) recMap[key] = { nome: it.item_nome, receita: 0 }
+        recMap[key].receita += it.quantidade * it.preco_unit * fator
+      }
+    }
+    const maisVend = Object.values(qtyMap).sort((a, b) => b.qtd - a.qtd)[0]
+    const maisLucr = Object.values(recMap).sort((a, b) => b.receita - a.receita)[0]
+    const topCli   = Object.values(cliMap).sort((a, b) => b.receita - a.receita)[0]
+    const topMat   = materiaisGastos[0]
+    return [
+      { label: 'Mais Vendido',   nome: maisVend?.nome ?? '—', valor: maisVend ? `${maisVend.qtd}×`         : '—' },
+      { label: 'Mais Lucrativo', nome: maisLucr?.nome ?? '—', valor: maisLucr ? fmt(maisLucr.receita)      : '—' },
+      { label: 'Mais Comprou',   nome: topCli?.nome   ?? '—', valor: topCli   ? fmt(topCli.receita)        : '—' },
+      { label: 'Mat. Mais Usado',nome: topMat?.nome   ?? '—', valor: topMat   ? `${topMat.qtd}× un.`      : '—' },
+    ]
+  }, [vendasFiltradas, faccoes, lojas, materiaisGastos])
+
   // ── Helpers de barra ──────────────────────────────────────────────────────
 
   function barPctItem(it: (typeof rankingItens)[0], idx: number): number {
@@ -320,9 +355,18 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
             <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos.toLocaleString('pt-BR')}</p>
           </div>
-          <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
-            <p className="text-xl font-bold tabular-nums mt-1 text-primary">{fmt(totalReceita)}</p>
+          <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Total</p>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground">Sujo</span>
+                <span className="text-base font-bold tabular-nums text-orange-400">{fmt(totalSujo)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground">Limpo</span>
+                <span className="text-base font-bold tabular-nums text-emerald-400">{fmt(totalLimpo)}</span>
+              </div>
+            </div>
           </div>
           <div className="rounded-lg border border-border/60 bg-card px-4 py-3 text-center">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket médio</p>
@@ -332,10 +376,24 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dinheiro sujo</p>
             <p className="text-xl font-bold tabular-nums mt-1 text-orange-400">{fmt(totalSujo)}</p>
           </div>
-          <div className="rounded-lg border border-border/60 bg-card px-4 py-3 text-center overflow-hidden">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mais vendido</p>
-            <p className="text-sm font-bold mt-1 truncate" title={topItem?.nome ?? undefined}>{topItem?.nome ?? '—'}</p>
-            {topItem && <p className="text-[10px] text-muted-foreground">{topItem.qtd}× un.</p>}
+          <div className="rounded-lg border border-border/60 bg-card px-4 py-3 overflow-hidden">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{highlights[highlightIdx].label}</p>
+              <div className="flex gap-0.5">
+                <button onClick={() => setHighlightIdx(i => (i + 3) % 4)}
+                  className="w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground text-sm">‹</button>
+                <button onClick={() => setHighlightIdx(i => (i + 1) % 4)}
+                  className="w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground text-sm">›</button>
+              </div>
+            </div>
+            <p className="text-base font-bold tabular-nums text-primary">{highlights[highlightIdx].valor}</p>
+            <p className="text-[10px] text-muted-foreground truncate mt-0.5">{highlights[highlightIdx].nome}</p>
+            <div className="flex gap-1 mt-1.5">
+              {[0, 1, 2, 3].map(i => (
+                <button key={i} onClick={() => setHighlightIdx(i)}
+                  className={cn('h-0.5 rounded-full transition-all', i === highlightIdx ? 'w-3 bg-primary' : 'w-1.5 bg-muted-foreground/30')} />
+              ))}
+            </div>
           </div>
         </div>
 

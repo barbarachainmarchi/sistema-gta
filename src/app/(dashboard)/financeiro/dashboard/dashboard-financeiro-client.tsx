@@ -157,7 +157,7 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
 
   // Por categoria (sem filtro de tipo para mostrar ambos)
   const porCategoria = useMemo(() => {
-    const map: Record<string, { cat: string; entradas: number; saidas: number }> = {}
+    const map: Record<string, { cat: string; entradasSujo: number; entradasLimpo: number; saidasSujo: number; saidasLimpo: number }> = {}
     const catsAtivas = catsSelecionadas.size > 0 ? catsSelecionadas : new Set(todasCats)
     for (const l of lancamentos) {
       const cat = l.categoria ?? 'Sem categoria'
@@ -166,13 +166,19 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
       if (dataDe && d < dataDe) continue
       if (dataAte && d > dataAte) continue
       if (tipoDin !== 'todos' && l.tipo_dinheiro !== tipoDin) continue
-      if (!map[cat]) map[cat] = { cat, entradas: 0, saidas: 0 }
-      if (isEntrada(l)) map[cat].entradas += l.valor
-      else map[cat].saidas += l.valor
+      if (!map[cat]) map[cat] = { cat, entradasSujo: 0, entradasLimpo: 0, saidasSujo: 0, saidasLimpo: 0 }
+      const sujo = l.tipo_dinheiro === 'sujo'
+      if (isEntrada(l)) { if (sujo) map[cat].entradasSujo += l.valor; else map[cat].entradasLimpo += l.valor }
+      else              { if (sujo) map[cat].saidasSujo   += l.valor; else map[cat].saidasLimpo   += l.valor }
     }
-    return Object.values(map)
-      .map(c => ({ ...c, saldo: c.entradas - c.saidas }))
-      .sort((a, b) => Math.abs(b.saldo) - Math.abs(a.saldo))
+    return Object.values(map).map(c => ({
+      ...c,
+      entradas: c.entradasSujo + c.entradasLimpo,
+      saidas:   c.saidasSujo   + c.saidasLimpo,
+      saldoSujo:  c.entradasSujo  - c.saidasSujo,
+      saldoLimpo: c.entradasLimpo - c.saidasLimpo,
+      saldo: (c.entradasSujo + c.entradasLimpo) - (c.saidasSujo + c.saidasLimpo),
+    })).sort((a, b) => Math.abs(b.saldo) - Math.abs(a.saldo))
   }, [lancamentos, catsSelecionadas, todasCats, dataDe, dataAte, tipoDin])
 
   // Evolução ao longo do tempo
@@ -349,29 +355,55 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
         {porCategoria.length > 0 && (
           <div className="rounded-lg border border-border bg-card p-5">
             <p className="text-sm font-semibold mb-4">Saldo por categoria</p>
-            <div className="space-y-2">
+            {/* Header */}
+            <div className="grid grid-cols-[1fr_repeat(6,78px)] gap-2 text-[9px] text-muted-foreground uppercase tracking-wide pb-2 mb-1 border-b border-border/30">
+              <span />
+              <span className="text-right">Ent Sujo</span>
+              <span className="text-right">Ent Limpo</span>
+              <span className="text-right">Gas Sujo</span>
+              <span className="text-right">Gas Limpo</span>
+              <span className="text-right">Saldo Sujo</span>
+              <span className="text-right">Saldo Limpo</span>
+            </div>
+            <div className="space-y-1">
               {porCategoria.map((c, i) => (
-                <div key={c.cat} className="grid grid-cols-[1fr_100px_100px_100px] gap-3 items-center text-xs">
+                <div key={c.cat} className="grid grid-cols-[1fr_repeat(6,78px)] gap-2 items-center text-xs py-0.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="h-2 w-2 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <span className="truncate font-medium">{c.cat}</span>
                   </div>
-                  <span className="text-right tabular-nums text-emerald-400">{fmt(c.entradas)}</span>
-                  <span className="text-right tabular-nums text-red-400/80">−{fmt(c.saidas)}</span>
-                  <span className={cn('text-right tabular-nums font-semibold', c.saldo >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                    {c.saldo >= 0 ? '+' : ''}{fmt(c.saldo)}
+                  <span className="text-right tabular-nums text-emerald-400">{fmt(c.entradasSujo)}</span>
+                  <span className="text-right tabular-nums text-emerald-400/70">{fmt(c.entradasLimpo)}</span>
+                  <span className="text-right tabular-nums text-red-400/80">−{fmt(c.saidasSujo)}</span>
+                  <span className="text-right tabular-nums text-red-400/50">−{fmt(c.saidasLimpo)}</span>
+                  <span className={cn('text-right tabular-nums font-semibold', c.saldoSujo  >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                    {c.saldoSujo  >= 0 ? '+' : ''}{fmt(c.saldoSujo)}
+                  </span>
+                  <span className={cn('text-right tabular-nums font-semibold', c.saldoLimpo >= 0 ? 'text-emerald-400/70' : 'text-red-400/70')}>
+                    {c.saldoLimpo >= 0 ? '+' : ''}{fmt(c.saldoLimpo)}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-[1fr_100px_100px_100px] gap-3 mt-3 pt-3 border-t border-border/40 text-xs font-semibold">
-              <span className="text-muted-foreground">Total</span>
-              <span className="text-right tabular-nums text-emerald-400">{fmt(totalEntradas)}</span>
-              <span className="text-right tabular-nums text-red-400/80">−{fmt(totalSaidas)}</span>
-              <span className={cn('text-right tabular-nums', saldo >= 0 ? 'text-emerald-400' : 'text-red-400')}>
-                {saldo >= 0 ? '+' : ''}{fmt(saldo)}
-              </span>
-            </div>
+            {/* Totais */}
+            {(() => {
+              const tES = porCategoria.reduce((s, c) => s + c.entradasSujo, 0)
+              const tEL = porCategoria.reduce((s, c) => s + c.entradasLimpo, 0)
+              const tGS = porCategoria.reduce((s, c) => s + c.saidasSujo, 0)
+              const tGL = porCategoria.reduce((s, c) => s + c.saidasLimpo, 0)
+              const tSS = tES - tGS; const tSL = tEL - tGL
+              return (
+                <div className="grid grid-cols-[1fr_repeat(6,78px)] gap-2 mt-2 pt-2 border-t border-border/40 text-xs font-semibold">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="text-right tabular-nums text-emerald-400">{fmt(tES)}</span>
+                  <span className="text-right tabular-nums text-emerald-400/70">{fmt(tEL)}</span>
+                  <span className="text-right tabular-nums text-red-400/80">−{fmt(tGS)}</span>
+                  <span className="text-right tabular-nums text-red-400/50">−{fmt(tGL)}</span>
+                  <span className={cn('text-right tabular-nums', tSS >= 0 ? 'text-emerald-400' : 'text-red-400')}>{tSS >= 0 ? '+' : ''}{fmt(tSS)}</span>
+                  <span className={cn('text-right tabular-nums', tSL >= 0 ? 'text-emerald-400/70' : 'text-red-400/70')}>{tSL >= 0 ? '+' : ''}{fmt(tSL)}</span>
+                </div>
+              )
+            })()}
           </div>
         )}
 
