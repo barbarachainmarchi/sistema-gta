@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,6 +14,7 @@ type Venda = { id: string; faccao_id: string | null; loja_id: string | null; cli
 type Faccao = { id: string; nome: string }
 type Loja = { id: string; nome: string }
 type ItemSimples = { id: string; nome: string }
+type VendaAvulsa = { id: string; valor: number; tipo_dinheiro: 'sujo' | 'limpo' | null; data: string | null; created_at: string; descricao: string | null; item_descricao: string | null }
 
 interface Props {
   vendas: Venda[]
@@ -37,6 +38,7 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
   const [vendas, setVendas] = useState<Venda[]>(vendasIniciais)
+  const [avulsas, setAvulsas] = useState<VendaAvulsa[]>([])
   const [empresaFiltro, setEmpresaFiltro] = useState<string>('todos')
   const [tipoDinFiltro, setTipoDinFiltro] = useState<'todos' | 'sujo' | 'limpo'>('todos')
   const [busca, setBusca] = useState('')
@@ -49,6 +51,13 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
   function toggleRow(id: string) {
     setExpandedRows(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
+
+  useEffect(() => {
+    sb().from('financeiro_lancamentos')
+      .select('id, valor, tipo_dinheiro, data, created_at, descricao, item_descricao')
+      .eq('categoria', 'venda_avulsa')
+      .then(({ data }) => { if (data) setAvulsas(data as VendaAvulsa[]) })
+  }, [sb])
 
   async function removerLancamentosVenda(vendaId: string) {
     const { data: lancs } = await sb().from('financeiro_lancamentos')
@@ -120,10 +129,33 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
     return list
   }, [vendasEntregues, empresaFiltro, tipoDinFiltro, busca, dataDE, dataATE])
 
-  const totalReceita = useMemo(() => vendasFiltradas.reduce((s, v) => {
-    const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
-    return s + sub * (1 - v.desconto_pct / 100)
-  }, 0), [vendasFiltradas])
+  const avulsasFiltradas = useMemo(() => {
+    if (empresaFiltro !== 'todos') return []
+    let list = avulsas
+    if (tipoDinFiltro !== 'todos') list = list.filter(a => a.tipo_dinheiro === tipoDinFiltro)
+    if (busca.trim()) {
+      const q = norm(busca)
+      list = list.filter(a => norm(a.descricao ?? '').includes(q) || norm(a.item_descricao ?? '').includes(q))
+    }
+    if (dataDE || dataATE) {
+      list = list.filter(a => {
+        const d = (a.data ?? a.created_at).split('T')[0]
+        if (dataDE && d < dataDE) return false
+        if (dataATE && d > dataATE) return false
+        return true
+      })
+    }
+    return list
+  }, [avulsas, empresaFiltro, tipoDinFiltro, busca, dataDE, dataATE])
+
+  const totalReceita = useMemo(() => {
+    const fromVendas = vendasFiltradas.reduce((s, v) => {
+      const sub = v.itens.reduce((ss, it) => ss + it.quantidade * it.preco_unit, 0)
+      return s + sub * (1 - v.desconto_pct / 100)
+    }, 0)
+    const fromAvulsas = avulsasFiltradas.reduce((s, a) => s + a.valor, 0)
+    return fromVendas + fromAvulsas
+  }, [vendasFiltradas, avulsasFiltradas])
 
   // Item breakdown
   const itensSummary = useMemo(() => {
@@ -204,7 +236,7 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
       <div className="flex-1 overflow-y-auto">
         {aba === 'itens' ? (
           <div>
-            {itensSummary.length === 0 ? (
+            {itensSummary.length === 0 && avulsasFiltradas.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-16">Nenhuma venda entregue no filtro selecionado</p>
             ) : (
               <table className="w-full text-sm">
@@ -227,13 +259,31 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
                       </td>
                     </tr>
                   ))}
+                  {avulsasFiltradas.length > 0 && (() => {
+                    const totalAvulsas = avulsasFiltradas.reduce((s, a) => s + a.valor, 0)
+                    return (
+                      <tr className="hover:bg-white/[0.02] border-t border-border/60">
+                        <td className="px-6 py-2.5 font-medium">
+                          <span className="flex items-center gap-2">
+                            Diversos
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 font-medium">avulso</span>
+                          </span>
+                        </td>
+                        <td className="px-6 py-2.5 text-right tabular-nums text-muted-foreground">{avulsasFiltradas.length}×</td>
+                        <td className="px-6 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(totalAvulsas)}</td>
+                        <td className="px-6 py-2.5 text-right tabular-nums text-muted-foreground text-xs">
+                          {totalReceita > 0 ? Math.round(totalAvulsas / totalReceita * 100) + '%' : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })()}
                 </tbody>
               </table>
             )}
           </div>
         ) : (
           <div>
-            {vendasFiltradas.length === 0 ? (
+            {vendasFiltradas.length === 0 && avulsasFiltradas.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-16">Nenhuma venda entregue no filtro selecionado</p>
             ) : (
               <table className="w-full text-sm">
@@ -332,6 +382,33 @@ export function RelatorioAba({ vendas: vendasIniciais, faccoes, lojas, podeExclu
                       </>
                     )
                   })}
+                  {avulsasFiltradas.map(a => (
+                    <tr key={'avulsa-' + a.id} className="hover:bg-white/[0.02]">
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums whitespace-nowrap">
+                        {fmtData(a.data ?? a.created_at)}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 font-medium">Diversos</span>
+                      </td>
+                      <td className="px-4 py-2.5 font-medium text-sm text-muted-foreground/80">
+                        {a.descricao ?? a.item_descricao ?? '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs">—</td>
+                      <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                        {a.item_descricao ?? a.descricao ?? '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground text-xs">{fmt(a.valor)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-primary">{fmt(a.valor)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
+                          a.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
+                        )}>
+                          {a.tipo_dinheiro === 'sujo' ? 'S' : a.tipo_dinheiro === 'limpo' ? 'L' : '—'}
+                        </span>
+                      </td>
+                      {podeExcluirConcluida && <td />}
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}

@@ -128,6 +128,13 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
   const totalSaidas   = useMemo(() => lancsFiltrados.filter(l => !isEntrada(l)).reduce((s, l) => s + l.valor, 0), [lancsFiltrados])
   const saldo         = totalEntradas - totalSaidas
 
+  const avulsasLimpo = useMemo(() =>
+    lancsFiltrados.filter(l => l.categoria === 'venda_avulsa' && l.tipo_dinheiro === 'limpo').reduce((s, l) => s + l.valor, 0),
+  [lancsFiltrados])
+  const avulsasSujo = useMemo(() =>
+    lancsFiltrados.filter(l => l.categoria === 'venda_avulsa' && l.tipo_dinheiro === 'sujo').reduce((s, l) => s + l.valor, 0),
+  [lancsFiltrados])
+
   // Por categoria (sem filtro de tipo para mostrar ambos)
   const porCategoria = useMemo(() => {
     const map: Record<string, { cat: string; entradas: number; saidas: number }> = {}
@@ -295,7 +302,7 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
       <div className="p-6 space-y-6" onClick={() => setCatDropdownOpen(false)}>
 
         {/* ── KPIs globais ── */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           {[
             { label: 'Total entradas', value: fmt(totalEntradas), color: 'text-emerald-400', sub: `${lancsFiltrados.filter(l => isEntrada(l)).length} lançamentos` },
             { label: 'Total saídas',   value: fmt(totalSaidas),   color: 'text-red-400',     sub: `${lancsFiltrados.filter(l => !isEntrada(l)).length} lançamentos` },
@@ -307,6 +314,19 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
               {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
             </div>
           ))}
+          {/* Vendas avulsas */}
+          <div className="rounded-lg border border-border bg-card px-5 py-4">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">Vendas Avulsas</p>
+            <p className="text-3xl font-bold tabular-nums text-purple-400">{fmt(avulsasLimpo + avulsasSujo)}</p>
+            <div className="flex gap-3 mt-1">
+              <span className="text-[11px] text-muted-foreground">
+                Limpo: <span className="text-foreground/80 tabular-nums">{fmt(avulsasLimpo)}</span>
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Sujo: <span className="text-foreground/80 tabular-nums">{fmt(avulsasSujo)}</span>
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* ── Por categoria ── */}
