@@ -406,9 +406,9 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
         .filter(fp => fp.item_id === p.id)
         .map(fp => {
           const f = faccoes.find(f => f.id === fp.faccao_id)
-          return f ? { tipo: 'faccao' as const, id: f.id, nome: f.nome, cor_tag: f.cor_tag, preco: fp.preco_limpo, preco_sujo: fp.preco_sujo } : null
+          return f ? { tipo: 'faccao' as const, id: f.id, nome: f.nome, cor_tag: f.cor_tag, preco: fp.preco_limpo, preco_sujo: fp.preco_sujo, desconto_padrao_pct: f.desconto_padrao_pct ?? 0 } : null
         })
-        .filter(Boolean) as { tipo: 'faccao'; id: string; nome: string; cor_tag: string; preco: number | null; preco_sujo: number | null }[]
+        .filter(Boolean) as { tipo: 'faccao'; id: string; nome: string; cor_tag: string; preco: number | null; preco_sujo: number | null; desconto_padrao_pct: number }[]
       return { produto: p, emLojas, emFaccoes }
     })
   }, [todosProdutos, termoBusca, lojaItemPrecos, faccaoPrecos, lojas, faccoes])
@@ -737,7 +737,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                     </p>
                     <div className="rounded-lg border border-border overflow-hidden">
                       {resultadosMembros.map((m, idx) => (
-                        <div key={m.id} onClick={() => setFichaMembroAberta(m)} className={cn('flex flex-col gap-1 px-4 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors', idx < resultadosMembros.length - 1 && 'border-b border-border/40')}>
+                        <div key={m.id} onClick={() => { const f = faccoes.find(f => f.id === m.faccao_id); if (f) abrirDetalhe(f); else setFichaMembroAberta(m) }} className={cn('flex flex-col gap-1 px-4 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors', idx < resultadosMembros.length - 1 && 'border-b border-border/40')}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold">{m.nome}</span>
                             {m.vulgo && <span className="text-xs text-muted-foreground">"{m.vulgo}"</span>}
@@ -807,30 +807,46 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                           </div>
                           {(emLojas.length > 0 || emFaccoes.length > 0) && (
                             <div className="flex flex-wrap gap-2">
-                              {emLojas.map(l => (
-                                <div key={l.id} className="flex items-center gap-1.5 text-xs bg-blue-500/[0.07] border border-blue-500/20 rounded-md px-2.5 py-1.5">
-                                  <span className="text-blue-300 font-medium">{l.nome}</span>
-                                  <span className="text-muted-foreground">·</span>
-                                  <span className="text-emerald-400 font-mono">R$ {l.preco.toLocaleString('pt-BR')}</span>
-                                  {l.preco_sujo != null && l.preco_sujo !== l.preco && (
-                                    <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {l.preco_sujo.toLocaleString('pt-BR')} sujo</span>
-                                  )}
-                                </div>
-                              ))}
-                              {emFaccoes.map(f => (
-                                <div key={f.id} className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5 border" style={{ borderColor: f.cor_tag + '40', background: f.cor_tag + '0d' }}>
-                                  <span className="font-medium" style={{ color: f.cor_tag }}>{f.nome}</span>
-                                  {f.preco != null && (
-                                    <>
-                                      <span className="text-muted-foreground">·</span>
-                                      <span className="text-emerald-400 font-mono">R$ {f.preco.toLocaleString('pt-BR')}</span>
-                                    </>
-                                  )}
-                                  {f.preco_sujo != null && (
-                                    <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>
-                                  )}
-                                </div>
-                              ))}
+                              {emLojas.map(l => {
+                                const lojaObj = lojas.find(lo => lo.id === l.id)
+                                return (
+                                  <button key={l.id} type="button" onClick={() => lojaObj && setDetalheLoja(lojaObj)} className="flex items-center gap-1.5 text-xs bg-blue-500/[0.07] border border-blue-500/20 rounded-md px-2.5 py-1.5 hover:bg-blue-500/[0.14] transition-colors cursor-pointer">
+                                    <span className="text-blue-300 font-medium">{l.nome}</span>
+                                    <span className="text-muted-foreground">·</span>
+                                    <span className="text-emerald-400 font-mono">R$ {l.preco.toLocaleString('pt-BR')}</span>
+                                    {l.preco_sujo != null && l.preco_sujo !== l.preco && (
+                                      <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {l.preco_sujo.toLocaleString('pt-BR')} sujo</span>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                              {emFaccoes.map(f => {
+                                const faccaoObj = faccoes.find(fa => fa.id === f.id)
+                                const precoComDesconto = f.preco != null && f.desconto_padrao_pct > 0 ? Math.round(f.preco * (1 - f.desconto_padrao_pct / 100)) : null
+                                const precoSujoComDesconto = f.preco_sujo != null && f.desconto_padrao_pct > 0 ? Math.round(f.preco_sujo * (1 - f.desconto_padrao_pct / 100)) : null
+                                return (
+                                  <button key={f.id} type="button" onClick={() => faccaoObj && abrirDetalhe(faccaoObj)} className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5 border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: f.cor_tag + '40', background: f.cor_tag + '0d' }}>
+                                    <span className="font-medium" style={{ color: f.cor_tag }}>{f.nome}</span>
+                                    {f.preco != null && (
+                                      <>
+                                        <span className="text-muted-foreground">·</span>
+                                        <span className="text-emerald-400 font-mono">R$ {f.preco.toLocaleString('pt-BR')}</span>
+                                        {precoComDesconto != null && (
+                                          <span className="text-emerald-300 font-mono">→ R$ {precoComDesconto.toLocaleString('pt-BR')} <span className="text-[10px] text-muted-foreground">-{f.desconto_padrao_pct}%</span></span>
+                                        )}
+                                      </>
+                                    )}
+                                    {f.preco_sujo != null && (
+                                      <>
+                                        <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>
+                                        {precoSujoComDesconto != null && (
+                                          <span className="text-orange-300/80 font-mono text-[11px]">→ R$ {precoSujoComDesconto.toLocaleString('pt-BR')}</span>
+                                        )}
+                                      </>
+                                    )}
+                                  </button>
+                                )
+                              })}
                             </div>
                           )}
                         </div>
