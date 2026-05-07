@@ -314,55 +314,34 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
 
       <div className="p-6 space-y-6">
 
-        {/* ── Evolução de vendas + métricas ── */}
-        <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-          <p className="text-sm font-semibold">Evolução de vendas</p>
-          {!mounted || evolucaoDados.length === 0 ? (
-            <div className="h-28 flex items-center justify-center">
-              <p className="text-sm text-muted-foreground">
-                {!mounted ? '' : 'Sem dados no período selecionado'}
-              </p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={90}>
-              <LineChart data={evolucaoDados} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} width={48} />
-                <Tooltip content={<ChartTooltip />} />
-                <Line type="monotone" dataKey="receita" name="Receita" stroke="#6366f1" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-          <div className="grid grid-cols-5 gap-2 pt-3 border-t border-border/40">
-            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
-              <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos.toLocaleString('pt-BR')}</p>
-            </div>
-            <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
-              <p className="text-xl font-bold tabular-nums mt-1 text-primary">{fmt(totalReceita)}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket médio</p>
-              <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos > 0 ? fmt(ticketMedio) : '—'}</p>
-            </div>
-            <div className="rounded-lg border border-orange-500/20 bg-orange-500/[0.04] px-3 py-2.5 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dinheiro sujo</p>
-              <p className="text-xl font-bold tabular-nums mt-1 text-orange-400">{fmt(totalSujo)}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center overflow-hidden">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mais vendido</p>
-              <p className="text-sm font-bold mt-1 truncate" title={topItem?.nome ?? undefined}>{topItem?.nome ?? '—'}</p>
-              {topItem && <p className="text-[10px] text-muted-foreground">{topItem.qtd}× un.</p>}
-            </div>
+        {/* ── Cards de métricas ── */}
+        <div className="grid grid-cols-5 gap-3">
+          <div className="rounded-lg border border-border/60 bg-card px-4 py-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
+            <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos.toLocaleString('pt-BR')}</p>
+          </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
+            <p className="text-xl font-bold tabular-nums mt-1 text-primary">{fmt(totalReceita)}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-card px-4 py-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket médio</p>
+            <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos > 0 ? fmt(ticketMedio) : '—'}</p>
+          </div>
+          <div className="rounded-lg border border-orange-500/20 bg-orange-500/[0.04] px-4 py-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dinheiro sujo</p>
+            <p className="text-xl font-bold tabular-nums mt-1 text-orange-400">{fmt(totalSujo)}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-card px-4 py-3 text-center overflow-hidden">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mais vendido</p>
+            <p className="text-sm font-bold mt-1 truncate" title={topItem?.nome ?? undefined}>{topItem?.nome ?? '—'}</p>
+            {topItem && <p className="text-[10px] text-muted-foreground">{topItem.qtd}× un.</p>}
           </div>
         </div>
 
-        {/* ── Rankings lado a lado ── */}
+        {/* ── Itens mais vendidos | Quem mais comprou ── */}
         <div className="grid grid-cols-2 gap-6">
 
-          {/* Itens mais vendidos */}
           <div className="rounded-lg border border-border bg-card p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold">Itens mais vendidos</p>
@@ -394,7 +373,6 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
             )}
           </div>
 
-          {/* Quem mais comprou */}
           <div className="rounded-lg border border-border bg-card p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold">Quem mais comprou</p>
@@ -427,63 +405,87 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
           </div>
         </div>
 
-        {/* ── Materiais gastos ── */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-baseline gap-2 mb-4">
-            <p className="text-sm font-semibold">Materiais gastos</p>
-            <span className="text-[10px] text-muted-foreground">insumos de craft consumidos no período</span>
+        {/* ── Evolução de vendas | Materiais gastos ── */}
+        <div className="grid grid-cols-2 gap-6">
+
+          <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+            <p className="text-sm font-semibold">Evolução de vendas</p>
+            {!mounted || evolucaoDados.length === 0 ? (
+              <div className="h-28 flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">
+                  {!mounted ? '' : 'Sem dados no período selecionado'}
+                </p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={90}>
+                <LineChart data={evolucaoDados} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={fmtK} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} width={48} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Line type="monotone" dataKey="receita" name="Receita" stroke="#6366f1" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
-          {materiaisGastos.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              {vendasFiltradas.length === 0
-                ? 'Sem vendas no período'
-                : 'Nenhum item vendido possui receita de craft cadastrada'}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="border-b border-border">
-                  <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                    <th className="px-2 py-1.5 text-left w-6">#</th>
-                    <th className="px-2 py-1.5 text-left">Insumo</th>
-                    <th className="px-2 py-1.5 text-right w-32">Qtd. consumida</th>
-                    <th className="px-2 py-1.5 text-left w-44">Volume</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/20">
-                  {materiaisGastos.map((m, i) => {
-                    const pct = Math.round(m.qtd / (materiaisGastos[0]?.qtd || 1) * 100)
-                    return (
-                      <tr key={i} className="hover:bg-white/[0.02]">
-                        <td className="px-2 py-1 text-[10px] text-muted-foreground/50 tabular-nums">{i + 1}</td>
-                        <td className="px-2 py-1 text-[11px] font-medium">{m.nome}</td>
-                        <td className="px-2 py-1 text-right text-[11px] tabular-nums font-medium text-primary/80">
-                          {m.qtd.toLocaleString('pt-BR')}×
-                        </td>
-                        <td className="px-2 py-1">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
-                              <div className="h-1 rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">{pct}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot className="border-t border-border/60">
-                  <tr className="font-medium text-muted-foreground">
-                    <td colSpan={2} className="px-2 py-1.5 text-[10px] uppercase">Total</td>
-                    <td className="px-2 py-1.5 text-right text-[11px] tabular-nums">
-                      {materiaisGastos.reduce((s, m) => s + m.qtd, 0).toLocaleString('pt-BR')}×
-                    </td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
+
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-baseline gap-2 mb-3">
+              <p className="text-sm font-semibold">Materiais gastos</p>
+              <span className="text-[10px] text-muted-foreground">insumos de craft no período</span>
             </div>
-          )}
+            {materiaisGastos.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                {vendasFiltradas.length === 0
+                  ? 'Sem vendas no período'
+                  : 'Nenhum item vendido possui receita de craft cadastrada'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-border">
+                    <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                      <th className="px-2 py-1.5 text-left w-6">#</th>
+                      <th className="px-2 py-1.5 text-left">Insumo</th>
+                      <th className="px-2 py-1.5 text-right w-28">Qtd.</th>
+                      <th className="px-2 py-1.5 text-left w-36">Volume</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/20">
+                    {materiaisGastos.map((m, i) => {
+                      const pct = Math.round(m.qtd / (materiaisGastos[0]?.qtd || 1) * 100)
+                      return (
+                        <tr key={i} className="hover:bg-white/[0.02]">
+                          <td className="px-2 py-1 text-[10px] text-muted-foreground/50 tabular-nums">{i + 1}</td>
+                          <td className="px-2 py-1 text-[11px] font-medium">{m.nome}</td>
+                          <td className="px-2 py-1 text-right text-[11px] tabular-nums font-medium text-primary/80">
+                            {m.qtd.toLocaleString('pt-BR')}×
+                          </td>
+                          <td className="px-2 py-1">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
+                                <div className="h-1 rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">{pct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot className="border-t border-border/60">
+                    <tr className="font-medium text-muted-foreground">
+                      <td colSpan={2} className="px-2 py-1.5 text-[10px] uppercase">Total</td>
+                      <td className="px-2 py-1.5 text-right text-[11px] tabular-nums">
+                        {materiaisGastos.reduce((s, m) => s + m.qtd, 0).toLocaleString('pt-BR')}×
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── Detalhe por produto (se filtro de produto ativo) ── */}
