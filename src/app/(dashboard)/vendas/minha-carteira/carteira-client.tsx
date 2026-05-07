@@ -84,7 +84,7 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
 
   // Filtro de vendedores (admin): 'todos' | 'meu' | userId
   const [filtroVendedor, setFiltroVendedor] = useState<string>('meu')
-  const [filtroAba, setFiltroAba] = useState<'todos' | 'comigo' | 'repassado'>('todos')
+  const [filtroAba, setFiltroAba] = useState<'todos' | 'comigo' | 'repassado'>('comigo')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   function toggleRow(id: string) {
     setExpandedRows(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -289,6 +289,8 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
       const { id: contaId, nome: contaNome, tipo: contaTipo } = await resolveContaDestino(destSelecionados)
       let ok = 0
       for (const vendaId of selecionados) {
+        const venda = vendas.find(v => v.id === vendaId)
+        if (!podeExcluirConcluida && venda && !isComigo(venda)) continue
         try {
           if (!podeExcluirConcluida && contaTipo === 'membro') {
             await criarSolicitacaoTransfer(vendaId, contaId, contaNome)
@@ -641,8 +643,9 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                       )}>
                         <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
                           <input type="checkbox"
-                            className="rounded border-border cursor-pointer"
+                            className="rounded border-border cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                             checked={isSelecionado}
+                            disabled={!eComigo && !podeExcluirConcluida}
                             onChange={e => {
                               setSelecionados(prev => {
                                 const n = new Set(prev)
@@ -749,7 +752,7 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                               </>
                             ) : (
                               <>
-                                {lanc && (
+                                {lanc && (eComigo || podeExcluirConcluida) && (
                                   <button onClick={() => { setTransferindoVendaId(venda.id); setDestSingle('') }}
                                     className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors">
                                     <ArrowRightLeft className="h-3 w-3" />
