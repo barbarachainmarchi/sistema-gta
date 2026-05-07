@@ -124,16 +124,36 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
   }, [lancamentos, dataDe, dataAte, tipoDin, tipoFiltro, catsSelecionadas])
 
   // KPIs globais
-  const totalEntradas = useMemo(() => lancsFiltrados.filter(l => isEntrada(l)).reduce((s, l) => s + l.valor, 0), [lancsFiltrados])
-  const totalSaidas   = useMemo(() => lancsFiltrados.filter(l => !isEntrada(l)).reduce((s, l) => s + l.valor, 0), [lancsFiltrados])
-  const saldo         = totalEntradas - totalSaidas
+  const kpis = useMemo(() => {
+    let entradasSujo = 0, entradasLimpo = 0
+    let vendasSujo = 0, vendasLimpo = 0
+    let gastosSujo = 0, gastosLimpo = 0
+    for (const l of lancsFiltrados) {
+      const sujo = l.tipo_dinheiro === 'sujo'
+      const limpo = l.tipo_dinheiro === 'limpo'
+      if (l.tipo === 'entrada') {
+        if (sujo) entradasSujo += l.valor; else if (limpo) entradasLimpo += l.valor
+      } else if (l.tipo === 'venda') {
+        if (sujo) vendasSujo += l.valor; else if (limpo) vendasLimpo += l.valor
+      } else {
+        if (sujo) gastosSujo += l.valor; else if (limpo) gastosLimpo += l.valor
+      }
+    }
+    return {
+      entradas: { sujo: entradasSujo, limpo: entradasLimpo, total: entradasSujo + entradasLimpo },
+      vendas:   { sujo: vendasSujo,   limpo: vendasLimpo,   total: vendasSujo   + vendasLimpo   },
+      gastos:   { sujo: gastosSujo,   limpo: gastosLimpo,   total: gastosSujo   + gastosLimpo   },
+      saldo: {
+        sujo:  (entradasSujo  + vendasSujo)  - gastosSujo,
+        limpo: (entradasLimpo + vendasLimpo) - gastosLimpo,
+        total: (entradasSujo + entradasLimpo + vendasSujo + vendasLimpo) - (gastosSujo + gastosLimpo),
+      },
+    }
+  }, [lancsFiltrados])
 
-  const avulsasLimpo = useMemo(() =>
-    lancsFiltrados.filter(l => l.categoria === 'venda_avulsa' && l.tipo_dinheiro === 'limpo').reduce((s, l) => s + l.valor, 0),
-  [lancsFiltrados])
-  const avulsasSujo = useMemo(() =>
-    lancsFiltrados.filter(l => l.categoria === 'venda_avulsa' && l.tipo_dinheiro === 'sujo').reduce((s, l) => s + l.valor, 0),
-  [lancsFiltrados])
+  const totalEntradas = kpis.entradas.total + kpis.vendas.total
+  const totalSaidas   = kpis.gastos.total
+  const saldo         = kpis.saldo.total
 
   // Por categoria (sem filtro de tipo para mostrar ambos)
   const porCategoria = useMemo(() => {
@@ -303,30 +323,25 @@ export function DashboardFinanceiroClient({ lancamentos }: Props) {
 
         {/* ── KPIs globais ── */}
         <div className="grid grid-cols-4 gap-4">
-          {[
-            { label: 'Total entradas', value: fmt(totalEntradas), color: 'text-emerald-400', sub: `${lancsFiltrados.filter(l => isEntrada(l)).length} lançamentos` },
-            { label: 'Total saídas',   value: fmt(totalSaidas),   color: 'text-red-400',     sub: `${lancsFiltrados.filter(l => !isEntrada(l)).length} lançamentos` },
-            { label: 'Saldo período',  value: fmt(saldo),         color: saldo >= 0 ? 'text-emerald-400' : 'text-red-400', sub: saldo >= 0 ? 'Superávit' : 'Déficit' },
-          ].map(({ label, value, color, sub }) => (
+          {([
+            { label: 'Entradas',  k: kpis.entradas, color: 'text-emerald-400' },
+            { label: 'Vendas',    k: kpis.vendas,   color: 'text-emerald-400' },
+            { label: 'Gastos',    k: kpis.gastos,   color: 'text-red-400'     },
+            { label: 'Saldo',     k: kpis.saldo,    color: kpis.saldo.total >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          ] as const).map(({ label, k, color }) => (
             <div key={label} className="rounded-lg border border-border bg-card px-5 py-4">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">{label}</p>
-              <p className={cn('text-3xl font-bold tabular-nums', color)}>{value}</p>
-              {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+              <p className={cn('text-2xl font-bold tabular-nums', color)}>{fmt(k.total)}</p>
+              <div className="flex gap-3 mt-1.5">
+                <span className="text-[11px] text-muted-foreground">
+                  Sujo: <span className="tabular-nums text-foreground/70">{fmt(k.sujo)}</span>
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  Limpo: <span className="tabular-nums text-foreground/70">{fmt(k.limpo)}</span>
+                </span>
+              </div>
             </div>
           ))}
-          {/* Vendas avulsas */}
-          <div className="rounded-lg border border-border bg-card px-5 py-4">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">Vendas Avulsas</p>
-            <p className="text-3xl font-bold tabular-nums text-purple-400">{fmt(avulsasLimpo + avulsasSujo)}</p>
-            <div className="flex gap-3 mt-1">
-              <span className="text-[11px] text-muted-foreground">
-                Limpo: <span className="text-foreground/80 tabular-nums">{fmt(avulsasLimpo)}</span>
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                Sujo: <span className="text-foreground/80 tabular-nums">{fmt(avulsasSujo)}</span>
-              </span>
-            </div>
-          </div>
         </div>
 
         {/* ── Por categoria ── */}

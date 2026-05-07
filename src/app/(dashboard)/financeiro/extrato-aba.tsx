@@ -417,12 +417,6 @@ export function ExtratoAba({
                             {l.vendas?.cliente_nome ? ` · ${l.vendas.cliente_nome}` : ''}
                           </p>
                         )}
-                        {l.categoria === 'venda_avulsa' && (
-                          <p className="text-[10px] text-purple-400">venda avulsa</p>
-                        )}
-                        {(l.categoria === 'acao' || l.acao_id) && !isVenda && l.categoria !== 'venda_avulsa' && (
-                          <p className="text-[10px] text-yellow-400">ação</p>
-                        )}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{l.categoria ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtNum(l.quantidade)}</td>
