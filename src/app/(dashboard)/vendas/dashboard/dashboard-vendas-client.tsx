@@ -2,9 +2,10 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { ArrowUpDown } from 'lucide-react'
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, BarChart, Bar, Cell,
+  CartesianGrid, Tooltip,
 } from 'recharts'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -56,7 +57,6 @@ function calcShortcut(s: Shortcut): [string, string] {
   const pad = (n: number) => String(n).padStart(2, '0')
   const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   const today = toISO(now)
-
   if (s === '7d') {
     const d = new Date(now); d.setDate(d.getDate() - 6)
     return [toISO(d), today]
@@ -110,15 +110,12 @@ const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#eab308', '#22c55e'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
+  const ponto = payload[0]?.payload as { pedidos: number; receita: number } | undefined
   return (
     <div className="rounded border border-border bg-card px-3 py-2 text-xs shadow-lg space-y-0.5">
       <p className="font-medium text-foreground/70 mb-1">{label}</p>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color ?? p.fill }}>
-          {p.name}: {typeof p.value === 'number' && p.name?.toLowerCase().includes('receita') ? fmt(p.value) : p.value}
-        </p>
-      ))}
+      <p style={{ color: '#6366f1' }}>Receita: {fmt(ponto?.receita ?? 0)}</p>
+      <p className="text-muted-foreground">Pedidos: {ponto?.pedidos ?? 0}</p>
     </div>
   )
 }
@@ -135,6 +132,9 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
   const [empresaFiltro, setEmpresaFiltro] = useState('')
   const [produtoFiltro, setProdutoFiltro] = useState('')
   const [tipoDin, setTipoDin] = useState<'todos' | 'sujo' | 'limpo'>('todos')
+
+  const [sortItens, setSortItens] = useState<'qtd' | 'receita'>('qtd')
+  const [sortClientes, setSortClientes] = useState<'pedidos' | 'receita'>('receita')
 
   function aplicarShortcut(s: Shortcut) {
     setShortcut(s)
@@ -163,8 +163,8 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
   // ── Métricas ───────────────────────────────────────────────────────────────
 
   const totalPedidos = vendasFiltradas.length
-  const totalItens   = useMemo(() => vendasFiltradas.reduce((s, v) => s + v.itens.reduce((ss, it) => ss + it.quantidade, 0), 0), [vendasFiltradas])
   const totalReceita = useMemo(() => vendasFiltradas.reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
+  const ticketMedio = totalPedidos > 0 ? totalReceita / totalPedidos : 0
 
   // ── Dados para gráfico de evolução ────────────────────────────────────────
 
@@ -184,36 +184,78 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
         map[key].receita += it.quantidade * it.preco_unit * fator
       }
     }
-    return Object.values(map).sort((a, b) => b.qtd - a.qtd).slice(0, 15)
+    return Object.values(map)
+      .sort((a, b) => sortItens === 'qtd' ? b.qtd - a.qtd : b.receita - a.receita)
+      .slice(0, 15)
+  }, [vendasFiltradas, sortItens])
+
+  const topItem = useMemo(() => {
+    const map: Record<string, { nome: string; qtd: number }> = {}
+    for (const v of vendasFiltradas) {
+      for (const it of v.itens) {
+        const key = it.item_id ?? it.item_nome
+        if (!map[key]) map[key] = { nome: it.item_nome, qtd: 0 }
+        map[key].qtd += it.quantidade
+      }
+    }
+    return Object.values(map).sort((a, b) => b.qtd - a.qtd)[0] ?? null
   }, [vendasFiltradas])
 
   // ── Ranking de clientes ───────────────────────────────────────────────────
 
   const rankingClientes = useMemo(() => {
-    const map: Record<string, { nome: string; pedidos: number; receita: number; empresa: string }> = {}
+    const map: Record<string, { nome: string; pedidos: number; receita: number }> = {}
     for (const v of vendasFiltradas) {
       const empresa = v.faccao_id
         ? (faccoes.find(f => f.id === v.faccao_id)?.nome ?? v.cliente_nome)
         : v.loja_id
           ? (lojas.find(l => l.id === v.loja_id)?.nome ?? v.cliente_nome)
           : v.cliente_nome
-      const key = empresa
-      if (!map[key]) map[key] = { nome: empresa, pedidos: 0, receita: 0, empresa: empresa }
-      map[key].pedidos++
-      map[key].receita += calcTotal(v)
+      if (!map[empresa]) map[empresa] = { nome: empresa, pedidos: 0, receita: 0 }
+      map[empresa].pedidos++
+      map[empresa].receita += calcTotal(v)
     }
-    return Object.values(map).sort((a, b) => b.receita - a.receita).slice(0, 15)
-  }, [vendasFiltradas, faccoes, lojas])
+    return Object.values(map)
+      .sort((a, b) => sortClientes === 'pedidos' ? b.pedidos - a.pedidos : b.receita - a.receita)
+      .slice(0, 15)
+  }, [vendasFiltradas, faccoes, lojas, sortClientes])
 
-  const maxReceita = rankingItens[0]?.receita ?? 1
-  const maxReceitaCliente = rankingClientes[0]?.receita ?? 1
+  // ── Materiais gastos ──────────────────────────────────────────────────────
+
+  const materiaisGastos = useMemo(() => {
+    const map: Record<string, { nome: string; qtd: number; valor: number }> = {}
+    for (const v of vendasFiltradas) {
+      const fator = 1 - v.desconto_pct / 100
+      for (const it of v.itens) {
+        const key = it.item_id ?? it.item_nome
+        if (!map[key]) map[key] = { nome: it.item_nome, qtd: 0, valor: 0 }
+        map[key].qtd += it.quantidade
+        map[key].valor += it.quantidade * it.preco_unit * fator
+      }
+    }
+    return Object.values(map).sort((a, b) => b.qtd - a.qtd)
+  }, [vendasFiltradas])
+
+  // ── Helpers de barra ──────────────────────────────────────────────────────
+
+  function barPctItem(it: (typeof rankingItens)[0], idx: number): number {
+    void idx
+    const max = sortItens === 'qtd' ? (rankingItens[0]?.qtd || 1) : (rankingItens[0]?.receita || 1)
+    const val = sortItens === 'qtd' ? it.qtd : it.receita
+    return Math.round(val / max * 100)
+  }
+
+  function barPctCliente(c: (typeof rankingClientes)[0]): number {
+    const max = sortClientes === 'pedidos' ? (rankingClientes[0]?.pedidos || 1) : (rankingClientes[0]?.receita || 1)
+    const val = sortClientes === 'pedidos' ? c.pedidos : c.receita
+    return Math.round(val / max * 100)
+  }
 
   return (
     <div className="flex-1 overflow-y-auto">
 
       {/* ── Filtros ── */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 space-y-2">
-        {/* Shortcuts de período */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] text-muted-foreground/60 font-medium uppercase tracking-wide shrink-0">Período</span>
           <div className="flex flex-wrap gap-1">
@@ -234,7 +276,6 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
               className="h-7 text-xs rounded border border-input bg-background px-2 text-foreground" />
           </div>
         </div>
-        {/* Outros filtros */}
         <div className="flex items-center gap-2 flex-wrap">
           <select value={empresaFiltro} onChange={e => setEmpresaFiltro(e.target.value)}
             className="h-7 text-xs rounded border border-input bg-background px-2 text-foreground">
@@ -262,132 +303,165 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
 
       <div className="p-6 space-y-6">
 
-        {/* ── KPIs ── */}
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: 'Pedidos entregues', value: totalPedidos.toLocaleString('pt-BR'), sub: null },
-            { label: 'Itens vendidos', value: totalItens.toLocaleString('pt-BR'), sub: null },
-            { label: 'Receita total', value: fmt(totalReceita), sub: totalPedidos > 0 ? `Ticket médio: ${fmt(totalReceita / totalPedidos)}` : null },
-          ].map(({ label, value, sub }) => (
-            <div key={label} className="rounded-lg border border-border bg-card px-5 py-4">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">{label}</p>
-              <p className="text-3xl font-bold tabular-nums">{value}</p>
-              {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-            </div>
-          ))}
-        </div>
-
-        {/* ── Gráfico de evolução ── */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm font-semibold mb-4">Evolução de vendas</p>
+        {/* ── Evolução de vendas + métricas ── */}
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+          <p className="text-sm font-semibold">Evolução de vendas</p>
           {!mounted || evolucaoDados.length === 0 ? (
-            <div className="h-48 flex items-center justify-center">
+            <div className="h-28 flex items-center justify-center">
               <p className="text-sm text-muted-foreground">
                 {!mounted ? '' : 'Sem dados no período selecionado'}
               </p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={evolucaoDados} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={130}>
+              <LineChart data={evolucaoDados} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="receita" tickFormatter={fmtK} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} width={48} />
-                <YAxis yAxisId="pedidos" orientation="right" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} width={32} />
+                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} width={48} />
                 <Tooltip content={<ChartTooltip />} />
-                <Line yAxisId="receita" type="monotone" dataKey="receita" name="Receita" stroke="#6366f1" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                <Line yAxisId="pedidos" type="monotone" dataKey="pedidos" name="Pedidos" stroke="#22c55e" strokeWidth={1.5} dot={false} strokeDasharray="4 2" activeDot={{ r: 3 }} />
+                <Line type="monotone" dataKey="receita" name="Receita" stroke="#6366f1" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           )}
+          <div className="grid grid-cols-4 gap-3 pt-3 border-t border-border/40">
+            <div className="text-center">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos.toLocaleString('pt-BR')}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
+              <p className="text-xl font-bold tabular-nums mt-1 text-primary">{fmt(totalReceita)}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket médio</p>
+              <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos > 0 ? fmt(ticketMedio) : '—'}</p>
+            </div>
+            <div className="text-center overflow-hidden">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mais vendido</p>
+              <p className="text-sm font-bold mt-1 truncate" title={topItem?.nome ?? undefined}>{topItem?.nome ?? '—'}</p>
+              {topItem && <p className="text-[10px] text-muted-foreground">{topItem.qtd}× un.</p>}
+            </div>
+          </div>
         </div>
 
         {/* ── Rankings lado a lado ── */}
         <div className="grid grid-cols-2 gap-6">
 
           {/* Itens mais vendidos */}
-          <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-            <p className="text-sm font-semibold">Itens mais vendidos</p>
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold">Itens mais vendidos</p>
+              <button
+                onClick={() => setSortItens(s => s === 'qtd' ? 'receita' : 'qtd')}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-white/[0.04]">
+                <ArrowUpDown className="h-3 w-3" />
+                {sortItens === 'qtd' ? 'Por quantidade' : 'Por valor'}
+              </button>
+            </div>
             {!mounted ? null : rankingItens.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">Sem dados</p>
             ) : (
-              <>
-                <ResponsiveContainer width="100%" height={Math.min(rankingItens.length * 28 + 8, 280)}>
-                  <BarChart data={rankingItens.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="nome" width={120} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.6)' }} tickLine={false} axisLine={false} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                    <Bar dataKey="qtd" name="Qtd" radius={2}>
-                      {rankingItens.slice(0, 10).map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} fillOpacity={0.8} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-                <div className="space-y-1 border-t border-border/40 pt-3">
-                  {rankingItens.slice(0, 10).map((it, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="w-4 text-right text-muted-foreground/50 tabular-nums shrink-0">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className="truncate font-medium">{it.nome}</span>
-                        </div>
-                        <div className="h-1 rounded-full bg-white/[0.06] mt-0.5">
-                          <div className="h-1 rounded-full" style={{ width: `${Math.round(it.receita / maxReceita * 100)}%`, background: COLORS[i % COLORS.length] }} />
-                        </div>
+              <div className="space-y-2">
+                {rankingItens.slice(0, 10).map((it, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-4 text-right text-muted-foreground/50 tabular-nums shrink-0">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="truncate font-medium block">{it.nome}</span>
+                      <div className="h-1 rounded-full bg-white/[0.06] mt-0.5">
+                        <div className="h-1 rounded-full transition-all" style={{ width: `${barPctItem(it, i)}%`, background: COLORS[i % COLORS.length] }} />
                       </div>
-                      <span className="tabular-nums text-muted-foreground shrink-0">{it.qtd}×</span>
-                      <span className="tabular-nums font-medium shrink-0 text-primary/80">{fmt(it.receita)}</span>
                     </div>
-                  ))}
-                </div>
-              </>
+                    <span className="tabular-nums text-muted-foreground shrink-0">{it.qtd}×</span>
+                    <span className="tabular-nums font-medium shrink-0 text-primary/80">{fmt(it.receita)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
           {/* Quem mais comprou */}
-          <div className="rounded-lg border border-border bg-card p-5 space-y-4">
-            <p className="text-sm font-semibold">Quem mais comprou</p>
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold">Quem mais comprou</p>
+              <button
+                onClick={() => setSortClientes(s => s === 'pedidos' ? 'receita' : 'pedidos')}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-white/[0.04]">
+                <ArrowUpDown className="h-3 w-3" />
+                {sortClientes === 'pedidos' ? 'Por pedidos' : 'Por valor'}
+              </button>
+            </div>
             {!mounted ? null : rankingClientes.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">Sem dados</p>
             ) : (
-              <>
-                <ResponsiveContainer width="100%" height={Math.min(rankingClientes.length * 28 + 8, 280)}>
-                  <BarChart data={rankingClientes.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="nome" width={120} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.6)' }} tickLine={false} axisLine={false} />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                    <Bar dataKey="receita" name="Receita" radius={2}>
-                      {rankingClientes.slice(0, 10).map((_, i) => (
-                        <Cell key={i} fill={COLORS[(i + 3) % COLORS.length]} fillOpacity={0.8} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-                <div className="space-y-1 border-t border-border/40 pt-3">
-                  {rankingClientes.slice(0, 10).map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="w-4 text-right text-muted-foreground/50 tabular-nums shrink-0">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="truncate font-medium">{c.nome}</span>
-                        <div className="h-1 rounded-full bg-white/[0.06] mt-0.5">
-                          <div className="h-1 rounded-full" style={{ width: `${Math.round(c.receita / maxReceitaCliente * 100)}%`, background: COLORS[(i + 3) % COLORS.length] }} />
-                        </div>
+              <div className="space-y-2">
+                {rankingClientes.slice(0, 10).map((c, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-4 text-right text-muted-foreground/50 tabular-nums shrink-0">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="truncate font-medium block">{c.nome}</span>
+                      <div className="h-1 rounded-full bg-white/[0.06] mt-0.5">
+                        <div className="h-1 rounded-full transition-all" style={{ width: `${barPctCliente(c)}%`, background: COLORS[(i + 3) % COLORS.length] }} />
                       </div>
-                      <span className="tabular-nums text-muted-foreground shrink-0">{c.pedidos} ped.</span>
-                      <span className="tabular-nums font-medium shrink-0 text-primary/80">{fmt(c.receita)}</span>
                     </div>
-                  ))}
-                </div>
-              </>
+                    <span className="tabular-nums text-muted-foreground shrink-0">{c.pedidos} ped.</span>
+                    <span className="tabular-nums font-medium shrink-0 text-primary/80">{fmt(c.receita)}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+        </div>
+
+        {/* ── Materiais gastos ── */}
+        <div className="rounded-lg border border-border bg-card p-5">
+          <p className="text-sm font-semibold mb-4">Materiais gastos</p>
+          {materiaisGastos.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">Sem dados no período</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="border-b border-border">
+                  <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left w-6">#</th>
+                    <th className="px-3 py-2 text-left">Material</th>
+                    <th className="px-3 py-2 text-right w-28">Qtd. utilizada</th>
+                    <th className="px-3 py-2 text-right w-32">Valor total</th>
+                    <th className="px-3 py-2 text-right w-28">Valor médio/un.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {materiaisGastos.map((m, i) => (
+                    <tr key={i} className="hover:bg-white/[0.02]">
+                      <td className="px-3 py-2 text-muted-foreground/50 tabular-nums">{i + 1}</td>
+                      <td className="px-3 py-2 font-medium">{m.nome}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{m.qtd.toLocaleString('pt-BR')}×</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-primary/80">{fmt(m.valor)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(m.qtd > 0 ? m.valor / m.qtd : 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-border/60">
+                  <tr className="font-medium">
+                    <td colSpan={2} className="px-3 py-2 text-[10px] text-muted-foreground uppercase">Total</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {materiaisGastos.reduce((s, m) => s + m.qtd, 0).toLocaleString('pt-BR')}×
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-primary/80">
+                      {fmt(materiaisGastos.reduce((s, m) => s + m.valor, 0))}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* ── Detalhe por produto (se filtro de produto ativo) ── */}
         {produtoFiltro && (
           <div className="rounded-lg border border-border bg-card p-5">
             <p className="text-sm font-semibold mb-3">
-              Pedidos com "{allItems.find(i => i.id === produtoFiltro)?.nome ?? produtoFiltro}"
+              Pedidos com &quot;{allItems.find(i => i.id === produtoFiltro)?.nome ?? produtoFiltro}&quot;
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

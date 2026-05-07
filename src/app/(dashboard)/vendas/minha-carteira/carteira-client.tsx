@@ -19,6 +19,7 @@ type Venda = {
   id: string; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'
   desconto_pct: number; status: string; created_at: string; entregue_em: string | null
   criado_por: string | null; criado_por_nome: string | null
+  entregue_por: string | null; entregue_por_nome: string | null
   cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
   itens: VendaItem[]
 }
@@ -608,11 +609,12 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                     />
                   </th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground w-20">Data</th>
-                  {podeExcluirConcluida && <th className="px-3 py-2 text-left font-medium text-muted-foreground w-28">Vendedor</th>}
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">Cliente</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground w-14">$</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground w-24">Valor</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground w-40">Situação</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground w-28">Criado por</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground w-28">Entregue por</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground w-32">Repassado para</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground w-24">Itens</th>
                   <th className="px-3 py-2 w-52"></th>
                 </tr>
@@ -626,7 +628,7 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                   const isTransferindo = transferindoVendaId === venda.id
                   const contaAtualId = lanc?.conta_id ?? null
                   const expanded = expandedRows.has(venda.id)
-                  const colSpan = podeExcluirConcluida ? 9 : 8
+                  const colSpan = 10
                   const isSelecionado = selecionados.has(venda.id)
 
                   return (
@@ -658,11 +660,6 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                             {fmtData(venda.entregue_em ?? venda.created_at)}
                           </div>
                         </td>
-                        {podeExcluirConcluida && (
-                          <td className="px-3 py-2.5 text-muted-foreground text-[11px] truncate max-w-[112px]">
-                            {venda.criado_por_nome ?? '—'}
-                          </td>
-                        )}
                         <td className="px-3 py-2.5 font-medium max-w-[160px]">
                           <span className="truncate block">{venda.cliente_nome}</span>
                           {venda.cancelamento_solicitado && (
@@ -681,25 +678,24 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                         <td className="px-3 py-2.5 text-right tabular-nums font-medium text-primary">
                           {fmt(valor)}
                         </td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-[11px] truncate max-w-[112px]">
+                          {venda.criado_por_nome ?? '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-[11px] truncate max-w-[112px]">
+                          {venda.entregue_por_nome ?? '—'}
+                        </td>
                         <td className="px-3 py-2.5">
-                          {filtroVendedor === 'todos' ? (
-                            conta ? (
-                              <span className="text-[11px] font-medium text-foreground/80 truncate block max-w-[9rem]">{conta.nome}</span>
-                            ) : (
-                              <span className="text-[10px] text-yellow-400 font-medium">Não repassado</span>
-                            )
+                          {conta ? (
+                            <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-medium">
+                              <CheckCircle2 className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{conta.nome}</span>
+                            </span>
                           ) : eComigo ? (
                             <span className="flex items-center gap-1 text-yellow-400 text-[10px] font-medium">
                               <TrendingUp className="h-3 w-3" /><span>Com você</span>
                             </span>
                           ) : (
-                            <span className="flex items-center gap-1 text-emerald-400 text-[10px] font-medium">
-                              <CheckCircle2 className="h-3 w-3 shrink-0" />
-                              <span className="truncate">
-                                <span>Repassado</span>
-                                {conta && <span className="text-muted-foreground"> → {conta.nome}</span>}
-                              </span>
-                            </span>
+                            <span className="text-[10px] text-muted-foreground">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground text-[10px] max-w-[160px]">
