@@ -166,6 +166,7 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
 
   const totalPedidos = vendasFiltradas.length
   const totalReceita = useMemo(() => vendasFiltradas.reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
+  const totalSujo = useMemo(() => vendasFiltradas.filter(v => v.tipo_dinheiro === 'sujo').reduce((s, v) => s + calcTotal(v), 0), [vendasFiltradas])
   const ticketMedio = totalPedidos > 0 ? totalReceita / totalPedidos : 0
 
   // ── Dados para gráfico de evolução ────────────────────────────────────────
@@ -323,7 +324,7 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
               </p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={130}>
+            <ResponsiveContainer width="100%" height={90}>
               <LineChart data={evolucaoDados} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} tickLine={false} axisLine={false} />
@@ -333,20 +334,24 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
               </LineChart>
             </ResponsiveContainer>
           )}
-          <div className="grid grid-cols-4 gap-3 pt-3 border-t border-border/40">
-            <div className="text-center">
+          <div className="grid grid-cols-5 gap-2 pt-3 border-t border-border/40">
+            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
               <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos.toLocaleString('pt-BR')}</p>
             </div>
-            <div className="text-center">
+            <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2.5 text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</p>
               <p className="text-xl font-bold tabular-nums mt-1 text-primary">{fmt(totalReceita)}</p>
             </div>
-            <div className="text-center">
+            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Ticket médio</p>
               <p className="text-xl font-bold tabular-nums mt-1">{totalPedidos > 0 ? fmt(ticketMedio) : '—'}</p>
             </div>
-            <div className="text-center overflow-hidden">
+            <div className="rounded-lg border border-orange-500/20 bg-orange-500/[0.04] px-3 py-2.5 text-center">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Dinheiro sujo</p>
+              <p className="text-xl font-bold tabular-nums mt-1 text-orange-400">{fmt(totalSujo)}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-white/[0.02] px-3 py-2.5 text-center overflow-hidden">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Mais vendido</p>
               <p className="text-sm font-bold mt-1 truncate" title={topItem?.nome ?? undefined}>{topItem?.nome ?? '—'}</p>
               {topItem && <p className="text-[10px] text-muted-foreground">{topItem.qtd}× un.</p>}
@@ -439,26 +444,26 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
               <table className="w-full text-xs">
                 <thead className="border-b border-border">
                   <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                    <th className="px-3 py-2 text-left w-6">#</th>
-                    <th className="px-3 py-2 text-left">Insumo</th>
-                    <th className="px-3 py-2 text-right w-36">Qtd. consumida</th>
-                    <th className="px-3 py-2 text-left w-48">Volume</th>
+                    <th className="px-2 py-1.5 text-left w-6">#</th>
+                    <th className="px-2 py-1.5 text-left">Insumo</th>
+                    <th className="px-2 py-1.5 text-right w-32">Qtd. consumida</th>
+                    <th className="px-2 py-1.5 text-left w-44">Volume</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/30">
+                <tbody className="divide-y divide-border/20">
                   {materiaisGastos.map((m, i) => {
                     const pct = Math.round(m.qtd / (materiaisGastos[0]?.qtd || 1) * 100)
                     return (
                       <tr key={i} className="hover:bg-white/[0.02]">
-                        <td className="px-3 py-2.5 text-muted-foreground/50 tabular-nums">{i + 1}</td>
-                        <td className="px-3 py-2.5 font-medium">{m.nome}</td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-primary/80">
+                        <td className="px-2 py-1 text-[10px] text-muted-foreground/50 tabular-nums">{i + 1}</td>
+                        <td className="px-2 py-1 text-[11px] font-medium">{m.nome}</td>
+                        <td className="px-2 py-1 text-right text-[11px] tabular-nums font-medium text-primary/80">
                           {m.qtd.toLocaleString('pt-BR')}×
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-2 py-1">
                           <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
-                              <div className="h-1.5 rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
+                            <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
+                              <div className="h-1 rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">{pct}%</span>
                           </div>
@@ -469,8 +474,8 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receit
                 </tbody>
                 <tfoot className="border-t border-border/60">
                   <tr className="font-medium text-muted-foreground">
-                    <td colSpan={2} className="px-3 py-2 text-[10px] uppercase">Total</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
+                    <td colSpan={2} className="px-2 py-1.5 text-[10px] uppercase">Total</td>
+                    <td className="px-2 py-1.5 text-right text-[11px] tabular-nums">
                       {materiaisGastos.reduce((s, m) => s + m.qtd, 0).toLocaleString('pt-BR')}×
                     </td>
                     <td />
