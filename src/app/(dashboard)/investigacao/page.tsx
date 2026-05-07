@@ -23,7 +23,7 @@ export default async function InvestigacaoPage() {
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
     supabase.from('veiculos').select('*').order('placa'),
     supabase.from('lojas').select('*').order('nome'),
-    supabase.from('items').select('id, nome, categorias_item(nome)').eq('status', 'ativo').order('nome'),
+    supabase.from('items').select('id, nome, apelidos, categorias_item(nome)').eq('status', 'ativo').order('nome'),
     supabase.from('faccao_item_precos').select('*'),
     supabase.from('loja_membros').select('membro_id, loja_id'),
     supabase.from('usuarios').select('membro_id, ultimo_acesso').not('membro_id', 'is', null),
@@ -55,9 +55,10 @@ export default async function InvestigacaoPage() {
       initialMembros={membros ?? []}
       initialVeiculos={veiculos ?? []}
       initialLojas={lojas ?? []}
-      todosProdutos={(todosProdutos ?? []).map((item: { id: string; nome: string; categorias_item: { nome: string } | { nome: string }[] | null }) => ({
+      todosProdutos={(todosProdutos ?? []).map((item: { id: string; nome: string; apelidos?: string | null; categorias_item: { nome: string } | { nome: string }[] | null }) => ({
         id: item.id,
         nome: item.nome,
+        apelidos: item.apelidos ?? null,
         categoria: Array.isArray(item.categorias_item) ? (item.categorias_item[0]?.nome ?? null) : (item.categorias_item?.nome ?? null),
       }))}
       todoServicos={(servicosData ?? []) as { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }[]}

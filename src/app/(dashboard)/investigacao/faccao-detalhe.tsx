@@ -36,7 +36,7 @@ export type FaccaoPreco = {
   observacoes: string | null
 }
 export type FaixaPreco   = { id: string; faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
-export type Produto      = { id: string; nome: string; categoria?: string | null }
+export type Produto      = { id: string; nome: string; categoria?: string | null; apelidos?: string | null }
 export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
 export type Servico      = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
 type FaccaoProdutoExtra = { id: string; faccao_id: string; nome: string; valor_sujo: number | null; valor_limpo: number | null; created_at: string }

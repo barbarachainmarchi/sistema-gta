@@ -389,7 +389,11 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   const resultadosProdutos = useMemo(() => {
     const q = norm(termoBusca.trim())
     if (q.length < 2) return []
-    const produtosMatch = todosProdutos.filter(p => norm(p.nome).includes(q))
+    const produtosMatch = todosProdutos.filter(p => {
+      if (norm(p.nome).includes(q)) return true
+      if (!p.apelidos) return false
+      return p.apelidos.split(',').some(a => norm(a.trim()).includes(q))
+    })
     return produtosMatch.map(p => {
       const emLojas = lojaItemPrecos
         .filter(lip => lip.item_id === p.id)
@@ -789,11 +793,14 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                     <div className="rounded-lg border border-border overflow-hidden divide-y divide-border/40">
                       {resultadosProdutos.map(({ produto, emLojas, emFaccoes }) => (
                         <div key={produto.id} className="px-4 py-3 space-y-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold">{produto.nome}</span>
                             {produto.categoria && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-muted-foreground">{produto.categoria}</span>
                             )}
+                            {produto.apelidos && produto.apelidos.split(',').map(a => a.trim()).filter(Boolean).map(a => (
+                              <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400/80 border border-yellow-500/20">{a}</span>
+                            ))}
                             {emLojas.length === 0 && emFaccoes.length === 0 && (
                               <span className="text-xs text-muted-foreground ml-auto">Sem preços cadastrados</span>
                             )}
