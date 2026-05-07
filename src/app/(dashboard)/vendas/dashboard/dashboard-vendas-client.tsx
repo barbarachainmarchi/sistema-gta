@@ -21,12 +21,14 @@ type Venda = {
 type Faccao = { id: string; nome: string }
 type Loja   = { id: string; nome: string }
 type Item   = { id: string; nome: string }
+type Receita = { item_id: string; ingrediente_id: string; quantidade: number; ingrediente_nome: string }
 
 interface Props {
   vendas: Venda[]
   faccoes: Faccao[]
   lojas: Loja[]
   allItems: Item[]
+  receitas: Receita[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,7 +124,7 @@ function ChartTooltip({ active, payload, label }: any) {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Props) {
+export function DashboardVendasClient({ vendas, faccoes, lojas, allItems, receitas }: Props) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
@@ -220,21 +222,29 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
       .slice(0, 15)
   }, [vendasFiltradas, faccoes, lojas, sortClientes])
 
-  // ── Materiais gastos ──────────────────────────────────────────────────────
+  // ── Materiais gastos (insumos de craft) ──────────────────────────────────
 
   const materiaisGastos = useMemo(() => {
-    const map: Record<string, { nome: string; qtd: number; valor: number }> = {}
+    // item_id → lista de ingredientes
+    const receitaMap: Record<string, { ingrediente_id: string; nome: string; qtd_por_un: number }[]> = {}
+    for (const r of receitas) {
+      if (!receitaMap[r.item_id]) receitaMap[r.item_id] = []
+      receitaMap[r.item_id].push({ ingrediente_id: r.ingrediente_id, nome: r.ingrediente_nome, qtd_por_un: r.quantidade })
+    }
+
+    const map: Record<string, { nome: string; qtd: number }> = {}
     for (const v of vendasFiltradas) {
-      const fator = 1 - v.desconto_pct / 100
       for (const it of v.itens) {
-        const key = it.item_id ?? it.item_nome
-        if (!map[key]) map[key] = { nome: it.item_nome, qtd: 0, valor: 0 }
-        map[key].qtd += it.quantidade
-        map[key].valor += it.quantidade * it.preco_unit * fator
+        if (!it.item_id) continue
+        const ingredientes = receitaMap[it.item_id] ?? []
+        for (const ing of ingredientes) {
+          if (!map[ing.ingrediente_id]) map[ing.ingrediente_id] = { nome: ing.nome, qtd: 0 }
+          map[ing.ingrediente_id].qtd += ing.qtd_por_un * it.quantidade
+        }
       }
     }
     return Object.values(map).sort((a, b) => b.qtd - a.qtd)
-  }, [vendasFiltradas])
+  }, [vendasFiltradas, receitas])
 
   // ── Helpers de barra ──────────────────────────────────────────────────────
 
@@ -414,40 +424,54 @@ export function DashboardVendasClient({ vendas, faccoes, lojas, allItems }: Prop
 
         {/* ── Materiais gastos ── */}
         <div className="rounded-lg border border-border bg-card p-5">
-          <p className="text-sm font-semibold mb-4">Materiais gastos</p>
+          <div className="flex items-baseline gap-2 mb-4">
+            <p className="text-sm font-semibold">Materiais gastos</p>
+            <span className="text-[10px] text-muted-foreground">insumos de craft consumidos no período</span>
+          </div>
           {materiaisGastos.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">Sem dados no período</p>
+            <p className="text-sm text-muted-foreground text-center py-6">
+              {vendasFiltradas.length === 0
+                ? 'Sem vendas no período'
+                : 'Nenhum item vendido possui receita de craft cadastrada'}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="border-b border-border">
                   <tr className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
                     <th className="px-3 py-2 text-left w-6">#</th>
-                    <th className="px-3 py-2 text-left">Material</th>
-                    <th className="px-3 py-2 text-right w-28">Qtd. utilizada</th>
-                    <th className="px-3 py-2 text-right w-32">Valor total</th>
-                    <th className="px-3 py-2 text-right w-28">Valor médio/un.</th>
+                    <th className="px-3 py-2 text-left">Insumo</th>
+                    <th className="px-3 py-2 text-right w-36">Qtd. consumida</th>
+                    <th className="px-3 py-2 text-left w-48">Volume</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/30">
-                  {materiaisGastos.map((m, i) => (
-                    <tr key={i} className="hover:bg-white/[0.02]">
-                      <td className="px-3 py-2 text-muted-foreground/50 tabular-nums">{i + 1}</td>
-                      <td className="px-3 py-2 font-medium">{m.nome}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{m.qtd.toLocaleString('pt-BR')}×</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium text-primary/80">{fmt(m.valor)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(m.qtd > 0 ? m.valor / m.qtd : 0)}</td>
-                    </tr>
-                  ))}
+                  {materiaisGastos.map((m, i) => {
+                    const pct = Math.round(m.qtd / (materiaisGastos[0]?.qtd || 1) * 100)
+                    return (
+                      <tr key={i} className="hover:bg-white/[0.02]">
+                        <td className="px-3 py-2.5 text-muted-foreground/50 tabular-nums">{i + 1}</td>
+                        <td className="px-3 py-2.5 font-medium">{m.nome}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-primary/80">
+                          {m.qtd.toLocaleString('pt-BR')}×
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
+                              <div className="h-1.5 rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot className="border-t border-border/60">
-                  <tr className="font-medium">
-                    <td colSpan={2} className="px-3 py-2 text-[10px] text-muted-foreground uppercase">Total</td>
+                  <tr className="font-medium text-muted-foreground">
+                    <td colSpan={2} className="px-3 py-2 text-[10px] uppercase">Total</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {materiaisGastos.reduce((s, m) => s + m.qtd, 0).toLocaleString('pt-BR')}×
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-primary/80">
-                      {fmt(materiaisGastos.reduce((s, m) => s + m.valor, 0))}
                     </td>
                     <td />
                   </tr>
