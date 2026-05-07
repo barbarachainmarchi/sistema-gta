@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -73,6 +73,23 @@ export function AcaoClient({
   const [compTipos, setCompTipos] = useState<CompTipo[]>(compTiposIniciais)
   const [compItens, setCompItens] = useState<CompItem[]>(compItensIniciais)
   const [salvando, setSalvando] = useState(false)
+  const [lancamentosAcao, setLancamentosAcao] = useState<Record<string, { id: string; valor: number }>>({})
+
+  useEffect(() => {
+    sb().from('financeiro_lancamentos')
+      .select('id, acao_id, valor')
+      .not('acao_id', 'is', null)
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, { id: string; valor: number }> = {}
+          for (const l of data) {
+            if (l.acao_id) map[l.acao_id as string] = { id: l.id, valor: l.valor }
+          }
+          setLancamentosAcao(map)
+        }
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -122,7 +139,7 @@ export function AcaoClient({
 
   async function handleSaveAcao(form: AcaoForm, escalacaoId?: string): Promise<boolean> {
     if (!form.tipo_id) { toast.error('Selecione o tipo de ação'); return false }
-    if (!form.data_hora) { toast.error('Informe a data e hora'); return false }
+    if (!form.data) { toast.error('Informe a data'); return false }
     if (form.participantes.length === 0) { toast.error('Selecione pelo menos um participante'); return false }
     setSalvando(true)
     try {
@@ -134,14 +151,17 @@ export function AcaoClient({
         ? (compTipoEntry?.pontos_valor ?? (tipo?.conta_pontuacao ? (tipo.pontos_valor ?? 0) : 0))
         : 0
 
+      const data_hora_iso = new Date(`${form.data}T${form.hora || '00:00'}`).toISOString()
+
       const { data: acaoData, error: acaoErr } = await sb().from('acoes').insert({
         tipo_id: form.tipo_id,
         tipo_nome: tipo?.nome ?? null,
-        data_hora: new Date(form.data_hora).toISOString(),
+        data_hora: data_hora_iso,
         observacoes: form.observacoes.trim() || null,
         para_caixa_faccao: form.para_caixa_faccao,
         conta_pontuacao: form.conta_pontuacao,
         tipo_dinheiro: form.tipo_dinheiro,
+        resultado: form.resultado || null,
         competicao_id: form.competicao_id || null,
         equipe_id: form.equipe_id || null,
         quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
@@ -177,19 +197,21 @@ export function AcaoClient({
             .limit(1)
             .maybeSingle()
           if (contaFaccao) {
-            await sb().from('financeiro_lancamentos').insert({
+            const { data: lancData } = await sb().from('financeiro_lancamentos').insert({
               conta_id: contaFaccao.id,
               tipo: 'entrada',
               tipo_dinheiro: form.tipo_dinheiro,
               valor: valorNum,
+              total: valorNum,
               descricao: `Ação: ${tipo?.nome ?? 'Ação'}`,
               acao_referencia: tipo?.nome ?? null,
+              acao_id: novaAcao.id,
               vai_para_faccao: true,
-              categoria: 'outro',
+              categoria: 'acao',
               data: new Date().toISOString().split('T')[0],
               created_by: userId,
               responsavel_nome: userNome,
-            })
+            }).select('id').single()
             if (form.tipo_dinheiro === 'limpo') {
               await sb().from('financeiro_contas').update({
                 saldo_limpo: (contaFaccao.saldo_limpo ?? 0) + valorNum,
@@ -198,6 +220,9 @@ export function AcaoClient({
               await sb().from('financeiro_contas').update({
                 saldo_sujo: (contaFaccao.saldo_sujo ?? 0) + valorNum,
               }).eq('id', contaFaccao.id)
+            }
+            if (lancData) {
+              setLancamentosAcao(prev => ({ ...prev, [novaAcao.id]: { id: lancData.id, valor: valorNum } }))
             }
           }
         }
@@ -241,7 +266,7 @@ export function AcaoClient({
 
   async function handleEditAcao(id: string, form: AcaoForm): Promise<boolean> {
     if (!form.tipo_id) { toast.error('Selecione o tipo de ação'); return false }
-    if (!form.data_hora) { toast.error('Informe a data e hora'); return false }
+    if (!form.data) { toast.error('Informe a data'); return false }
     if (form.participantes.length === 0) { toast.error('Selecione pelo menos um participante'); return false }
     setSalvando(true)
     try {
@@ -253,20 +278,104 @@ export function AcaoClient({
         ? (compTipoEntry?.pontos_valor ?? (tipo?.conta_pontuacao ? (tipo.pontos_valor ?? 0) : 0))
         : 0
 
+      const data_hora_iso = new Date(`${form.data}T${form.hora || '00:00'}`).toISOString()
+
       const { error: acaoErr } = await sb().from('acoes').update({
         tipo_id: form.tipo_id,
         tipo_nome: tipo?.nome ?? null,
-        data_hora: new Date(form.data_hora).toISOString(),
+        data_hora: data_hora_iso,
         observacoes: form.observacoes.trim() || null,
         para_caixa_faccao: form.para_caixa_faccao,
         conta_pontuacao: form.conta_pontuacao,
         tipo_dinheiro: form.tipo_dinheiro,
+        resultado: form.resultado || null,
         competicao_id: form.competicao_id || null,
         equipe_id: form.equipe_id || null,
         quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
         item_id: form.item_id || null,
       }).eq('id', id)
       if (acaoErr) throw acaoErr
+
+      // ── Sincronizar lançamento financeiro ────────────────────────────────────
+      const lancExistente = lancamentosAcao[id]
+      const oldAcao = acoes.find(a => a.id === id)
+
+      if (oldAcao?.para_caixa_faccao && !form.para_caixa_faccao) {
+        // Estava para caixa, agora não: deletar lançamento e reverter saldo
+        if (lancExistente) {
+          const { data: lancData } = await sb().from('financeiro_lancamentos')
+            .select('conta_id, tipo_dinheiro, valor').eq('id', lancExistente.id).maybeSingle()
+          if (lancData) {
+            const { data: contaD } = await sb().from('financeiro_contas')
+              .select('saldo_sujo, saldo_limpo').eq('id', lancData.conta_id).single()
+            if (contaD) {
+              const isSujo = lancData.tipo_dinheiro === 'sujo'
+              await sb().from('financeiro_contas').update({
+                saldo_sujo: isSujo ? contaD.saldo_sujo - lancData.valor : contaD.saldo_sujo,
+                saldo_limpo: !isSujo ? contaD.saldo_limpo - lancData.valor : contaD.saldo_limpo,
+              }).eq('id', lancData.conta_id)
+            }
+            await sb().from('financeiro_lancamentos').delete().eq('id', lancExistente.id)
+          }
+          setLancamentosAcao(prev => { const n = { ...prev }; delete n[id]; return n })
+        }
+      } else if (form.para_caixa_faccao) {
+        const valorNum = parseFloat(form.valor_financeiro)
+        if (valorNum > 0) {
+          if (lancExistente) {
+            // Atualizar lançamento existente
+            const { data: lancData } = await sb().from('financeiro_lancamentos')
+              .select('conta_id, tipo_dinheiro, valor').eq('id', lancExistente.id).maybeSingle()
+            if (lancData) {
+              const { data: contaD } = await sb().from('financeiro_contas')
+                .select('saldo_sujo, saldo_limpo').eq('id', lancData.conta_id).single()
+              if (contaD) {
+                const oldIsSujo = lancData.tipo_dinheiro === 'sujo'
+                const newIsSujo = form.tipo_dinheiro === 'sujo'
+                await sb().from('financeiro_contas').update({
+                  saldo_sujo: contaD.saldo_sujo - (oldIsSujo ? lancData.valor : 0) + (newIsSujo ? valorNum : 0),
+                  saldo_limpo: contaD.saldo_limpo - (!oldIsSujo ? lancData.valor : 0) + (!newIsSujo ? valorNum : 0),
+                }).eq('id', lancData.conta_id)
+              }
+              await sb().from('financeiro_lancamentos').update({
+                tipo_dinheiro: form.tipo_dinheiro,
+                valor: valorNum,
+                total: valorNum,
+              }).eq('id', lancExistente.id)
+              setLancamentosAcao(prev => ({ ...prev, [id]: { id: lancExistente.id, valor: valorNum } }))
+            }
+          } else {
+            // Criar novo lançamento (era false, agora true)
+            const { data: contaFaccao } = await sb().from('financeiro_contas')
+              .select('id, saldo_sujo, saldo_limpo').eq('tipo', 'faccao').eq('status', 'ativo')
+              .order('created_at').limit(1).maybeSingle()
+            if (contaFaccao) {
+              const { data: novoLanc } = await sb().from('financeiro_lancamentos').insert({
+                conta_id: contaFaccao.id,
+                tipo: 'entrada',
+                tipo_dinheiro: form.tipo_dinheiro,
+                valor: valorNum,
+                total: valorNum,
+                descricao: `Ação: ${tipo?.nome ?? 'Ação'}`,
+                acao_referencia: tipo?.nome ?? null,
+                acao_id: id,
+                vai_para_faccao: true,
+                categoria: 'acao',
+                data: new Date().toISOString().split('T')[0],
+                created_by: userId,
+                responsavel_nome: userNome,
+              }).select('id').single()
+              const isSujo = form.tipo_dinheiro === 'sujo'
+              await sb().from('financeiro_contas').update({
+                saldo_sujo: contaFaccao.saldo_sujo + (isSujo ? valorNum : 0),
+                saldo_limpo: contaFaccao.saldo_limpo + (!isSujo ? valorNum : 0),
+              }).eq('id', contaFaccao.id)
+              if (novoLanc) setLancamentosAcao(prev => ({ ...prev, [id]: { id: novoLanc.id, valor: valorNum } }))
+            }
+          }
+        }
+      }
+      // ── Fim sincronização ────────────────────────────────────────────────────
 
       await sb().from('acao_participantes').delete().eq('acao_id', id)
 
@@ -280,11 +389,12 @@ export function AcaoClient({
       setAcoes(prev => prev.map(a => a.id === id ? {
         ...a,
         tipo_id: form.tipo_id, tipo_nome: tipo?.nome ?? null,
-        data_hora: new Date(form.data_hora).toISOString(),
+        data_hora: data_hora_iso,
         observacoes: form.observacoes.trim() || null,
         para_caixa_faccao: form.para_caixa_faccao,
         conta_pontuacao: form.conta_pontuacao,
         tipo_dinheiro: form.tipo_dinheiro,
+        resultado: (form.resultado || null) as 'vencida' | 'perdida' | null,
         competicao_id: form.competicao_id || null,
         equipe_id: form.equipe_id || null,
         quantidade_item: form.quantidade_item ? parseInt(form.quantidade_item) : null,
@@ -303,6 +413,26 @@ export function AcaoClient({
   async function handleDeleteAcao(id: string): Promise<boolean> {
     setSalvando(true)
     try {
+      // Sincronizar: deletar lançamento financeiro vinculado e reverter saldo
+      const lancExistente = lancamentosAcao[id]
+      if (lancExistente) {
+        const { data: lancData } = await sb().from('financeiro_lancamentos')
+          .select('conta_id, tipo_dinheiro, valor').eq('id', lancExistente.id).maybeSingle()
+        if (lancData) {
+          const { data: contaD } = await sb().from('financeiro_contas')
+            .select('saldo_sujo, saldo_limpo').eq('id', lancData.conta_id).single()
+          if (contaD) {
+            const isSujo = lancData.tipo_dinheiro === 'sujo'
+            await sb().from('financeiro_contas').update({
+              saldo_sujo: isSujo ? contaD.saldo_sujo - lancData.valor : contaD.saldo_sujo,
+              saldo_limpo: !isSujo ? contaD.saldo_limpo - lancData.valor : contaD.saldo_limpo,
+            }).eq('id', lancData.conta_id)
+          }
+          await sb().from('financeiro_lancamentos').delete().eq('id', lancExistente.id)
+        }
+        setLancamentosAcao(prev => { const n = { ...prev }; delete n[id]; return n })
+      }
+
       const { error } = await sb().from('acoes').delete().eq('id', id)
       if (error) throw error
       setAcoes(prev => prev.filter(a => a.id !== id))
@@ -671,6 +801,7 @@ export function AcaoClient({
             competicoes={competicoes} compEquipes={compEquipes}
             compTipos={compTipos} compItens={compItens} catalogItems={catalogItemsIniciais}
             salvando={salvando} podeEditar={podeEditar} userFaccaoId={userFaccaoId}
+            lancamentosAcao={lancamentosAcao}
             onSaveAcao={handleSaveAcao}
             onEditAcao={handleEditAcao}
             onDeleteAcao={handleDeleteAcao}

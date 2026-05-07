@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Escalacao, EscalacaoParticipante, EscalacaoForm, AcaoForm, AcaoTipo, Membro, Acao } from './acao-shared'
 import {
-  emptyEscalacaoForm, emptyAcaoForm, fmtDatetime, toDatetimeLocal,
+  emptyEscalacaoForm, emptyAcaoForm, fmtDatetime, toDatetimeLocal, toDateLocal, toTimeLocal,
   ESCALACAO_STATUS_CFG, PART_STATUS_CFG, MembroSelector, AcaoFormFields,
 } from './acao-shared'
 
@@ -100,13 +100,15 @@ export function TabEscalacoes({
       .map(p => p.membro_id)
     setAcaoForm({
       tipo_id: esc.tipo_id ?? '',
-      data_hora: toDatetimeLocal(esc.data_hora_prevista),
+      data: toDateLocal(esc.data_hora_prevista),
+      hora: toTimeLocal(esc.data_hora_prevista),
       participantes: preSelected,
       para_caixa_faccao: false,
       valor_financeiro: '',
       tipo_dinheiro: 'sujo',
       observacoes: esc.observacoes ?? '',
       conta_pontuacao: false,
+      resultado: '',
       competicao_id: '',
       equipe_id: '',
       quantidade_item: '',

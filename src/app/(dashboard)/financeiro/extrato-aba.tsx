@@ -40,24 +40,25 @@ function impactSaldo(l: Lancamento): { deltaSujo: number; deltaLimpo: number } {
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type FiltroTipo    = 'todos' | 'entradas' | 'saidas' | 'vendas' | 'transferencias'
+type FiltroTipo    = 'todos' | 'entradas' | 'saidas' | 'vendas' | 'transferencias' | 'acao' | 'venda_avulsa'
 type FiltroDinheiro = 'todos' | 'sujo' | 'limpo'
 
 const EMPTY_FORM = {
-  id:            null as string | null,
-  tipo_mov:      'entrada' as 'entrada' | 'saida',
-  is_compra:     false,
-  data:          today(),
-  tipo_dinheiro: 'limpo' as 'sujo' | 'limpo',
-  origem:        '',           // texto livre
-  item_descricao: '',
-  categoria:     '',
-  preco:         '',
-  quantidade:    '',
-  total:         '',
-  responsavel:   '',           // "conta:{uuid}" ou "membro:{uuid}"
-  cotacao_id:    '',
-  descricao:     '',
+  id:              null as string | null,
+  tipo_mov:        'entrada' as 'entrada' | 'saida',
+  is_compra:       false,
+  is_venda_avulsa: false,
+  data:            today(),
+  tipo_dinheiro:   'limpo' as 'sujo' | 'limpo',
+  origem:          '',
+  item_descricao:  '',
+  categoria:       '',
+  preco:           '',
+  quantidade:      '',
+  total:           '',
+  responsavel:     '',
+  cotacao_id:      '',
+  descricao:       '',
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -132,6 +133,8 @@ export function ExtratoAba({
       if (filtroTipo === 'saidas'         && l.tipo !== 'saida')         return false
       if (filtroTipo === 'vendas'         && l.tipo !== 'venda')         return false
       if (filtroTipo === 'transferencias' && l.tipo !== 'transferencia') return false
+      if (filtroTipo === 'acao'           && !(l.categoria?.toLowerCase() === 'acao' || !!l.acao_id)) return false
+      if (filtroTipo === 'venda_avulsa'   && l.categoria?.toLowerCase() !== 'venda_avulsa') return false
       if (filtroDinheiro !== 'todos'  && l.tipo_dinheiro !== filtroDinheiro) return false
       if (filtroCategoria && !norm(l.categoria).includes(norm(filtroCategoria))) return false
       const dataL = l.data ?? l.created_at.split('T')[0]
@@ -200,20 +203,21 @@ export function ExtratoAba({
 
   function abrirEditar(l: Lancamento) {
     setForm({
-      id:             l.id,
-      tipo_mov:       l.tipo === 'saida' ? 'saida' : 'entrada',
-      is_compra:      !!l.cotacao_id,
-      data:           l.data ?? today(),
-      tipo_dinheiro:  l.tipo_dinheiro ?? 'limpo',
-      origem:         l.origem ?? '',
-      item_descricao: l.item_descricao ?? '',
-      categoria:      l.categoria ?? '',
-      preco:          l.preco != null ? String(l.preco) : '',
-      quantidade:     l.quantidade != null ? String(l.quantidade) : '',
-      total:          l.total != null ? String(l.total) : String(l.valor),
-      responsavel:    l.conta_id ? `conta:${l.conta_id}` : '',
-      cotacao_id:     l.cotacao_id ?? '',
-      descricao:      l.descricao ?? '',
+      id:              l.id,
+      tipo_mov:        l.tipo === 'saida' ? 'saida' : 'entrada',
+      is_compra:       !!l.cotacao_id,
+      is_venda_avulsa: l.categoria === 'venda_avulsa',
+      data:            l.data ?? today(),
+      tipo_dinheiro:   l.tipo_dinheiro ?? 'limpo',
+      origem:          l.origem ?? '',
+      item_descricao:  l.item_descricao ?? '',
+      categoria:       l.categoria ?? '',
+      preco:           l.preco != null ? String(l.preco) : '',
+      quantidade:      l.quantidade != null ? String(l.quantidade) : '',
+      total:           l.total != null ? String(l.total) : String(l.valor),
+      responsavel:     l.conta_id ? `conta:${l.conta_id}` : '',
+      cotacao_id:      l.cotacao_id ?? '',
+      descricao:       l.descricao ?? '',
     })
     setModalOpen(true)
   }
@@ -285,6 +289,9 @@ export function ExtratoAba({
     if (error) { toast.error(error.message); return }
     const { deltaSujo, deltaLimpo } = impactSaldo(l)
     await atualizarSaldo(l.conta_id, -deltaSujo, -deltaLimpo)
+    if (l.acao_id) {
+      await sb().from('acoes').update({ para_caixa_faccao: false }).eq('id', l.acao_id)
+    }
     setLancamentos(prev => prev.filter(x => x.id !== id))
     setDeleteId(null)
     toast.success('Removido')
@@ -316,6 +323,8 @@ export function ExtratoAba({
             <SelectItem value="saidas">Gastos</SelectItem>
             <SelectItem value="vendas">Vendas</SelectItem>
             <SelectItem value="transferencias">Transferências</SelectItem>
+            <SelectItem value="acao">Ação</SelectItem>
+            <SelectItem value="venda_avulsa">Venda Avulsa</SelectItem>
           </SelectContent>
         </Select>
 
@@ -408,6 +417,12 @@ export function ExtratoAba({
                             {l.vendas?.cliente_nome ? ` · ${l.vendas.cliente_nome}` : ''}
                           </p>
                         )}
+                        {l.categoria === 'venda_avulsa' && (
+                          <p className="text-[10px] text-purple-400">venda avulsa</p>
+                        )}
+                        {(l.categoria === 'acao' || l.acao_id) && !isVenda && l.categoria !== 'venda_avulsa' && (
+                          <p className="text-[10px] text-yellow-400">ação</p>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{l.categoria ?? '—'}</td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{fmtNum(l.quantidade)}</td>
@@ -468,7 +483,7 @@ export function ExtratoAba({
               className={cn('flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2 border-l border-border',
                 form.tipo_mov === 'saida' ? 'bg-red-500/20 text-red-400' : 'text-muted-foreground hover:text-foreground'
               )}
-              onClick={() => setF({ tipo_mov: 'saida' })}>
+              onClick={() => setF({ tipo_mov: 'saida', is_venda_avulsa: false, categoria: form.is_venda_avulsa ? '' : form.categoria })}>
               <TrendingDown className="h-4 w-4" /> Gasto
             </button>
           </div>
@@ -528,13 +543,42 @@ export function ExtratoAba({
 
           {/* Categoria */}
           <div className="space-y-1">
-            <Label className="text-xs">Categoria</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Categoria</Label>
+              <button type="button"
+                onClick={() => setF({ categoria: form.categoria === 'acao' ? '' : 'acao', is_venda_avulsa: false })}
+                className={cn('text-[11px] px-2 py-0.5 rounded border transition-colors',
+                  form.categoria === 'acao'
+                    ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
+                    : 'border-border text-muted-foreground hover:text-foreground'
+                )}>
+                Ação
+              </button>
+            </div>
             <Input list="hist-categoria" className="h-9 text-xs" placeholder="Ex: Armamento, Logística..."
-              value={form.categoria} onChange={e => setF({ categoria: e.target.value })} />
+              value={form.categoria} onChange={e => setF({ categoria: e.target.value, is_venda_avulsa: e.target.value === 'venda_avulsa' })} />
             <datalist id="hist-categoria">
               {histCategoria.map(c => <option key={c!} value={c!} />)}
             </datalist>
           </div>
+
+          {/* Venda Avulsa (só para entradas) */}
+          {form.tipo_mov === 'entrada' && (
+            <div>
+              <button type="button"
+                onClick={() => setF({ is_venda_avulsa: !form.is_venda_avulsa, categoria: !form.is_venda_avulsa ? 'venda_avulsa' : form.categoria === 'venda_avulsa' ? '' : form.categoria })}
+                className={cn('flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors',
+                  form.is_venda_avulsa
+                    ? 'border-purple-500/50 bg-purple-500/10 text-purple-400'
+                    : 'border-border text-muted-foreground hover:text-foreground'
+                )}>
+                <ShoppingCart className="h-3 w-3" /> Venda Avulsa
+              </button>
+              {form.is_venda_avulsa && (
+                <p className="text-[10px] text-muted-foreground mt-1">Aparecerá em Vendas › Avulsas separado das vendas de itens.</p>
+              )}
+            </div>
+          )}
 
           {/* Preço / Qty / Total */}
           <div className="grid grid-cols-3 gap-3">

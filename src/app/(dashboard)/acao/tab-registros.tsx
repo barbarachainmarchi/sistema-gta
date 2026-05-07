@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Acao, AcaoParticipante, AcaoTipo, Membro, AcaoForm, Competicao, CompEquipe, CompTipo, CompItem, CatalogItem } from './acao-shared'
-import { emptyAcaoForm, fmtDatetime, toDatetimeLocal, AcaoFormFields } from './acao-shared'
+import { emptyAcaoForm, fmtDatetime, toDateLocal, toTimeLocal, AcaoFormFields } from './acao-shared'
 
 interface Props {
   acoes: Acao[]
@@ -24,6 +24,7 @@ interface Props {
   salvando: boolean
   podeEditar: boolean
   userFaccaoId?: string | null
+  lancamentosAcao: Record<string, { id: string; valor: number }>
   onSaveAcao: (form: AcaoForm, escalacaoId?: string) => Promise<boolean>
   onEditAcao: (id: string, form: AcaoForm) => Promise<boolean>
   onDeleteAcao: (id: string) => Promise<boolean>
@@ -33,7 +34,7 @@ interface Props {
 export function TabRegistros({
   acoes, participantes, tipos, membros,
   competicoes, compEquipes, compTipos, compItens, catalogItems,
-  salvando, podeEditar, userFaccaoId,
+  salvando, podeEditar, userFaccaoId, lancamentosAcao,
   onSaveAcao, onEditAcao, onDeleteAcao, onToggleContaPontuacao,
 }: Props) {
   const [formOpen, setFormOpen] = useState(false)
@@ -85,15 +86,18 @@ export function TabRegistros({
 
   function abrirEditar(acao: Acao) {
     const parts = partsByAcao[acao.id] ?? []
+    const lanc = lancamentosAcao[acao.id]
     setForm({
       tipo_id: acao.tipo_id ?? '',
-      data_hora: toDatetimeLocal(acao.data_hora),
+      data: toDateLocal(acao.data_hora),
+      hora: toTimeLocal(acao.data_hora),
       participantes: parts.map(p => p.membro_id),
       para_caixa_faccao: acao.para_caixa_faccao,
-      valor_financeiro: '',
+      valor_financeiro: lanc ? String(lanc.valor) : '',
       tipo_dinheiro: acao.tipo_dinheiro ?? 'sujo',
       observacoes: acao.observacoes ?? '',
       conta_pontuacao: acao.conta_pontuacao,
+      resultado: acao.resultado ?? '',
       competicao_id: acao.competicao_id ?? '',
       equipe_id: acao.equipe_id ?? '',
       quantidade_item: acao.quantidade_item != null ? String(acao.quantidade_item) : '',
@@ -169,6 +173,12 @@ export function TabRegistros({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium">{acao.tipo_nome ?? '—'}</span>
+                      {acao.resultado === 'vencida' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">✓ Vencida</span>
+                      )}
+                      {acao.resultado === 'perdida' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-medium">✗ Perdida</span>
+                      )}
                       {acao.para_caixa_faccao && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">Caixa facção</span>
                       )}

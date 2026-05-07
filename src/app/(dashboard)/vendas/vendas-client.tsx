@@ -1814,6 +1814,28 @@ export function VendasClient({
   const [mostrarTodosConcluidos, setMostrarTodosConcluidos] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  type VendaAvulsa = {
+    id: string; data: string | null; item_descricao: string | null; descricao: string | null
+    tipo_dinheiro: 'sujo' | 'limpo' | null; valor: number; origem: string | null
+    responsavel_nome: string | null; created_at: string
+  }
+  const [vendasAvulsas, setVendasAvulsas] = useState<VendaAvulsa[] | null>(null)
+  const [loadingAvulsas, setLoadingAvulsas] = useState(false)
+
+  useEffect(() => {
+    if (filtro !== 'avulsas' || vendasAvulsas !== null) return
+    setLoadingAvulsas(true)
+    sb().from('financeiro_lancamentos')
+      .select('id, data, item_descricao, descricao, tipo_dinheiro, valor, origem, responsavel_nome, created_at')
+      .eq('categoria', 'venda_avulsa')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setVendasAvulsas((data ?? []) as VendaAvulsa[])
+        setLoadingAvulsas(false)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro])
+
   const itemMap = useMemo(() => Object.fromEntries(allItems.map(i => [i.id, i])), [allItems])
   const receitaMap = useMemo(() => {
     const map: Record<string, Receita[]> = {}
@@ -2251,6 +2273,7 @@ export function VendasClient({
             ['todos',     'Ativos'],
             ['encomenda', 'Encomendas'],
             ['entregue',  'Concluídos'],
+            ['avulsas',   'Avulsas'],
           ] as const).map(([key, label]) => (
             <button key={key} onClick={() => setFiltro(key)}
               className={cn('px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
@@ -2407,6 +2430,67 @@ export function VendasClient({
           </div>
         )}
       </div>
+
+      {/* ── Aba Avulsas ── */}
+      {filtro === 'avulsas' && (
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mb-4">
+            <p className="text-xs text-muted-foreground">Vendas avulsas registradas diretamente no Financeiro (serviços, vendas pontuais sem item cadastrado).</p>
+          </div>
+          {loadingAvulsas ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : !vendasAvulsas || vendasAvulsas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <Package className="h-10 w-10 text-muted-foreground/20" />
+              <p className="text-sm text-muted-foreground">Nenhuma venda avulsa registrada</p>
+              <p className="text-xs text-muted-foreground">Adicione pelo Financeiro › Extrato, marcando como <span className="text-purple-400">Venda Avulsa</span>.</p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-16">Data</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-14">$</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Descrição</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-32">Origem</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground w-28">Total</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground w-28">Registrado por</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {vendasAvulsas.map(v => {
+                    const d = v.data ?? v.created_at.split('T')[0]
+                    const dataFmt = new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                    return (
+                      <tr key={v.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="px-3 py-2.5 text-muted-foreground tabular-nums">{dataFmt}</td>
+                        <td className="px-3 py-2.5">
+                          {v.tipo_dinheiro ? (
+                            <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded',
+                              v.tipo_dinheiro === 'sujo' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald-500/15 text-emerald-400'
+                            )}>
+                              {v.tipo_dinheiro === 'sujo' ? 'S' : 'L'}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 max-w-[200px]">
+                          <p className="truncate font-medium">{v.item_descricao ?? v.descricao ?? '—'}</p>
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[128px]">{v.origem ?? '—'}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-medium text-emerald-400">
+                          +{fmt(v.valor)}
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[112px]">{v.responsavel_nome ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <OrderDialog
         open={formOpen}

@@ -24,6 +24,7 @@ export type Acao = {
   data_hora: string; observacoes: string | null
   para_caixa_faccao: boolean; conta_pontuacao: boolean
   tipo_dinheiro: 'sujo' | 'limpo'
+  resultado: 'vencida' | 'perdida' | null
   competicao_id: string | null; equipe_id: string | null
   quantidade_item: number | null; item_id: string | null
   created_by: string | null; created_by_nome: string | null; created_at: string
@@ -97,16 +98,16 @@ export const emptyTipoForm: TipoForm = {
 }
 
 export type AcaoForm = {
-  tipo_id: string; data_hora: string; participantes: string[]
+  tipo_id: string; data: string; hora: string; participantes: string[]
   para_caixa_faccao: boolean; valor_financeiro: string; tipo_dinheiro: 'sujo' | 'limpo'
-  observacoes: string; conta_pontuacao: boolean
+  observacoes: string; conta_pontuacao: boolean; resultado: 'vencida' | 'perdida' | ''
   competicao_id: string; equipe_id: string; quantidade_item: string; item_id: string
 }
 
 export const emptyAcaoForm: AcaoForm = {
-  tipo_id: '', data_hora: '', participantes: [],
+  tipo_id: '', data: '', hora: '', participantes: [],
   para_caixa_faccao: false, valor_financeiro: '', tipo_dinheiro: 'sujo',
-  observacoes: '', conta_pontuacao: false,
+  observacoes: '', conta_pontuacao: false, resultado: '',
   competicao_id: '', equipe_id: '', quantidade_item: '', item_id: '',
 }
 
@@ -175,6 +176,20 @@ export function toDatetimeLocal(iso: string) {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export function toDateLocal(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+export function toTimeLocal(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 export function calcTeamProgress(
@@ -356,11 +371,19 @@ export function AcaoFormFields({
         </Select>
         {tipoAtual?.descricao && <p className="text-xs text-muted-foreground mt-1">{tipoAtual.descricao}</p>}
       </div>
-      <div>
-        <Label>Data e hora *</Label>
-        <input type="datetime-local" value={form.data_hora}
-          onChange={e => setForm(f => ({ ...f, data_hora: e.target.value }))}
-          className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm text-foreground" />
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Data *</Label>
+          <input type="date" value={form.data}
+            onChange={e => setForm(f => ({ ...f, data: e.target.value }))}
+            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm text-foreground" />
+        </div>
+        <div>
+          <Label>Hora (opcional)</Label>
+          <input type="time" value={form.hora}
+            onChange={e => setForm(f => ({ ...f, hora: e.target.value }))}
+            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm text-foreground" />
+        </div>
       </div>
       <div>
         <Label>Participantes *</Label>
@@ -456,6 +479,28 @@ export function AcaoFormFields({
             </div>
           </>
         )}
+      </div>
+      <div>
+        <Label>Resultado</Label>
+        <div className="flex gap-2 mt-1">
+          {([
+            { val: '' as const, label: 'Em aberto' },
+            { val: 'vencida' as const, label: '✓ Vencida' },
+            { val: 'perdida' as const, label: '✗ Perdida' },
+          ]).map(opt => (
+            <button key={opt.val} type="button"
+              onClick={() => setForm(f => ({ ...f, resultado: opt.val }))}
+              className={cn('flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors',
+                form.resultado === opt.val
+                  ? opt.val === 'vencida' ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400'
+                    : opt.val === 'perdida' ? 'border-red-500/50 bg-red-500/15 text-red-400'
+                    : 'border-border/50 bg-muted/30 text-foreground'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              )}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div>
         <Label>Observações</Label>
