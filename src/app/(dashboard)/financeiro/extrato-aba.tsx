@@ -109,6 +109,7 @@ export function ExtratoAba({
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroDataDe,    setFiltroDataDe]    = useState('')
   const [filtroDataAte,   setFiltroDataAte]   = useState('')
+  const [busca,           setBusca]           = useState('')
 
   const contaMap = useMemo(() => Object.fromEntries(contas.map(c => [c.id, c])), [contas])
 
@@ -144,21 +145,36 @@ export function ExtratoAba({
   // ── Filtros ───────────────────────────────────────────────────────────────
 
   const lancFiltrados = useMemo(() => {
-    return lancamentos.filter(l => {
-      if (filtroTipo === 'entradas'       && l.tipo !== 'entrada')       return false
-      if (filtroTipo === 'saidas'         && l.tipo !== 'saida')         return false
-      if (filtroTipo === 'vendas'         && l.tipo !== 'venda')         return false
-      if (filtroTipo === 'transferencias' && l.tipo !== 'transferencia') return false
-      if (filtroTipo === 'acao'           && !(l.categoria?.toLowerCase() === 'acao' || !!l.acao_id)) return false
-      if (filtroTipo === 'venda_avulsa'   && l.categoria?.toLowerCase() !== 'venda_avulsa') return false
-      if (filtroDinheiro !== 'todos'  && l.tipo_dinheiro !== filtroDinheiro) return false
-      if (filtroCategoria && !norm(l.categoria).includes(norm(filtroCategoria))) return false
-      const dataL = l.data ?? l.created_at.split('T')[0]
-      if (filtroDataDe  && dataL < filtroDataDe)  return false
-      if (filtroDataAte && dataL > filtroDataAte) return false
-      return true
-    })
-  }, [lancamentos, filtroTipo, filtroDinheiro, filtroCategoria, filtroDataDe, filtroDataAte])
+    const q = busca.trim().toLowerCase()
+    return lancamentos
+      .filter(l => {
+        if (filtroTipo === 'entradas'       && l.tipo !== 'entrada')       return false
+        if (filtroTipo === 'saidas'         && l.tipo !== 'saida')         return false
+        if (filtroTipo === 'vendas'         && l.tipo !== 'venda')         return false
+        if (filtroTipo === 'transferencias' && l.tipo !== 'transferencia') return false
+        if (filtroTipo === 'acao'           && !(l.categoria?.toLowerCase() === 'acao' || !!l.acao_id)) return false
+        if (filtroTipo === 'venda_avulsa'   && l.categoria?.toLowerCase() !== 'venda_avulsa') return false
+        if (filtroDinheiro !== 'todos'  && l.tipo_dinheiro !== filtroDinheiro) return false
+        if (filtroCategoria && !norm(l.categoria).includes(norm(filtroCategoria))) return false
+        const dataL = l.data ?? l.created_at.split('T')[0]
+        if (filtroDataDe  && dataL < filtroDataDe)  return false
+        if (filtroDataAte && dataL > filtroDataAte) return false
+        if (q) {
+          const cliente = (l.vendas?.cliente_nome ?? '').toLowerCase()
+          const faccao  = (l.vendas?.faccoes?.nome ?? '').toLowerCase()
+          const resp    = (l.responsavel_nome ?? '').toLowerCase()
+          const desc    = (l.item_descricao ?? l.descricao ?? '').toLowerCase()
+          if (!cliente.includes(q) && !faccao.includes(q) && !resp.includes(q) && !desc.includes(q)) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        const da = a.data ?? a.created_at.split('T')[0]
+        const db = b.data ?? b.created_at.split('T')[0]
+        if (db !== da) return db.localeCompare(da)
+        return b.created_at.localeCompare(a.created_at)
+      })
+  }, [lancamentos, filtroTipo, filtroDinheiro, filtroCategoria, filtroDataDe, filtroDataAte, busca])
 
   // ── Auto-cálculo ──────────────────────────────────────────────────────────
 
@@ -420,6 +436,11 @@ export function ExtratoAba({
           value={filtroDataDe} onChange={e => setFiltroDataDe(e.target.value)} />
         <Input type="date" className="h-8 w-36 text-xs"
           value={filtroDataAte} onChange={e => setFiltroDataAte(e.target.value)} />
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input placeholder="Cliente, facção..." className="h-8 pl-8 w-44 text-xs"
+            value={busca} onChange={e => setBusca(e.target.value)} />
+        </div>
 
         <span className="text-xs text-muted-foreground ml-1">{lancFiltrados.length} registros</span>
 

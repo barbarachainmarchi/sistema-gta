@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
-  ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2, Trash2, Users, ChevronDown, ChevronRight, Clock, Check,
+  ArrowRightLeft, Loader2, Wallet, TrendingUp, CheckCircle2, Trash2, Users, ChevronDown, ChevronRight, Clock, Check, Search,
 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -90,6 +90,7 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   // Filtro de vendedores (admin): 'todos' | 'meu' | userId
   const [filtroVendedor, setFiltroVendedor] = useState<string>('meu')
   const [filtroAba, setFiltroAba] = useState<'todos' | 'comigo' | 'repassado'>('comigo')
+  const [busca, setBusca] = useState('')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   function toggleRow(id: string) {
     setExpandedRows(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -165,8 +166,17 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
     let list = vendasVisiveis
     if (filtroAba === 'comigo') list = list.filter(v => isComigo(v))
     if (filtroAba === 'repassado') list = list.filter(v => !isComigo(v))
+    if (busca.trim()) {
+      const q = busca.trim().toLowerCase()
+      list = list.filter(v =>
+        (v.cliente_nome ?? '').toLowerCase().includes(q) ||
+        (v.faccao_nome ?? '').toLowerCase().includes(q) ||
+        (v.criado_por_nome ?? '').toLowerCase().includes(q) ||
+        (v.entregue_por_nome ?? '').toLowerCase().includes(q)
+      )
+    }
     return list.sort((a, b) => (b.entregue_em ?? b.created_at).localeCompare(a.entregue_em ?? a.created_at))
-  }, [vendasVisiveis, filtroAba, isComigo])
+  }, [vendasVisiveis, filtroAba, isComigo, busca])
 
   const totalVenda = (v: Venda) => {
     const sids = [...new Set(v.itens.map(it => it.servico_id).filter(Boolean))] as string[]
@@ -597,21 +607,33 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
           </div>
         )}
 
-        {/* ── Filtro aba ── */}
-        <div className="flex gap-0.5 border-b border-border">
-          {([
-            ['todos', 'Todas', vendasVisiveis.length],
-            ['comigo', 'Com você', comigo.length],
-            ['repassado', 'Repassadas', repassados.length],
-          ] as const).map(([key, label, count]) => (
-            <button key={key} onClick={() => setFiltroAba(key)}
-              className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-                filtroAba === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
-              )}>
-              {label}
-              <span className="ml-1.5 text-[10px] opacity-60">({count})</span>
-            </button>
-          ))}
+        {/* ── Busca + Filtro aba ── */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex gap-0.5 border-b border-border flex-1">
+
+            {([
+              ['todos', 'Todas', vendasVisiveis.length],
+              ['comigo', 'Com você', comigo.length],
+              ['repassado', 'Repassadas', repassados.length],
+            ] as const).map(([key, label, count]) => (
+              <button key={key} onClick={() => setFiltroAba(key)}
+                className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+                  filtroAba === key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+                )}>
+                {label}
+                <span className="ml-1.5 text-[10px] opacity-60">({count})</span>
+              </button>
+            ))}
+          </div>
+          <div className="relative shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              className="h-8 pl-8 text-xs w-52"
+              placeholder="Buscar cliente, facção..."
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+            />
+          </div>
         </div>
 
         {/* ── Tabela ── */}
