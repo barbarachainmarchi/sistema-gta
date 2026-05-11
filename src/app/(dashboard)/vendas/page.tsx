@@ -36,7 +36,7 @@ export default async function VendasPage() {
     supabase.from('item_receita').select('item_id, ingrediente_id, quantidade'),
     supabase.from('estoque_movimentos').select('item_id, tipo, quantidade, created_at'),
     supabase.from('estoque_atualizacoes').select('item_id, quantidade, created_at').order('created_at', { ascending: false }),
-    supabase.from('membros').select('id, nome, vulgo, telefone, faccao_id').eq('status', 'ativo').order('nome'),
+    supabase.from('membros').select('id, nome, vulgo, telefone, faccao_id, deep').eq('status', 'ativo').order('nome'),
     supabase.from('lojas').select('id, nome').eq('status', 'ativo').order('nome'),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, local_trabalho_loja_id, local_trabalho_faccao_id, exclusao_suprema').eq('id', user.id).maybeSingle(),

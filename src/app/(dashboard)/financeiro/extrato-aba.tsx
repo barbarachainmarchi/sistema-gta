@@ -97,9 +97,9 @@ export function ExtratoAba({
   const contaMap = useMemo(() => Object.fromEntries(contas.map(c => [c.id, c])), [contas])
 
   // Histórico para datalist
-  const histDescricao = useMemo(() => [...new Set(lancamentos.map(l => l.item_descricao).filter(Boolean))], [lancamentos])
-  const histCategoria = useMemo(() => [...new Set(lancamentos.map(l => l.categoria).filter(Boolean))], [lancamentos])
-  const histOrigem    = useMemo(() => [...new Set(lancamentos.map(l => l.origem ?? null).filter(Boolean))], [lancamentos])
+  const histDescricao = useMemo(() => [...new Set(lancamentos.filter(l => l.tipo !== 'venda').map(l => l.item_descricao).filter(Boolean))], [lancamentos])
+  const histCategoria = useMemo(() => [...new Set(lancamentos.filter(l => l.tipo !== 'venda').map(l => l.categoria).filter(Boolean))], [lancamentos])
+  const histOrigem    = useMemo(() => [...new Set(lancamentos.filter(l => l.tipo !== 'venda').map(l => l.origem ?? null).filter(Boolean))], [lancamentos])
 
   // Membros sem conta própria (para mostrar no select de responsável)
   const membrosComConta = useMemo(

@@ -44,7 +44,7 @@ type Venda = {
 }
 type Faccao = { id: string; nome: string; sigla: string | null; telefone: string | null; desconto_padrao_pct: number; is_darkchat: boolean }
 type Loja   = { id: string; nome: string }
-type Membro = { id: string; nome: string; vulgo: string | null; telefone: string | null; faccao_id: string | null }
+type Membro = { id: string; nome: string; vulgo: string | null; telefone: string | null; faccao_id: string | null; deep?: string | null }
 type ItemSimples = { id: string; nome: string; tem_craft: boolean; peso: number | null; categorias_item: { nome: string } | null }
 type Receita = { item_id: string; ingrediente_id: string; quantidade: number }
 type EstoqueEntry = { item_id: string; quantidade: number }
@@ -716,6 +716,7 @@ function OrderDialog({
   const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
   const [membroCivilParaVincular, setMembroCivilParaVincular] = useState<Membro | null>(null)
   const [vinculandoCivil, setVinculandoCivil] = useState(false)
+  const [darkchatIdentificado, setDarkchatIdentificado] = useState<Membro | null>(null)
   const [sortCartFirst, setSortCartFirst] = useState(false)
 
   const cartMap = useMemo(() => Object.fromEntries(cart.filter(c => !c.servico_id).map(c => [c.item_id, c])), [cart])
@@ -824,6 +825,7 @@ function OrderDialog({
         setCombosModo({})
         setCombosQtd({})
       }
+      setDarkchatIdentificado(null)
       setEmpresaAberta(false)
       setMembroAberta(false)
       setDraftOrigem({})
@@ -865,15 +867,24 @@ function OrderDialog({
     }
     setEmpresaNome(e.nome)
     setEmpresaAberta(false)
+    setDarkchatIdentificado(null)
   }
 
   // Membro autocomplete
+  const isDarkchatFaccao = useMemo(() =>
+    form.faccao_id ? (faccoes.find(f => f.id === form.faccao_id)?.is_darkchat ?? false) : false
+  , [form.faccao_id, faccoes])
+
   const membrosSugestoes = useMemo(() => {
     if (!membroAberta) return []
     const q = norm(membroNome).trim()
     const filtered = q
-      ? membros.filter(m => norm(m.nome).includes(q) || norm(m.vulgo).includes(q))
-      : membros
+      ? membros.filter(m =>
+          norm(m.nome).includes(q) ||
+          norm(m.vulgo).includes(q) ||
+          (isDarkchatFaccao && m.deep && norm(m.deep).includes(q))
+        )
+      : (isDarkchatFaccao ? [] : membros)
     return filtered
       .sort((a, b) => {
         // membros da facção selecionada primeiro
@@ -887,9 +898,18 @@ function OrderDialog({
         return a.nome.localeCompare(b.nome)
       })
       .slice(0, 10)
-  }, [membros, membroNome, membroAberta, form.faccao_id])
+  }, [membros, membroNome, membroAberta, form.faccao_id, isDarkchatFaccao])
 
   function selecionarMembro(m: Membro) {
+    if (isDarkchatFaccao) {
+      // Modo DarkChat: mantém o nick (deep) como cliente_nome e marca o membro identificado
+      const nick = m.deep ?? m.nome
+      setMembroNome(nick)
+      setForm(prev => ({ ...prev, cliente_nome: nick }))
+      setDarkchatIdentificado(m)
+      setMembroAberta(false)
+      return
+    }
     setMembroNome(m.nome)
     setForm(prev => ({ ...prev, cliente_nome: m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
     setMembroAberta(false)
@@ -928,7 +948,7 @@ function OrderDialog({
     toast.success(`"${novo.nome}" cadastrado!`)
   }
 
-  const membroNaoEncontrado = membroAberta && membroNome.trim().length > 1 && membrosSugestoes.length === 0
+  const membroNaoEncontrado = !isDarkchatFaccao && membroAberta && membroNome.trim().length > 1 && membrosSugestoes.length === 0
 
   // Cart helpers
   function getPrecoEfetivo(c: CartItem): number {
@@ -1194,24 +1214,43 @@ function OrderDialog({
                 )}
               </div>
 
-              {/* Nome / Membro */}
+              {/* Nome / Membro / Nick DarkChat */}
               <div className="space-y-1 relative">
-                <Label className="text-xs">Nome / Vulgo</Label>
+                <Label className="text-xs">{isDarkchatFaccao ? 'Nick DarkChat' : 'Nome / Vulgo'}</Label>
                 <Input value={membroNome}
-                  onChange={e => { setMembroNome(e.target.value); setForm(prev => ({ ...prev, cliente_nome: e.target.value })); setMembroAberta(true) }}
+                  onChange={e => {
+                    const v = e.target.value
+                    setMembroNome(v)
+                    setForm(prev => ({ ...prev, cliente_nome: v }))
+                    setMembroAberta(true)
+                    if (darkchatIdentificado && norm(v) !== norm(darkchatIdentificado.deep ?? darkchatIdentificado.nome)) {
+                      setDarkchatIdentificado(null)
+                    }
+                  }}
                   onFocus={() => { if (membroBlurTimeout.current) { clearTimeout(membroBlurTimeout.current); membroBlurTimeout.current = null }; setMembroAberta(true) }}
                   onBlur={() => { membroBlurTimeout.current = setTimeout(() => setMembroAberta(false), 250) }}
-                  placeholder="Nome, vulgo ou apelido..."
+                  placeholder={isDarkchatFaccao ? 'Nick, deep...' : 'Nome, vulgo ou apelido...'}
                   className="h-8 text-sm" />
+                {isDarkchatFaccao && darkchatIdentificado && (
+                  <p className="text-[11px] text-cyan-400 flex items-center gap-1 mt-0.5">
+                    <span className="font-bold bg-cyan-500/15 px-1 py-0.5 rounded">DC</span>
+                    Identificado: {darkchatIdentificado.nome}
+                    {darkchatIdentificado.faccao_id && faccoes.find(f => f.id === darkchatIdentificado!.faccao_id)?.nome && (
+                      <span className="text-muted-foreground">· {faccoes.find(f => f.id === darkchatIdentificado!.faccao_id)!.nome}</span>
+                    )}
+                  </p>
+                )}
                 {membroAberta && (membrosSugestoes.length > 0 || membroNaoEncontrado) && (
                   <div className="absolute top-full left-0 right-0 z-30 mt-1 rounded-md border border-border bg-popover shadow-md overflow-hidden">
                     {membrosSugestoes.map(m => {
                       const fac = m.faccao_id ? faccoes.find(f => f.id === m.faccao_id) : null
+                      const viaDarkchat = isDarkchatFaccao && m.deep && norm(m.deep).includes(norm(membroNome))
                       return (
                         <button key={m.id} type="button" onMouseDown={e => { e.preventDefault(); selecionarMembro(m) }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left">
+                          className={cn('w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent text-left', viaDarkchat && 'bg-cyan-500/[0.04]')}>
                           <span className="font-medium truncate min-w-0">{m.nome}</span>
                           {m.vulgo && <span className="text-muted-foreground shrink-0">({m.vulgo})</span>}
+                          {viaDarkchat && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-400 shrink-0">DC</span>}
                           {fac
                             ? <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-primary/15 text-primary shrink-0">{fac.sigla ?? fac.nome.slice(0, 3).toUpperCase()}</span>
                             : <span className="text-[10px] text-muted-foreground/50 italic shrink-0">civil</span>

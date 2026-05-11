@@ -40,7 +40,10 @@
       "PowerShell(cd \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" -and $_ -notmatch \"\\\\.next\" } | Select-Object -First 40)",
       "PowerShell(cd \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"\\\\.next\" })",
       "PowerShell(cd \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\"; $result = npx tsc --noEmit 2>&1; $result | Where-Object { $_ -notmatch \"node_modules\" -and $_ -notmatch \"\\\\.next\" })",
-      "Bash(\\\\.ts\")"
+      "Bash(\\\\.ts\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\")",
+      "Bash(Measure-Object -Line)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\vendas\\\\vendas-client.tsx\"\\).Count)"
     ]
   }
 }

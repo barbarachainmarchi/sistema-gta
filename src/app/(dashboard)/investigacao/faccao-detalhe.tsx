@@ -70,6 +70,32 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
+  // ── DarkChat ───────────────────────────────────────────────────────────────
+  const [darkchatVendas, setDarkchatVendas] = useState<{ id: string; cliente_nome: string; status: string; created_at: string }[] | null>(null)
+  const [darkchatMembros, setDarkchatMembros] = useState<{ id: string; nome: string; deep: string; faccoes?: { nome: string } | null }[]>([])
+  const [loadingDarkchat, setLoadingDarkchat] = useState(false)
+
+  useEffect(() => {
+    if (!open || !faccao.is_darkchat) return
+    setLoadingDarkchat(true)
+    setDarkchatVendas(null)
+    Promise.all([
+      sb().from('vendas').select('id, cliente_nome, status, created_at').eq('faccao_id', faccao.id).order('created_at', { ascending: false }),
+      sb().from('membros').select('id, nome, deep, faccoes(nome)').not('deep', 'is', null),
+    ]).then(([{ data: v }, { data: m }]) => {
+      setDarkchatVendas(v ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setDarkchatMembros((m ?? []).filter((x: any) => x.deep).map((x: any) => ({
+        id: x.id,
+        nome: x.nome,
+        deep: x.deep as string,
+        faccoes: Array.isArray(x.faccoes) ? (x.faccoes[0] ?? null) : (x.faccoes ?? null),
+      })))
+      setLoadingDarkchat(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, faccao.is_darkchat, faccao.id])
+
   // ── Edição básica ──────────────────────────────────────────────────────────
   const [editando, setEditando] = useState(false)
   const [geralForm, setGeralForm] = useState({ nome: faccao.nome, sigla: faccao.sigla ?? '', descricao: faccao.descricao ?? '', territorio: faccao.territorio ?? '', deep: faccao.deep ?? '', cor_tag: faccao.cor_tag, status: faccao.status, desconto_padrao_pct: faccao.desconto_padrao_pct ?? 0, telefone: faccao.telefone ?? '', observacoes: faccao.observacoes ?? '', tem_parceria: faccao.tem_parceria ?? false, parceria_obs: faccao.parceria_obs ?? '', is_darkchat: faccao.is_darkchat ?? false })
@@ -1053,6 +1079,55 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
             )}
           </section>
           </div>{/* end grid produtos + descontos */}
+
+          {/* ── Seção DarkChat ── */}
+          {faccao.is_darkchat && (
+            <div className="border-t border-border pt-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <span className="text-cyan-400 font-bold text-xs px-1.5 py-0.5 rounded bg-cyan-500/10">DC</span>
+                  Nicks DarkChat
+                </p>
+                {loadingDarkchat && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              </div>
+              {darkchatVendas === null ? (
+                <p className="text-xs text-muted-foreground italic">Carregando...</p>
+              ) : darkchatVendas.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-5 rounded-lg border border-border border-dashed">
+                  Nenhuma venda registrada para esta facção
+                </p>
+              ) : (() => {
+                const nicks = [...new Set(darkchatVendas.map(v => v.cliente_nome).filter(Boolean))]
+                return (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="grid grid-cols-[1fr_1fr_80px] gap-2 px-3 py-1.5 bg-white/[0.02] border-b border-border text-[10px] text-muted-foreground font-medium">
+                      <span>Nick / Deep</span><span>Identificado nas investigações</span><span className="text-right">Vendas</span>
+                    </div>
+                    {nicks.map(nick => {
+                      const identificado = darkchatMembros.find(m => norm(m.deep) === norm(nick))
+                      const qtd = darkchatVendas.filter(v => v.cliente_nome === nick).length
+                      return (
+                        <div key={nick} className="grid grid-cols-[1fr_1fr_80px] gap-2 items-center px-3 py-2.5 border-b border-border/40 last:border-0">
+                          <span className="text-sm font-mono font-medium">{nick}</span>
+                          {identificado ? (
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="font-medium">{identificado.nome}</span>
+                              {identificado.faccoes?.nome && (
+                                <span className="text-[10px] text-muted-foreground">({identificado.faccoes.nome})</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/40 italic">Não identificado</span>
+                          )}
+                          <span className="text-xs text-right text-muted-foreground">{qtd}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
 
         </div>
       </DialogContent>
