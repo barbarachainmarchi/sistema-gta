@@ -10,10 +10,11 @@ import { toast } from 'sonner'
 import { cn, norm } from '@/lib/utils'
 import {
   Plus, TrendingUp, TrendingDown, ArrowLeftRight, Trash2, Pencil, Loader2,
-  ShoppingCart, PackageSearch,
+  ShoppingCart, PackageSearch, Search,
 } from 'lucide-react'
 import type { Conta, Lancamento, Cotacao, Membro, SbClient } from './financeiro-client'
 import { BrowseFornecedorDialog, type BrowseResult } from './browse-fornecedor-dialog'
+import { BrowseProdutoDialog, type BrowseProdutoResult } from './browse-produto-dialog'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ export function ExtratoAba({
 }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [browseOpen, setBrowseOpen] = useState(false)
+  const [browseProdutoOpen, setBrowseProdutoOpen] = useState(false)
   const [form, setForm]           = useState({ ...EMPTY_FORM })
   const [salvando, setSalvando]   = useState(false)
   const [deleteId, setDeleteId]   = useState<string | null>(null)
@@ -172,6 +174,16 @@ export function ExtratoAba({
       item_descricao: result.descricao,
       total: result.total != null ? String(result.total) : form.total,
       preco: '', quantidade: '',
+    })
+  }
+
+  function onBrowseProdutoConfirm(result: BrowseProdutoResult) {
+    setF({
+      origem: result.origem,
+      item_descricao: result.descricao,
+      preco: result.preco != null ? String(result.preco) : '',
+      quantidade: '',
+      total: result.preco != null ? String(result.preco) : '',
     })
   }
 
@@ -527,11 +539,18 @@ export function ExtratoAba({
             <div className="flex items-center justify-between">
               <Label className="text-xs">Item / Descrição</Label>
               {form.tipo_mov === 'saida' && (
-                <button
-                  onClick={() => setBrowseOpen(true)}
-                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                  <PackageSearch className="h-3 w-3" /> Buscar no catálogo
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setBrowseProdutoOpen(true)}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    <Search className="h-3 w-3" /> Buscar por produto
+                  </button>
+                  <button
+                    onClick={() => setBrowseOpen(true)}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    <PackageSearch className="h-3 w-3" /> Por fornecedor
+                  </button>
+                </div>
               )}
             </div>
             <Input list="hist-descricao" className="h-9 text-xs" placeholder="Ex: Fuzil, Entrega, Aluguel..."
@@ -679,6 +698,15 @@ export function ExtratoAba({
         open={browseOpen}
         onClose={() => setBrowseOpen(false)}
         onConfirm={onBrowseConfirm}
+        tipoDinheiro={form.tipo_dinheiro}
+        sb={sb}
+      />
+
+      {/* ── Browse por produto ── */}
+      <BrowseProdutoDialog
+        open={browseProdutoOpen}
+        onClose={() => setBrowseProdutoOpen(false)}
+        onConfirm={onBrowseProdutoConfirm}
         tipoDinheiro={form.tipo_dinheiro}
         sb={sb}
       />
