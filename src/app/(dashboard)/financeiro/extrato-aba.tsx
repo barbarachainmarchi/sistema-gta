@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -148,6 +148,8 @@ export function ExtratoAba({
 
   // ── Auto-cálculo ──────────────────────────────────────────────────────────
 
+  const preEditRef = useRef<Record<string, string>>({})
+
   function setF(patch: Partial<typeof EMPTY_FORM>) { setForm(prev => ({ ...prev, ...patch })) }
 
   function onPrecoChange(val: string) {
@@ -165,6 +167,15 @@ export function ExtratoAba({
     if (q && t) { setF({ total: val, preco: String(t / q) }); return }
     if (p && t) { setF({ total: val, quantidade: String(t / p) }); return }
     setF({ total: val })
+  }
+
+  function applyArith(key: string, rawVal: string, apply: (v: string) => void) {
+    const m = rawVal.match(/^([+-])(\d+(?:[.,]\d+)?)$/)
+    if (!m) return
+    const base = parseFloat(preEditRef.current[key] ?? '0') || 0
+    const delta = parseFloat(m[2]!.replace(',', '.'))
+    const result = m[1] === '+' ? base + delta : Math.max(0, base - delta)
+    apply(String(result))
   }
 
   // ── Browse result ─────────────────────────────────────────────────────────
@@ -603,18 +614,27 @@ export function ExtratoAba({
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Preço unit.</Label>
-              <Input type="number" min="0" className="h-9 text-xs" placeholder="0"
-                value={form.preco} onChange={e => onPrecoChange(e.target.value)} />
+              <Input type="text" inputMode="decimal" className="h-9 text-xs" placeholder="0"
+                value={form.preco}
+                onFocus={() => { preEditRef.current['preco'] = form.preco }}
+                onChange={e => onPrecoChange(e.target.value)}
+                onBlur={e => applyArith('preco', e.target.value, v => onPrecoChange(v))} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Quantidade</Label>
-              <Input type="number" min="0" className="h-9 text-xs" placeholder="0"
-                value={form.quantidade} onChange={e => onQtdChange(e.target.value)} />
+              <Input type="text" inputMode="decimal" className="h-9 text-xs" placeholder="0"
+                value={form.quantidade}
+                onFocus={() => { preEditRef.current['qtd'] = form.quantidade }}
+                onChange={e => onQtdChange(e.target.value)}
+                onBlur={e => applyArith('qtd', e.target.value, v => onQtdChange(v))} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Total</Label>
-              <Input type="number" min="0" className="h-9 text-xs" placeholder="0"
-                value={form.total} onChange={e => onTotalChange(e.target.value)} />
+              <Input type="text" inputMode="decimal" className="h-9 text-xs" placeholder="0"
+                value={form.total}
+                onFocus={() => { preEditRef.current['total'] = form.total }}
+                onChange={e => onTotalChange(e.target.value)}
+                onBlur={e => applyArith('total', e.target.value, v => onTotalChange(v))} />
             </div>
           </div>
 

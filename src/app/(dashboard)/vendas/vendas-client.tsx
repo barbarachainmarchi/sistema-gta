@@ -2049,8 +2049,31 @@ export function VendasClient({
   }
 
   async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null) {
-    const subtotal = venda.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
-    const totalVenda = subtotal * (1 - venda.desconto_pct / 100)
+    // Calcular total usando preços reais de combos (mesma lógica do VendaCard)
+    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+    let subtotal = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const combosNomes: string[] = []
+    for (const sid of sids) {
+      const sv = servicos.find(x => x.id === sid)
+      if (sv) combosNomes.push(sv.nome)
+      const ic = venda.itens.filter(it => it.servico_id === sid)
+      const orig = servicoItens.filter(si => si.servico_id === sid)
+      let mult: number | null = null
+      if (orig.length > 0 && orig.length === ic.length) {
+        let m: number | null = null; let ok = true
+        for (const o of orig) {
+          const it = ic.find(x => x.item_id === o.item_id)
+          if (!it || o.quantidade === 0) { ok = false; break }
+          const r = it.quantidade / o.quantidade
+          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
+          if (m === null) m = r; else if (m !== r) { ok = false; break }
+        }
+        if (ok && m != null) mult = m
+      }
+      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+      subtotal += (pu != null && mult != null) ? pu * mult : ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    }
+    const totalVenda = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     if (totalVenda <= 0) return
 
     // Idempotência: não criar duplicata se já existe lançamento para esta venda
@@ -2080,15 +2103,22 @@ export function VendasClient({
       }
     }
 
-    const itensDesc = venda.itens.map(it => `${it.item_nome} (${it.quantidade})`).join(' · ')
+    // Descrição: nomes dos combos primeiro, depois itens avulsos
+    const standalone = venda.itens.filter(it => !it.servico_id)
+    const itensDesc = [
+      ...combosNomes,
+      ...standalone.map(it => `${it.item_nome} (${it.quantidade})`),
+    ].join(' · ') || null
+
     const { error } = await sb().from('financeiro_lancamentos').insert({
       conta_id: contaId,
       venda_id: venda.id,
       tipo: 'venda',
       tipo_dinheiro: venda.tipo_dinheiro,
       valor: totalVenda,
+      total: totalVenda,
       descricao: `Venda: ${venda.cliente_nome}`,
-      item_descricao: itensDesc || null,
+      item_descricao: itensDesc,
       categoria: 'venda',
       data: new Date().toISOString().split('T')[0],
       vai_para_faccao: !!venda.faccao_id,

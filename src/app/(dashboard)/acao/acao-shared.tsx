@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -335,6 +335,16 @@ export function AcaoFormFields({
   userFaccaoId,
 }: AcaoFormFieldsProps) {
   const tipoAtual = tipos.find(t => t.id === form.tipo_id)
+  const valorBaseRef = useRef('')
+
+  function applyArithValor(rawVal: string) {
+    const m = rawVal.match(/^([+-])(\d+(?:[.,]\d+)?)$/)
+    if (!m) return
+    const base = parseFloat(valorBaseRef.current.replace(',', '.')) || 0
+    const delta = parseFloat(m[2]!.replace(',', '.'))
+    const result = m[1] === '+' ? base + delta : Math.max(0, base - delta)
+    setForm(f => ({ ...f, valor_financeiro: String(result) }))
+  }
 
   function handleTipoChange(tipoId: string) {
     setForm(f => ({ ...f, tipo_id: tipoId, competicao_id: '', equipe_id: '', item_id: '' }))
@@ -458,8 +468,10 @@ export function AcaoFormFields({
           <>
             <div>
               <Label>Valor doado para o caixa (R$) *</Label>
-              <Input type="number" min="1" step="1" value={form.valor_financeiro}
+              <Input type="text" inputMode="decimal" value={form.valor_financeiro}
+                onFocus={() => { valorBaseRef.current = form.valor_financeiro }}
                 onChange={e => setForm(f => ({ ...f, valor_financeiro: e.target.value }))}
+                onBlur={e => applyArithValor(e.target.value)}
                 placeholder="Ex: 5000" className="mt-1 w-40" />
             </div>
             <div>

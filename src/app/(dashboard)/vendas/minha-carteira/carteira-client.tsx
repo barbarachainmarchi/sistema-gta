@@ -14,13 +14,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type VendaItem = { id: string; item_nome: string; quantidade: number; preco_unit: number }
+type VendaItem = { id: string; item_nome: string; quantidade: number; preco_unit: number; servico_id: string | null; servico_nome: string | null }
 type Venda = {
   id: string; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'
   desconto_pct: number; status: string; created_at: string; entregue_em: string | null
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null
   cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
+  faccao_nome: string | null
   itens: VendaItem[]
 }
 type Lancamento = {
@@ -164,6 +165,8 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   }, [vendasVisiveis, filtroAba, isComigo])
 
   const totalVenda = (v: Venda) => {
+    const lanc = lancMap[v.id]
+    if (lanc?.valor) return lanc.valor
     const sub = v.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
     return sub * (1 - v.desconto_pct / 100)
   }
@@ -664,7 +667,10 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                           </div>
                         </td>
                         <td className="px-3 py-2.5 font-medium max-w-[160px]">
-                          <span className="truncate block">{venda.cliente_nome}</span>
+                          <span className="truncate block">{venda.cliente_nome || 'Desconhecido'}</span>
+                          <span className="text-[10px] text-muted-foreground truncate block">
+                            {venda.faccao_nome ?? 'Desconhecido'}
+                          </span>
                           {venda.cancelamento_solicitado && (
                             <span className="text-[10px] text-orange-400" title={venda.cancelamento_motivo ?? ''}>⚠ Canc. solicitado</span>
                           )}
@@ -785,17 +791,42 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
                       </tr>
                       {expanded && venda.itens.length > 0 && (
                         <tr className="bg-muted/10">
-                          <td colSpan={colSpan} className="px-6 py-2.5">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-1">
-                              {venda.itens.map(it => (
-                                <div key={it.id} className="flex items-baseline justify-between gap-2 text-[11px]">
-                                  <span className="text-muted-foreground truncate">{it.item_nome}</span>
-                                  <span className="text-foreground tabular-nums shrink-0">
-                                    {it.quantidade}× {fmt(it.preco_unit)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                          <td colSpan={colSpan} className="px-6 py-2.5 space-y-2">
+                            {(() => {
+                              const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+                              const standalone = venda.itens.filter(it => !it.servico_id)
+                              return (
+                                <>
+                                  {sids.map(sid => {
+                                    const groupItems = venda.itens.filter(it => it.servico_id === sid)
+                                    const nome = groupItems[0]?.servico_nome ?? 'Kit'
+                                    return (
+                                      <div key={sid}>
+                                        <p className="text-[10px] font-semibold text-primary mb-1">{nome}</p>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-1 pl-2">
+                                          {groupItems.map(it => (
+                                            <div key={it.id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                                              <span className="text-muted-foreground truncate">{it.item_nome}</span>
+                                              <span className="text-foreground tabular-nums shrink-0">{it.quantidade}× {fmt(it.preco_unit)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                  {standalone.length > 0 && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-1">
+                                      {standalone.map(it => (
+                                        <div key={it.id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                                          <span className="text-muted-foreground truncate">{it.item_nome}</span>
+                                          <span className="text-foreground tabular-nums shrink-0">{it.quantidade}× {fmt(it.preco_unit)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )
+                            })()}
                           </td>
                         </tr>
                       )}

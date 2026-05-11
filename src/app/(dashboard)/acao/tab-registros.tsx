@@ -180,7 +180,9 @@ export function TabRegistros({
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-medium">✗ Perdida</span>
                       )}
                       {acao.para_caixa_faccao && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">Caixa facção</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                          Caixa facção{lancamentosAcao[acao.id] ? ` · R$ ${lancamentosAcao[acao.id].valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}` : ''}
+                        </span>
                       )}
                       {tipo?.conta_pontuacao && (
                         <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-medium',
