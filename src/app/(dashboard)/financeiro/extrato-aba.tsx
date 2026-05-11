@@ -75,12 +75,21 @@ interface Props {
   membros: Membro[]
   sb: SbClient
   podeEditar: boolean
+  exclusaoSuprema: boolean
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
+const EMPTY_VENDA_FORM = {
+  id:             null as string | null,
+  data:           today(),
+  tipo_dinheiro:  'limpo' as 'sujo' | 'limpo',
+  valor:          '',
+  item_descricao: '',
+}
+
 export function ExtratoAba({
-  contas, setContas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, membros, sb, podeEditar,
+  contas, setContas, lancamentos, setLancamentos, atualizarSaldo, userId, cotacoesFinaliz, membros, sb, podeEditar, exclusaoSuprema,
 }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const [browseOpen, setBrowseOpen] = useState(false)
@@ -88,6 +97,11 @@ export function ExtratoAba({
   const [form, setForm]           = useState({ ...EMPTY_FORM })
   const [salvando, setSalvando]   = useState(false)
   const [deleteId, setDeleteId]   = useState<string | null>(null)
+
+  const [vendaEditOpen, setVendaEditOpen]       = useState(false)
+  const [vendaEditForm, setVendaEditForm]       = useState({ ...EMPTY_VENDA_FORM })
+  const [vendaEditSalvando, setVendaEditSalvando] = useState(false)
+  const vendaEditPreRef = useRef('')
 
   // Filtros
   const [filtroTipo,      setFiltroTipo]      = useState<FiltroTipo>('todos')
@@ -243,6 +257,46 @@ export function ExtratoAba({
       descricao:       l.descricao ?? '',
     })
     setModalOpen(true)
+  }
+
+  function abrirEditarVenda(l: Lancamento) {
+    setVendaEditForm({
+      id:             l.id,
+      data:           l.data ?? today(),
+      tipo_dinheiro:  l.tipo_dinheiro ?? 'limpo',
+      valor:          String(l.total ?? l.valor),
+      item_descricao: l.item_descricao ?? '',
+    })
+    setVendaEditOpen(true)
+  }
+
+  async function handleSalvarVenda() {
+    const valorNum = parseFloat(vendaEditForm.valor) || 0
+    if (!valorNum || valorNum <= 0) { toast.error('Informe o valor'); return }
+    setVendaEditSalvando(true)
+    const old = lancamentos.find(l => l.id === vendaEditForm.id)
+    if (!old) { setVendaEditSalvando(false); return }
+    const { deltaSujo: ds, deltaLimpo: dl } = impactSaldo(old)
+    await atualizarSaldo(old.conta_id, -ds, -dl)
+    const { data, error } = await sb().from('financeiro_lancamentos')
+      .update({
+        data:           vendaEditForm.data || null,
+        tipo_dinheiro:  vendaEditForm.tipo_dinheiro,
+        valor:          valorNum,
+        total:          valorNum,
+        item_descricao: vendaEditForm.item_descricao.trim() || null,
+      })
+      .eq('id', vendaEditForm.id!)
+      .select('*, cotacoes(titulo, fornecedor_nome), vendas(cliente_nome, faccoes(nome))')
+      .single()
+    if (error) { setVendaEditSalvando(false); toast.error(error.message); return }
+    const novo = data as Lancamento
+    const { deltaSujo, deltaLimpo } = impactSaldo(novo)
+    await atualizarSaldo(novo.conta_id, deltaSujo, deltaLimpo)
+    setLancamentos(prev => prev.map(l => l.id === vendaEditForm.id ? novo : l))
+    toast.success('Venda atualizada!')
+    setVendaEditSalvando(false)
+    setVendaEditOpen(false)
   }
 
   // ── Salvar ────────────────────────────────────────────────────────────────
@@ -465,8 +519,8 @@ export function ExtratoAba({
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {!isVenda && (
-                            <button onClick={() => abrirEditar(l)}
+                          {(!isVenda || exclusaoSuprema) && (
+                            <button onClick={() => isVenda ? abrirEditarVenda(l) : abrirEditar(l)}
                               className="p-1 rounded hover:bg-white/[0.07] text-muted-foreground hover:text-foreground transition-colors">
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -730,6 +784,69 @@ export function ExtratoAba({
         tipoDinheiro={form.tipo_dinheiro}
         sb={sb}
       />
+
+      {/* ── Modal editar venda (supremo) ── */}
+      <Dialog open={vendaEditOpen} onOpenChange={o => { if (!vendaEditSalvando) setVendaEditOpen(o) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar venda</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Data</Label>
+              <Input type="date" className="h-9 text-xs" value={vendaEditForm.data}
+                onChange={e => setVendaEditForm(prev => ({ ...prev, data: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Tipo de dinheiro</Label>
+              <div className="flex rounded-lg overflow-hidden border border-border h-9">
+                {(['limpo', 'sujo'] as const).map(t => (
+                  <button key={t} onClick={() => setVendaEditForm(prev => ({ ...prev, tipo_dinheiro: t }))}
+                    className={cn('flex-1 text-xs font-medium transition-colors',
+                      vendaEditForm.tipo_dinheiro === t
+                        ? t === 'limpo' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-orange-500/20 text-orange-400'
+                        : 'text-muted-foreground hover:text-foreground',
+                      t === 'sujo' && 'border-l border-border'
+                    )}>
+                    {t === 'limpo' ? 'Limpo' : 'Sujo'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Valor total</Label>
+            <Input type="text" inputMode="decimal" className="h-9 text-xs" placeholder="0"
+              value={vendaEditForm.valor}
+              onFocus={() => { vendaEditPreRef.current = vendaEditForm.valor }}
+              onChange={e => setVendaEditForm(prev => ({ ...prev, valor: e.target.value }))}
+              onBlur={e => {
+                const m = e.target.value.match(/^([+-])(\d+(?:[.,]\d+)?)$/)
+                if (!m) return
+                const base = parseFloat(vendaEditPreRef.current) || 0
+                const delta = parseFloat(m[2]!.replace(',', '.'))
+                const result = m[1] === '+' ? base + delta : Math.max(0, base - delta)
+                setVendaEditForm(prev => ({ ...prev, valor: String(result) }))
+              }} />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Descrição dos itens</Label>
+            <Input className="h-9 text-xs" placeholder="Ex: Kit Corrida x2"
+              value={vendaEditForm.item_descricao}
+              onChange={e => setVendaEditForm(prev => ({ ...prev, item_descricao: e.target.value }))} />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setVendaEditOpen(false)} disabled={vendaEditSalvando}>Cancelar</Button>
+            <Button size="sm" onClick={handleSalvarVenda} disabled={vendaEditSalvando}>
+              {vendaEditSalvando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Confirmar delete ── */}
       <Dialog open={!!deleteId} onOpenChange={o => { if (!o) setDeleteId(null) }}>

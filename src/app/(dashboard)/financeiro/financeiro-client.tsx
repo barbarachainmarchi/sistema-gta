@@ -71,7 +71,7 @@ interface Props {
   userId: string; userNome: string | null
   contasIniciais: Conta[]; lancamentosIniciais: Lancamento[]
   lavagensIniciais: Lavagem[]; membros: Membro[]; cotacoesFinaliz: Cotacao[]
-  podeEditar: boolean; podeExcluir: boolean
+  podeEditar: boolean; podeExcluir: boolean; exclusaoSuprema: boolean
   tabPadrao?: string
   repassesIniciais: Repasse[]
 }
@@ -79,7 +79,7 @@ interface Props {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function FinanceiroClient({
-  userId, userNome, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, podeExcluir, tabPadrao, repassesIniciais,
+  userId, userNome, contasIniciais, lancamentosIniciais, lavagensIniciais, membros, cotacoesFinaliz, podeEditar, podeExcluir, exclusaoSuprema, tabPadrao, repassesIniciais,
 }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb: SbClient = useCallback(() => {
@@ -132,7 +132,7 @@ export function FinanceiroClient({
           lancamentos={lancamentos} setLancamentos={setLancamentos}
           atualizarSaldo={atualizarSaldo} userId={userId}
           cotacoesFinaliz={cotacoesFinaliz} membros={membros} sb={sb}
-          podeEditar={podeEditar}
+          podeEditar={podeEditar} exclusaoSuprema={exclusaoSuprema}
         />
       </div>
       <div className={cn('flex-1 overflow-hidden', aba !== 'banco' && 'hidden')}>

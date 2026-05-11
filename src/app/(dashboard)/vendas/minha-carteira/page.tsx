@@ -16,14 +16,18 @@ export default async function MinhaCarteiraPage() {
     { data: lancsData },
     { data: contasData },
     { data: donoConfig },
+    { data: servicosData },
+    { data: servicoItensData },
   ] = await Promise.all([
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, membro_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
     supabase.from('vendas').select('id, cliente_nome, tipo_dinheiro, desconto_pct, status, created_at, entregue_em, criado_por, criado_por_nome, entregue_por, entregue_por_nome, cancelamento_solicitado, cancelamento_motivo, faccao_id, faccoes(nome)').eq('status', 'entregue').order('created_at', { ascending: false }),
-    supabase.from('venda_itens').select('id, venda_id, item_nome, quantidade, preco_unit, servico_id, servicos(nome)'),
+    supabase.from('venda_itens').select('id, venda_id, item_id, item_nome, quantidade, preco_unit, servico_id, servicos(nome)'),
     supabase.from('financeiro_lancamentos').select('id, venda_id, conta_id, valor, tipo_dinheiro, created_by, responsavel_nome').eq('tipo', 'venda'),
     supabase.from('financeiro_contas').select('id, nome, tipo, membro_id, saldo_sujo, saldo_limpo, status').eq('status', 'ativo').order('nome'),
     supabase.from('config_sistema').select('valor').eq('chave', 'dono_secundario_id').maybeSingle(),
+    supabase.from('servicos').select('id, nome, preco_sujo, preco_limpo'),
+    supabase.from('servico_itens').select('servico_id, item_id, quantidade'),
   ])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,6 +127,10 @@ export default async function MinhaCarteiraPage() {
         meuContaId={meuContaId}
         membrosSemContaIniciais={membrosSemConta}
         transferPendentesIniciais={transferPendentes}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        servicos={(servicosData ?? []) as any}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        servicoItens={(servicoItensData ?? []) as any}
       />
     </>
   )

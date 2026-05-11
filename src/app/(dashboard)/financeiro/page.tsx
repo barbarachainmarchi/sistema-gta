@@ -11,7 +11,7 @@ export default async function FinanceiroPage() {
   // 1) dados do usuário primeiro — precisamos da facção para filtrar membros
   const { data: userInfo } = await supabase
     .from('usuarios')
-    .select('nome, local_trabalho_faccao_id, perfis_acesso(perfil_permissoes(modulo, pode_editar, pode_excluir))')
+    .select('nome, local_trabalho_faccao_id, exclusao_suprema, perfis_acesso(perfil_permissoes(modulo, pode_editar, pode_excluir))')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -23,6 +23,8 @@ export default async function FinanceiroPage() {
   const podeEditar = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_editar ?? false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const podeExcluir = perms == null ? true : (perms.find((p: any) => p.modulo === 'financeiro')?.pode_excluir ?? false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exclusaoSuprema = (userInfo as any)?.exclusao_suprema === true
 
   // 2) restante em paralelo, membros filtrados pela facção
   let membrosQuery = supabase.from('membros').select('id, nome, vulgo').eq('status', 'ativo').order('nome')
@@ -65,6 +67,7 @@ export default async function FinanceiroPage() {
         cotacoesFinaliz={cotacoesFinaliz ?? []}
         podeEditar={podeEditar}
         podeExcluir={podeExcluir}
+        exclusaoSuprema={exclusaoSuprema}
         tabPadrao={tabPadrao}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         repassesIniciais={(repassesData ?? []) as any[]}
