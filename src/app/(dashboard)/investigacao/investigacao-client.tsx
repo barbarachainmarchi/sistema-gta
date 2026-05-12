@@ -366,6 +366,11 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   function toggleExpandido(id: string) {
     setExpandidosProdutos(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   }
+  const [buscaFornecedor, setBuscaFornecedor] = useState('')
+  const [expandidosFornecedor, setExpandidosFornecedor] = useState<Set<string>>(new Set())
+  function toggleFornecedor(id: string) {
+    setExpandidosFornecedor(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  }
 
   const resultadosMembros = useMemo(() => {
     const q = norm(termoBusca.trim())
@@ -423,6 +428,56 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
     })
   }, [todosProdutos, termoBusca, lojaItemPrecos, faccaoPrecos, lojas, faccoes, faixasPrecos])
 
+  const fornecedoresData = useMemo(() => {
+    return faccoes
+      .filter(f => faccaoPrecos.some(fp => fp.faccao_id === f.id))
+      .map(f => {
+        const descPct = f.desconto_padrao_pct ?? 0
+        const precos = faccaoPrecos
+          .filter(fp => fp.faccao_id === f.id)
+          .map(fp => {
+            const produto = todosProdutos.find(p => p.id === fp.item_id)
+            const hasFaixas = faixasPrecos.some(fx => fx.faccao_id === f.id && fx.item_id === fp.item_id)
+            const limpoEfetivo = fp.preco_limpo != null && descPct > 0
+              ? Math.round(fp.preco_limpo * (1 - descPct / 100)) : fp.preco_limpo
+            const sujoEfetivo = fp.preco_sujo != null && descPct > 0
+              ? Math.round(fp.preco_sujo * (1 - descPct / 100)) : fp.preco_sujo
+            return {
+              item_id: fp.item_id,
+              item_nome: produto?.nome ?? fp.item_id,
+              preco_limpo_original: fp.preco_limpo,
+              preco_sujo_original: fp.preco_sujo,
+              preco_limpo_efetivo: limpoEfetivo,
+              preco_sujo_efetivo: sujoEfetivo,
+              tem_parceria: fp.parceria_tipo != null && (fp.preco_limpo_parceria != null || fp.preco_sujo_parceria != null),
+              hasFaixas,
+              tipo: fp.tipo,
+              percentual: fp.percentual,
+            }
+          })
+          .sort((a, b) => a.item_nome.localeCompare(b.item_nome))
+        return { faccao: f, precos, descPct }
+      })
+      .sort((a, b) => {
+        if (a.faccao.tem_parceria && !b.faccao.tem_parceria) return -1
+        if (!a.faccao.tem_parceria && b.faccao.tem_parceria) return 1
+        return a.faccao.nome.localeCompare(b.faccao.nome)
+      })
+  }, [faccoes, faccaoPrecos, todosProdutos, faixasPrecos])
+
+  const fornecedoresFiltrados = useMemo(() => {
+    if (!buscaFornecedor.trim()) return fornecedoresData
+    const q = norm(buscaFornecedor)
+    return fornecedoresData
+      .map(f => {
+        const matchFaccao = norm(f.faccao.nome).includes(q) || norm(f.faccao.sigla ?? '').includes(q)
+        if (matchFaccao) return f
+        const filteredPrecos = f.precos.filter(p => norm(p.item_nome).includes(q))
+        return filteredPrecos.length > 0 ? { ...f, precos: filteredPrecos } : null
+      })
+      .filter(Boolean) as typeof fornecedoresData
+  }, [fornecedoresData, buscaFornecedor])
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -435,6 +490,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <TabsTrigger value="membros">Membros <span className="ml-1.5 text-[10px] text-muted-foreground">({membros.length})</span></TabsTrigger>
             <TabsTrigger value="veiculos">Veículos <span className="ml-1.5 text-[10px] text-muted-foreground">({veiculos.length})</span></TabsTrigger>
             <TabsTrigger value="lojas">Lojas <span className="ml-1.5 text-[10px] text-muted-foreground">({lojas.length})</span></TabsTrigger>
+            <TabsTrigger value="fornecedores">Fornecedores <span className="ml-1.5 text-[10px] text-muted-foreground">({fornecedoresData.length})</span></TabsTrigger>
             <TabsTrigger value="pesquisa">Pesquisa Geral</TabsTrigger>
           </TabsList>
 
@@ -716,6 +772,96 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
               </div>
             )}
           </TabsContent>
+          {/* ── Fornecedores ──────────────────────────────────────────── */}
+          <TabsContent value="fornecedores" className="space-y-3">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Buscar facção ou produto..." value={buscaFornecedor}
+                onChange={e => setBuscaFornecedor(e.target.value)} className="pl-8 h-8 text-sm" />
+            </div>
+            {fornecedoresFiltrados.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground text-sm">Nenhum fornecedor com preços cadastrados</div>
+            ) : (
+              <div className="space-y-2">
+                {fornecedoresFiltrados.map(({ faccao: f, precos, descPct }) => {
+                  const expandido = expandidosFornecedor.has(f.id) || !!buscaFornecedor.trim()
+                  return (
+                    <div key={f.id} className="rounded-lg border border-border overflow-hidden">
+                      <button
+                        className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.02] transition-colors text-left"
+                        onClick={() => toggleFornecedor(f.id)}
+                      >
+                        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform', expandido && 'rotate-180')} />
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: f.cor_tag }} />
+                        <span className="text-sm font-semibold">{f.nome}</span>
+                        {f.sigla && <span className="text-[10px] font-mono text-muted-foreground bg-white/[0.06] px-1 py-0.5 rounded">{f.sigla}</span>}
+                        {f.tem_parceria && <span title="Parceria ativa"><Handshake className="h-3.5 w-3.5 text-sky-400 shrink-0" /></span>}
+                        {descPct > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">-{descPct}% geral</span>
+                        )}
+                        <span className="ml-auto text-[11px] text-muted-foreground">{precos.length} produto{precos.length !== 1 ? 's' : ''}</span>
+                      </button>
+                      {expandido && (
+                        <div className="border-t border-border">
+                          <div className="grid grid-cols-[1fr_130px_130px_48px] gap-2 px-4 py-1.5 bg-white/[0.02] text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                            <span>Produto</span>
+                            <span className="text-right">Limpo</span>
+                            <span className="text-right">Sujo</span>
+                            <span />
+                          </div>
+                          {precos.map((p, i) => (
+                            <div key={p.item_id} className={cn('grid grid-cols-[1fr_130px_130px_48px] gap-2 items-center px-4 py-2', i > 0 && 'border-t border-border/30')}>
+                              <span className="text-xs">{p.item_nome}</span>
+                              <span className="text-right tabular-nums text-xs">
+                                {p.tipo === 'percentual' ? (
+                                  <span className="text-muted-foreground">{p.percentual != null ? `${p.percentual > 0 ? '-' : '+'}${Math.abs(p.percentual)}%` : '—'}</span>
+                                ) : p.preco_limpo_original != null ? (
+                                  descPct > 0 ? (
+                                    <span>
+                                      <span className="text-cyan-400 font-mono">R$ {p.preco_limpo_efetivo!.toLocaleString('pt-BR')}</span>
+                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_limpo_original.toLocaleString('pt-BR')}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-emerald-400 font-mono">R$ {p.preco_limpo_original.toLocaleString('pt-BR')}</span>
+                                  )
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </span>
+                              <span className="text-right tabular-nums text-xs">
+                                {p.preco_sujo_original != null ? (
+                                  descPct > 0 ? (
+                                    <span>
+                                      <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_efetivo!.toLocaleString('pt-BR')}</span>
+                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_sujo_original.toLocaleString('pt-BR')}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_original.toLocaleString('pt-BR')}</span>
+                                  )
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </span>
+                              <div className="flex items-center justify-center gap-1">
+                                {p.hasFaixas && <span title="Faixas de quantidade" className="text-[11px] text-amber-400/70">📦</span>}
+                                {p.tem_parceria && <span title="Tem preço parceria"><Handshake className="h-3 w-3 text-sky-400/70" /></span>}
+                              </div>
+                            </div>
+                          ))}
+                          <div className="px-4 py-2 border-t border-border/30 flex justify-end">
+                            <button onClick={() => abrirDetalhe(f)} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+                              Ver detalhes completos →
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+
           {/* ── Pesquisa Geral ──────────────────────────────────────────── */}
           <TabsContent value="pesquisa" className="space-y-4">
             <div className="relative max-w-lg">
@@ -819,7 +965,8 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                             )}
                             {(emLojas.length > 0 || emFaccoes.length > 0) && (
                               <button type="button" onClick={() => toggleExpandido(produto.id)} className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-                                {temFaixas && !expandido && <span className="text-amber-400/80">📦 faixas</span>}
+                                {!expandido && emFaccoes.some(f => f.desconto_padrao_pct > 0) && <span className="text-cyan-400/80">desc.</span>}
+                                {!expandido && temFaixas && <span className="text-amber-400/80">📦</span>}
                                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expandido && 'rotate-180')} />
                               </button>
                             )}
@@ -850,27 +997,32 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                                     {f.preco != null && (
                                       <>
                                         <span className="text-muted-foreground">·</span>
-                                        <span className="text-emerald-400 font-mono">R$ {f.preco.toLocaleString('pt-BR')}</span>
-                                        {precoComDesconto != null && (
-                                          <span className="text-emerald-300 font-mono">→ R$ {precoComDesconto.toLocaleString('pt-BR')} <span className="text-[10px] text-muted-foreground">-{f.desconto_padrao_pct}%</span></span>
+                                        {precoComDesconto != null ? (
+                                          <span className="text-cyan-400 font-mono">R$ {precoComDesconto.toLocaleString('pt-BR')}<span className="text-[9px] text-cyan-500/70 ml-0.5">-{f.desconto_padrao_pct}%</span></span>
+                                        ) : (
+                                          <span className="text-emerald-400 font-mono">R$ {f.preco.toLocaleString('pt-BR')}</span>
                                         )}
                                       </>
                                     )}
                                     {f.preco_sujo != null && (
-                                      <>
-                                        <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>
-                                        {precoSujoComDesconto != null && (
-                                          <span className="text-orange-300/80 font-mono text-[11px]">→ R$ {precoSujoComDesconto.toLocaleString('pt-BR')}</span>
-                                        )}
-                                      </>
+                                      <span className="text-orange-400/80 font-mono text-[11px]">/ R$ {(precoSujoComDesconto ?? f.preco_sujo).toLocaleString('pt-BR')} S{precoSujoComDesconto != null && <span className="text-[9px] text-orange-500/60 ml-0.5">-{f.desconto_padrao_pct}%</span>}</span>
                                     )}
                                   </button>
                                 )
                               })}
                             </div>
                           )}
-                          {expandido && emFaccoes.some(f => f.faixas.length > 0) && (
-                            <div className="mt-1 space-y-2 pl-1 border-l-2 border-amber-500/20">
+                          {expandido && emFaccoes.some(f => f.faixas.length > 0 || f.desconto_padrao_pct > 0) && (
+                            <div className="mt-1 space-y-2 pl-1 border-l-2 border-white/10">
+                              {emFaccoes.filter(f => f.desconto_padrao_pct > 0).map(f => (
+                                <div key={f.id + '-orig'} className="space-y-0.5">
+                                  <p className="text-[11px]" style={{ color: f.cor_tag + 'aa' }}>{f.nome} — original (sem -{f.desconto_padrao_pct}%)</p>
+                                  <div className="flex gap-3 text-[11px] font-mono text-muted-foreground/60">
+                                    {f.preco != null && <span>L: R$ {f.preco.toLocaleString('pt-BR')}</span>}
+                                    {f.preco_sujo != null && <span>S: R$ {f.preco_sujo.toLocaleString('pt-BR')}</span>}
+                                  </div>
+                                </div>
+                              ))}
                               {emFaccoes.filter(f => f.faixas.length > 0).map(f => (
                                 <div key={f.id} className="space-y-1">
                                   <p className="text-[11px] font-medium" style={{ color: f.cor_tag }}>{f.nome} — faixas de quantidade</p>
@@ -878,13 +1030,13 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                                     {f.preco != null && (
                                       <span className="text-[11px] bg-white/[0.04] border border-white/10 rounded px-2 py-1 font-mono text-muted-foreground">
                                         1 – {f.faixas[0].quantidade_min - 1} un.: R$ {f.preco.toLocaleString('pt-BR')}
-                                        {f.preco_sujo != null && <span className="text-orange-400/70"> / R$ {f.preco_sujo.toLocaleString('pt-BR')} sujo</span>}
+                                        {f.preco_sujo != null && <span className="text-orange-400/70"> / R$ {f.preco_sujo.toLocaleString('pt-BR')} S</span>}
                                       </span>
                                     )}
                                     {f.faixas.map((fx, i) => (
                                       <span key={i} className="text-[11px] bg-amber-500/[0.07] border border-amber-500/20 rounded px-2 py-1 font-mono text-amber-300/90">
                                         ≥{fx.quantidade_min} un.: {fx.preco_limpo != null ? `R$ ${fx.preco_limpo.toLocaleString('pt-BR')}` : '—'}
-                                        {fx.preco_sujo != null && <span className="text-orange-400/70"> / R$ {fx.preco_sujo.toLocaleString('pt-BR')} sujo</span>}
+                                        {fx.preco_sujo != null && <span className="text-orange-400/70"> / R$ {fx.preco_sujo.toLocaleString('pt-BR')} S</span>}
                                       </span>
                                     ))}
                                   </div>

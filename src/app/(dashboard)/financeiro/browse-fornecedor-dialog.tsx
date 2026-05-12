@@ -268,7 +268,17 @@ export function BrowseFornecedorDialog({ open, onClose, onConfirm, tipoDinheiro,
                       className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
                       <Minus className="h-2.5 w-2.5" />
                     </button>
-                    <span className="text-xs w-5 text-center tabular-nums">{c.quantidade}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={c.quantidade}
+                      onFocus={e => e.target.select()}
+                      onChange={e => {
+                        const v = parseInt(e.target.value)
+                        if (!isNaN(v) && v > 0) setQtd(c.item_id, v)
+                      }}
+                      className="text-xs w-14 text-center tabular-nums bg-transparent border border-border/50 rounded h-5 focus:outline-none focus:border-primary/60 px-1"
+                    />
                     <button onClick={() => setQtd(c.item_id, c.quantidade + 1)}
                       className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]">
                       <Plus className="h-2.5 w-2.5" />

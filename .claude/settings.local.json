@@ -43,7 +43,8 @@
       "Bash(\\\\.ts\")",
       "Bash(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\")",
       "Bash(Measure-Object -Line)",
-      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\vendas\\\\vendas-client.tsx\"\\).Count)"
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\vendas\\\\vendas-client.tsx\"\\).Count)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\" -Force)"
     ]
   }
 }
