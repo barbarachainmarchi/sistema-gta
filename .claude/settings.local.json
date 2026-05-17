@@ -44,7 +44,10 @@
       "Bash(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\")",
       "Bash(Measure-Object -Line)",
       "PowerShell(\\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\\\\faccao-detalhe.tsx\"\\).Count; \\(Get-Content \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\vendas\\\\vendas-client.tsx\"\\).Count)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\" -Force)"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\" -Force)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\financeiro\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Find /C/Users/barbaramarchi/projetos/sistema-gta -type f -name \"*.sql\" -o -name \"*migration*\")"
     ]
   }
 }

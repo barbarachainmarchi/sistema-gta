@@ -113,8 +113,24 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
   const [savingItem, setSavingItem] = useState(false)
   const [buscaItem, setBuscaItem] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('todas')
+  const [extraProdutos, setExtraProdutos] = useState<Produto[]>([])
+  const [criandoItem, setCriandoItem] = useState(false)
 
-  const itensDisponiveis = todosProdutos.filter(p => !itens.some(i => i.item_id === p.id))
+  const todosProds = useMemo(() => [...todosProdutos, ...extraProdutos], [todosProdutos, extraProdutos])
+  const itensDisponiveis = todosProds.filter(p => !itens.some(i => i.item_id === p.id))
+
+  async function handleCriarItem() {
+    if (!buscaNovoItem.trim() || criandoItem) return
+    setCriandoItem(true)
+    try {
+      const { data, error } = await sb().from('items').insert({ nome: buscaNovoItem.trim(), status: 'ativo', eh_compravel: true }).select('id, nome').single()
+      if (error) throw error
+      setExtraProdutos(prev => [...prev, { id: (data as { id: string; nome: string }).id, nome: (data as { id: string; nome: string }).nome }])
+      setNewItemId((data as { id: string; nome: string }).id)
+      setBuscaNovoItem((data as { id: string; nome: string }).nome)
+    } catch { toast.error('Erro ao cadastrar item') }
+    finally { setCriandoItem(false) }
+  }
 
   const categoriasUnicas = useMemo(() => {
     const cats = new Set(itens.map(i => i.items?.categorias_item?.nome ?? 'Sem categoria'))
@@ -302,7 +318,7 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
             <section>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />Itens ({itens.length})</p>
-                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setAddItem(true)} disabled={itensDisponiveis.length === 0}>
+                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setAddItem(true)}>
                   <Plus className="h-3 w-3" />Adicionar
                 </Button>
               </div>
@@ -322,7 +338,13 @@ export function LojaDetalhe({ loja, todosProdutos, todosMembros, todosVeiculos, 
                       {buscaNovoItem && !newItemId && (
                         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                           {itensDisponiveis.filter(p => norm(p.nome).includes(norm(buscaNovoItem))).length === 0
-                            ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum item encontrado</p>
+                            ? (
+                              <button onClick={handleCriarItem} disabled={criandoItem}
+                                className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-accent transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                                {criandoItem ? <Loader2 className="h-3 w-3 animate-spin shrink-0" /> : <Plus className="h-3 w-3 shrink-0" />}
+                                Cadastrar &ldquo;{buscaNovoItem}&rdquo;
+                              </button>
+                            )
                             : itensDisponiveis
                                 .filter(p => norm(p.nome).includes(norm(buscaNovoItem)))
                                 .map(p => (

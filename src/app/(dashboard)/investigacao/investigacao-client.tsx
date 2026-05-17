@@ -186,7 +186,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
   }, [faccoes])
 
   const faccoesFiltradas = useMemo(() => {
-    const filtered = faccoes.filter(f => !buscaFaccao || norm(f.nome).includes(norm(buscaFaccao)) || norm(f.territorio).includes(norm(buscaFaccao)))
+    const filtered = faccoes.filter(f => !buscaFaccao || norm(f.nome).includes(norm(buscaFaccao)) || norm(f.territorio ?? '').includes(norm(buscaFaccao)) || norm(f.sigla ?? '').includes(norm(buscaFaccao)))
     return filtered.sort((a, b) => {
       const pa = faccoesParceiras.has(a.id) ? 0 : 1
       const pb = faccoesParceiras.has(b.id) ? 0 : 1
@@ -437,18 +437,21 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           .filter(fp => fp.faccao_id === f.id)
           .map(fp => {
             const produto = todosProdutos.find(p => p.id === fp.item_id)
-            const hasFaixas = faixasPrecos.some(fx => fx.faccao_id === f.id && fx.item_id === fp.item_id)
-            const limpoEfetivo = fp.preco_limpo != null && descPct > 0
-              ? Math.round(fp.preco_limpo * (1 - descPct / 100)) : fp.preco_limpo
-            const sujoEfetivo = fp.preco_sujo != null && descPct > 0
-              ? Math.round(fp.preco_sujo * (1 - descPct / 100)) : fp.preco_sujo
+            const faixasDoProduto = faixasPrecos.filter(fx => fx.faccao_id === f.id && fx.item_id === fp.item_id)
+            const hasFaixas = faixasDoProduto.length > 0
+            const allLimpo = [fp.preco_limpo, ...faixasDoProduto.map(fx => fx.preco_limpo)].filter((p): p is number => p != null)
+            const preco_limpo_min = allLimpo.length > 0 ? Math.min(...allLimpo) : null
+            const allSujo = [fp.preco_sujo, ...faixasDoProduto.map(fx => fx.preco_sujo)].filter((p): p is number => p != null)
+            const preco_sujo_min = allSujo.length > 0 ? Math.min(...allSujo) : null
+            const limpoMinEfetivo = preco_limpo_min != null && descPct > 0 ? Math.round(preco_limpo_min * (1 - descPct / 100)) : preco_limpo_min
+            const sujoMinEfetivo = preco_sujo_min != null && descPct > 0 ? Math.round(preco_sujo_min * (1 - descPct / 100)) : preco_sujo_min
             return {
               item_id: fp.item_id,
               item_nome: produto?.nome ?? fp.item_id,
-              preco_limpo_original: fp.preco_limpo,
-              preco_sujo_original: fp.preco_sujo,
-              preco_limpo_efetivo: limpoEfetivo,
-              preco_sujo_efetivo: sujoEfetivo,
+              preco_limpo_min,
+              preco_sujo_min,
+              preco_limpo_min_efetivo: limpoMinEfetivo,
+              preco_sujo_min_efetivo: sujoMinEfetivo,
               tem_parceria: fp.parceria_tipo != null && (fp.preco_limpo_parceria != null || fp.preco_sujo_parceria != null),
               hasFaixas,
               tipo: fp.tipo,
@@ -499,7 +502,7 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
             <div className="flex items-center gap-3">
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input placeholder="Buscar facção ou território..." value={buscaFaccao} onChange={e => setBuscaFaccao(e.target.value)} className="pl-8 h-8 text-sm" />
+                <Input placeholder="Buscar facção, tag ou território..." value={buscaFaccao} onChange={e => setBuscaFaccao(e.target.value)} className="pl-8 h-8 text-sm" />
               </div>
               <Button size="sm" className="h-8 gap-1.5" onClick={openNovaFaccao}>
                 <Plus className="h-3.5 w-3.5" />Nova Facção
@@ -815,28 +818,28 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
                               <span className="text-right tabular-nums text-xs">
                                 {p.tipo === 'percentual' ? (
                                   <span className="text-muted-foreground">{p.percentual != null ? `${p.percentual > 0 ? '-' : '+'}${Math.abs(p.percentual)}%` : '—'}</span>
-                                ) : p.preco_limpo_original != null ? (
+                                ) : p.preco_limpo_min != null ? (
                                   descPct > 0 ? (
                                     <span>
-                                      <span className="text-cyan-400 font-mono">R$ {p.preco_limpo_efetivo!.toLocaleString('pt-BR')}</span>
-                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_limpo_original.toLocaleString('pt-BR')}</span>
+                                      <span className="text-cyan-400 font-mono">R$ {p.preco_limpo_min_efetivo!.toLocaleString('pt-BR')}</span>
+                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_limpo_min.toLocaleString('pt-BR')}</span>
                                     </span>
                                   ) : (
-                                    <span className="text-emerald-400 font-mono">R$ {p.preco_limpo_original.toLocaleString('pt-BR')}</span>
+                                    <span className="text-emerald-400 font-mono">R$ {p.preco_limpo_min.toLocaleString('pt-BR')}</span>
                                   )
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}
                               </span>
                               <span className="text-right tabular-nums text-xs">
-                                {p.preco_sujo_original != null ? (
+                                {p.preco_sujo_min != null ? (
                                   descPct > 0 ? (
                                     <span>
-                                      <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_efetivo!.toLocaleString('pt-BR')}</span>
-                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_sujo_original.toLocaleString('pt-BR')}</span>
+                                      <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_min_efetivo!.toLocaleString('pt-BR')}</span>
+                                      <span className="text-muted-foreground/40 font-mono text-[10px] ml-1 line-through">R$ {p.preco_sujo_min.toLocaleString('pt-BR')}</span>
                                     </span>
                                   ) : (
-                                    <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_original.toLocaleString('pt-BR')}</span>
+                                    <span className="text-orange-400/80 font-mono">R$ {p.preco_sujo_min.toLocaleString('pt-BR')}</span>
                                   )
                                 ) : (
                                   <span className="text-muted-foreground">—</span>

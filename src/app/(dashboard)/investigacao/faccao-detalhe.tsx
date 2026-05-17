@@ -385,8 +385,24 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [addingPreco, setAddingPreco] = useState(false)
   const [newItemId, setNewItemId] = useState('')
   const [buscaNovoPreco, setBuscaNovoPreco] = useState('')
+  const [extraProdutos, setExtraProdutos] = useState<Produto[]>([])
+  const [criandoProduto, setCriandoProduto] = useState(false)
 
-  const produtosDisponiveis = useMemo(() => todosProdutos.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id)), [todosProdutos, faccaoPrecos])
+  const todosProds = useMemo(() => [...todosProdutos, ...extraProdutos], [todosProdutos, extraProdutos])
+  const produtosDisponiveis = useMemo(() => todosProds.filter(p => !faccaoPrecos.some(fp => fp.item_id === p.id)), [todosProds, faccaoPrecos])
+
+  async function handleCriarProduto() {
+    if (!buscaNovoPreco.trim() || criandoProduto) return
+    setCriandoProduto(true)
+    try {
+      const { data, error } = await sb().from('items').insert({ nome: buscaNovoPreco.trim(), status: 'ativo', eh_compravel: true }).select('id, nome').single()
+      if (error) throw error
+      setExtraProdutos(prev => [...prev, { id: (data as { id: string; nome: string }).id, nome: (data as { id: string; nome: string }).nome }])
+      setNewItemId((data as { id: string; nome: string }).id)
+      setBuscaNovoPreco((data as { id: string; nome: string }).nome)
+    } catch { toast.error('Erro ao cadastrar produto') }
+    finally { setCriandoProduto(false) }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -910,7 +926,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   </button>
                 ))}
               </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setAddingPreco(true)} disabled={produtosDisponiveis.length === 0} title="Adicionar produto">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setAddingPreco(true)} title="Adicionar produto">
                 <Plus className="h-3 w-3" />
               </Button>
               <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 shrink-0" onClick={() => setServicoAddOpen(true)} disabled={todoServicos.filter(s => !faccaoServicosIds.includes(s.id)).length === 0} title="Adicionar combo">
@@ -946,6 +962,10 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                   const temParceria = preco.parceria_pct != null || preco.preco_sujo_parceria != null || preco.preco_limpo_parceria != null
                   const faixas = (faixasPrecos[preco.item_id] ?? []).sort((a, b) => a.quantidade_min - b.quantidade_min)
                   const minFaixa = faixas[0]?.quantidade_min
+                  const allSujo = [preco.preco_sujo, ...faixas.map(f => f.preco_sujo)].filter((p): p is number => p != null)
+                  const menorSujo: number | null = allSujo.length > 0 ? Math.min(...allSujo) : null
+                  const allLimpo = [preco.preco_limpo, ...faixas.map(f => f.preco_limpo)].filter((p): p is number => p != null)
+                  const menorLimpo: number | null = allLimpo.length > 0 ? Math.min(...allLimpo) : null
                   const expandido = produtosExpandidos.has(preco.item_id)
                   const tipoIcone = temParceria ? '⭐' : faixas.length > 0 ? '📦' : '🟢'
                   const tipoTitulo = temParceria ? 'Parceria' : faixas.length > 0 ? 'Por quantidade' : 'Normal'
@@ -957,8 +977,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                         onClick={() => setProdutosExpandidos(prev => { const n = new Set(prev); expandido ? n.delete(preco.item_id) : n.add(preco.item_id); return n })}>
                         <span className="text-sm leading-none shrink-0" title={tipoTitulo}>{tipoIcone}</span>
                         <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{produto?.nome ?? '—'}</span>
-                        <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(preco.preco_sujo)}</span>
-                        <span className="text-xs tabular-nums font-medium shrink-0">{fmt(preco.preco_limpo)}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground/70 shrink-0">{fmt(menorSujo)}</span>
+                        <span className="text-xs tabular-nums font-medium shrink-0">{fmt(menorLimpo)}</span>
                         <ChevronDown className={cn('h-3 w-3 text-muted-foreground/50 shrink-0 transition-transform', expandido && 'rotate-180')} />
                         <div className="flex gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
                           <button onClick={() => openEditPreco({ id: preco.item_id, nome: produto?.nome ?? '' })} className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.06]" title="Editar preço"><Edit2 className="h-3 w-3" /></button>
@@ -1255,7 +1275,13 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
             {buscaNovoPreco && !newItemId && (
               <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-md shadow-lg max-h-52 overflow-y-auto">
                 {produtosDisponiveis.filter(p => norm(p.nome).includes(norm(buscaNovoPreco))).length === 0
-                  ? <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum produto encontrado</p>
+                  ? (
+                    <button onClick={handleCriarProduto} disabled={criandoProduto}
+                      className="w-full text-left px-3 py-2 text-xs text-primary hover:bg-accent transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                      {criandoProduto ? <Loader2 className="h-3 w-3 animate-spin shrink-0" /> : <Plus className="h-3 w-3 shrink-0" />}
+                      Cadastrar &ldquo;{buscaNovoPreco}&rdquo;
+                    </button>
+                  )
                   : produtosDisponiveis
                       .filter(p => norm(p.nome).includes(norm(buscaNovoPreco)))
                       .map(p => (
