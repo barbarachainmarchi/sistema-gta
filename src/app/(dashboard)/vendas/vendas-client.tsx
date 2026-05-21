@@ -64,6 +64,7 @@ type FormItem = { tempId: string; item_id: string; item_nome: string; quantidade
 type FormState = {
   faccao_id: string; loja_id: string; cliente_nome: string; cliente_telefone: string
   tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; desconto_fixo: string; notas: string; data_encomenda: string
+  data_venda: string
   status: StatusVenda; itens: FormItem[]
 }
 
@@ -693,7 +694,7 @@ function OrderDialog({
 
   const emptyForm = (): FormState => ({
     faccao_id: '', loja_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
-    desconto_pct: '0', desconto_fixo: '0', notas: '', data_encomenda: today(), status: 'fabricando', itens: []
+    desconto_pct: '0', desconto_fixo: '0', notas: '', data_encomenda: today(), data_venda: today(), status: 'fabricando', itens: []
   })
 
   const [form, setForm] = useState<FormState>(emptyForm)
@@ -783,6 +784,7 @@ function OrderDialog({
           desconto_fixo: String(editando.desconto_fixo ?? 0),
           notas: editando.notas ?? '',
           data_encomenda: editando.data_encomenda ?? today(),
+          data_venda: editando.created_at.split('T')[0],
           status: editando.status, itens: [],
         })
         const editEmpresaNome = editando.faccao_id
@@ -1296,6 +1298,14 @@ function OrderDialog({
                 <Label className="text-xs">Desconto (%)</Label>
                 <Input type="number" min="0" max="100" value={form.desconto_pct}
                   onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
+                  className="h-8 text-sm" />
+              </div>
+
+              {/* Data da venda */}
+              <div className="space-y-1">
+                <Label className="text-xs">Data da venda</Label>
+                <Input type="date" value={form.data_venda}
+                  onChange={e => setForm(prev => ({ ...prev, data_venda: e.target.value }))}
                   className="h-8 text-sm" />
               </div>
 
@@ -1932,6 +1942,7 @@ export function VendasClient({
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
           criado_por_nome: novoVendedorNome,
+          created_at: new Date(form.data_venda + 'T12:00:00').toISOString(),
         }).eq('id', editando.id)
         if (error) { toast.error('Erro ao salvar: ' + error.message); return }
 
@@ -1953,6 +1964,7 @@ export function VendasClient({
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
           criado_por_nome: novoVendedorNome,
+          created_at: new Date(form.data_venda + 'T12:00:00').toISOString(),
           itens: (itensData ?? []) as VendaItem[],
         } : v))
         toast.success('Pedido atualizado!')
@@ -1974,6 +1986,7 @@ export function VendasClient({
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
           criado_por: vendedorId || userId,
           criado_por_nome: (isDono && vendedorId) ? (vendedores.find(v => v.id === vendedorId)?.nome ?? userNome) : userNome,
+          ...(form.data_venda && form.data_venda !== today() ? { created_at: new Date(form.data_venda + 'T12:00:00').toISOString() } : {}),
         }).select().single()
         if (vendaErr) { toast.error('Erro ao criar: ' + vendaErr.message); return }
         const novosItens = form.itens.map(it => ({
