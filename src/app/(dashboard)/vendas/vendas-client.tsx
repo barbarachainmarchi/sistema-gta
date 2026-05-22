@@ -703,6 +703,7 @@ function OrderDialog({
   const [membroNome, setMembroNome] = useState('')
   const [membroAberta, setMembroAberta] = useState(false)
   const [novoMembroTel, setNovoMembroTel] = useState('')
+  const [novoMembroVulgo, setNovoMembroVulgo] = useState('')
   const [criandoMembro, setCriandoMembro] = useState(false)
   const [cart, setCart] = useState<CartItem[]>([])
   const [meusProdutos, setMeusProdutos] = useState<WpItem[]>([])
@@ -824,6 +825,7 @@ function OrderDialog({
         setMembroNome('')
         setCart([])
         setNovoMembroTel('')
+        setNovoMembroVulgo('')
         setCombosModo({})
         setCombosQtd({})
       }
@@ -912,8 +914,8 @@ function OrderDialog({
       setMembroAberta(false)
       return
     }
-    setMembroNome(m.nome)
-    setForm(prev => ({ ...prev, cliente_nome: m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
+    // Mantém o que foi digitado (nome ou vulgo) como cliente_nome da venda
+    setForm(prev => ({ ...prev, cliente_nome: membroNome.trim() || m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
     setMembroAberta(false)
     // Se membro civil e há facção selecionada, perguntar se pertence
     if (m.faccao_id === null && form.faccao_id) {
@@ -937,8 +939,9 @@ function OrderDialog({
     if (!nome) return
     setCriandoMembro(true)
     const tel = novoMembroTel.trim() || form.cliente_telefone.trim() || null
+    const vulgo = novoMembroVulgo.trim() || null
     const { data, error } = await sb().from('membros').insert({
-      nome, telefone: tel, faccao_id: form.faccao_id || null,
+      nome, vulgo, telefone: tel, faccao_id: form.faccao_id || null,
     }).select('id, nome, vulgo, telefone, faccao_id').single()
     setCriandoMembro(false)
     if (error) { toast.error('Erro ao cadastrar: ' + error.message); return }
@@ -947,6 +950,7 @@ function OrderDialog({
     selecionarMembro(novo)
     if (tel && !form.cliente_telefone) setForm(prev => ({ ...prev, cliente_telefone: tel }))
     setNovoMembroTel('')
+    setNovoMembroVulgo('')
     toast.success(`"${novo.nome}" cadastrado!`)
   }
 
@@ -1262,10 +1266,16 @@ function OrderDialog({
                       )
                     })}
                     {membroNaoEncontrado && (
-                      <div className="border-t border-border/50 px-3 py-2.5 space-y-2 bg-muted/20">
+                      <div className="border-t border-border/50 px-3 py-2.5 space-y-1.5 bg-muted/20">
                         <p className="text-[11px] text-muted-foreground">
                           &quot;{membroNome.trim()}&quot; não encontrado. Cadastrar?
                         </p>
+                        <Input placeholder="Vulgo (opcional)"
+                          value={novoMembroVulgo}
+                          onChange={e => setNovoMembroVulgo(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCadastrarMembro() } }}
+                          onFocus={() => { if (membroBlurTimeout.current) { clearTimeout(membroBlurTimeout.current); membroBlurTimeout.current = null } }}
+                          className="h-7 text-xs w-full" onMouseDown={e => e.stopPropagation()} />
                         <div className="flex gap-1.5">
                           <Input placeholder="Telefone (opcional)" value={novoMembroTel}
                             onChange={e => setNovoMembroTel(e.target.value)}
