@@ -29,25 +29,21 @@ export default async function CalculadoraPage() {
     supabase.from('usuario_favoritos').select('item_id').eq('usuario_id', user.id),
     supabase.from('usuario_favoritos_servicos').select('servico_id').eq('usuario_id', user.id),
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
-    supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
+    supabase.from('usuarios').select('local_trabalho_loja_id, local_trabalho_faccao_id, minha_faccao:faccoes!local_trabalho_faccao_id(nome, sigla)').eq('id', user.id).maybeSingle(),
     supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, eh_meu_servico, categoria').eq('status', 'ativo').order('nome'),
     supabase.from('servico_itens').select('servico_id, item_id, quantidade, items(nome)'),
   ])
 
   const meuLojaId    = usuarioRow?.local_trabalho_loja_id ?? null
   const meuFaccaoId  = usuarioRow?.local_trabalho_faccao_id ?? null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const faccaoRow = (usuarioRow as any)?.minha_faccao ?? null
 
-  const [
-    { data: faccaoPrecosData },
-    { data: faccaoRow },
-  ] = await Promise.all([
+  const { data: faccaoPrecosData } = await (
     meuFaccaoId
       ? supabase.from('faccao_item_precos').select('faccao_id, item_id, preco_limpo, preco_sujo').eq('faccao_id', meuFaccaoId)
-      : Promise.resolve({ data: [] }),
-    meuFaccaoId
-      ? supabase.from('faccoes').select('nome, sigla').eq('id', meuFaccaoId).maybeSingle()
-      : Promise.resolve({ data: null }),
-  ])
+      : Promise.resolve({ data: [] })
+  )
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const perms = (permRow as any)?.perfis_acesso?.perfil_permissoes

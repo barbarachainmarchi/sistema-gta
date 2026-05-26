@@ -81,15 +81,24 @@ type Aba = 'favoritos' | 'meus' | 'todos'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Formatação determinística pt-BR (sem toLocaleString para evitar mismatch SSR/client)
+function fmtBR(v: number, decimals: number): string {
+  const neg = v < 0
+  const fixed = Math.abs(v).toFixed(decimals)
+  const [intPart, decPart] = fixed.split('.')
+  const intFormatted = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const result = decimals > 0 ? `${intFormatted},${decPart}` : intFormatted
+  return neg ? `-${result}` : result
+}
 function fmt(v: number) {
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `R$ ${fmtBR(v, 2)}`
 }
 function fmtKg(kg: number) {
   if (kg === 0) return '—'
   return `${kg % 1 === 0 ? kg : kg.toFixed(2)} kg`
 }
 function fmtNum(v: number) {
-  return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return fmtBR(Math.round(v), 0)
 }
 
 function matchBusca(texto: string, apelidos: string | null | undefined, q: string): boolean {
