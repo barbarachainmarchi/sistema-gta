@@ -445,7 +445,7 @@ export function CalculadoraClient({
       return [{ tipo: 'combo' as const, id: c.servico_id, nome: srv.nome, quantidade: c.quantidade, data: c, servico: srv }]
     })
     const all: UE[] = [...its, ...combos]
-    if (sortBatch === 'name') return all.sort((a, b) => a.nome.localeCompare(b.nome))
+    if (sortBatch === 'name') return all.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
     if (sortBatch === 'qty') return all.sort((a, b) => b.quantidade - a.quantidade)
     return all
   }, [batch, comboBatch, itemMap, servicos, sortBatch])
@@ -469,7 +469,7 @@ export function CalculadoraClient({
       item_id: id, ...v,
       pesoTotal: (itemMap[id]?.peso ?? 0) * v.quantidade,
     }))
-    if (sortBatch === 'name') result.sort((a, b) => a.nome.localeCompare(b.nome))
+    if (sortBatch === 'name') result.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
     else if (sortBatch === 'qty') result.sort((a, b) => b.quantidade - a.quantidade)
     return result
   }, [batch, comboBatch, sortBatch, itemMap, servicoItens])
@@ -498,7 +498,7 @@ export function CalculadoraClient({
       const af = a.isFav ? 0 : 1
       const bf = b.isFav ? 0 : 1
       if (af !== bf) return af - bf
-      return a.nome.localeCompare(b.nome)
+      return a.nome.localeCompare(b.nome, 'pt-BR')
     })
   }, [itensFiltrados, servicosFiltrados, favoritos, favoritosServicos])
 
@@ -675,7 +675,7 @@ export function CalculadoraClient({
     }
     return Object.entries(map)
       .map(([id, v]) => ({ ingrediente_id: id, ...v }))
-      .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? ''))
+      .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? '', 'pt-BR'))
   }, [batch, comboBatch, itemMap, lojaPrecoPorItem, servicoItens, riscadosResumo])
 
   // ── Totais ────────────────────────────────────────────────────────────────
