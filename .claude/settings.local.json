@@ -53,7 +53,11 @@
       "Bash(Get-Content package.json)",
       "Bash(Select-String -Pattern '\"\\(next|react|@radix\\)\"')",
       "Bash(Select-Object -First 30)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "Bash(findstr \"\\\\\"next\\\\\"\")",
+      "PowerShell(head *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\node_modules\\\\next\\\\dist\\\\docs\\\\01-app\\\\03-api-reference\\\\04-functions\" | Select-Object Name | Where-Object { $_.Name -match \"dynamic|lazy\" })",
+      "PowerShell(dashboard *)"
     ]
   }
 }
