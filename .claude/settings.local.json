@@ -47,7 +47,13 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\investigacao\" -Force)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\financeiro\" -Recurse -File)",
       "Bash(Select-Object FullName)",
-      "Bash(Find /C/Users/barbaramarchi/projetos/sistema-gta -type f -name \"*.sql\" -o -name \"*migration*\")"
+      "Bash(Find /C/Users/barbaramarchi/projetos/sistema-gta -type f -name \"*.sql\" -o -name \"*migration*\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\\\\app\\\\\\(dashboard\\)\\\\vendas\" -Recurse | ForEach-Object { $_.FullName })",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.get\\('dependencies',{}\\).items\\(\\) if 'radix' in k or 'next' in k or 'react' in k}\\)\")",
+      "Bash(Get-Content package.json)",
+      "Bash(Select-String -Pattern '\"\\(next|react|@radix\\)\"')",
+      "Bash(Select-Object -First 30)",
+      "PowerShell(git *)"
     ]
   }
 }
