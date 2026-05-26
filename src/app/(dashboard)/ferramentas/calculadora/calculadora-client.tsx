@@ -101,6 +101,16 @@ function fmtNum(v: number) {
   return fmtBR(Math.round(v), 0)
 }
 
+// Ordenação determinística (sem localeCompare que difere entre Node.js e browser)
+// Normaliza NFD + remove diacríticos + lowercase → sort ASCII puro
+function sortKey(s: string): string {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+}
+function cmpNome(a: string, b: string): number {
+  const ak = sortKey(a), bk = sortKey(b)
+  return ak < bk ? -1 : ak > bk ? 1 : 0
+}
+
 function matchBusca(texto: string, apelidos: string | null | undefined, q: string): boolean {
   if (norm(texto).includes(q)) return true
   if (apelidos) {
@@ -148,9 +158,9 @@ const ItemBtn = memo(function ItemBtn({ item, isInBatch, isFavorito, precoLimpo,
 
       <span className="flex-1 min-w-0 truncate" style={nomeStyle}>{item.nome}</span>
 
-      {item.apelidos && (
+      {item.apelidos ? (
         <span className="text-[9px] text-primary/30 shrink-0" title={`Apelidos: ${item.apelidos}`}>✦</span>
-      )}
+      ) : null}
       {preco != null && (
         <span className="text-xs tabular-nums shrink-0" style={{ color: valorColor, opacity: 0.75 }}>
           {fmt(preco)}
@@ -454,7 +464,7 @@ export function CalculadoraClient({
       return [{ tipo: 'combo' as const, id: c.servico_id, nome: srv.nome, quantidade: c.quantidade, data: c, servico: srv }]
     })
     const all: UE[] = [...its, ...combos]
-    if (sortBatch === 'name') return all.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    if (sortBatch === 'name') return all.sort((a, b) => cmpNome(a.nome, b.nome))
     if (sortBatch === 'qty') return all.sort((a, b) => b.quantidade - a.quantidade)
     return all
   }, [batch, comboBatch, itemMap, servicos, sortBatch])
@@ -478,7 +488,7 @@ export function CalculadoraClient({
       item_id: id, ...v,
       pesoTotal: (itemMap[id]?.peso ?? 0) * v.quantidade,
     }))
-    if (sortBatch === 'name') result.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    if (sortBatch === 'name') result.sort((a, b) => cmpNome(a.nome, b.nome))
     else if (sortBatch === 'qty') result.sort((a, b) => b.quantidade - a.quantidade)
     return result
   }, [batch, comboBatch, sortBatch, itemMap, servicoItens])
@@ -507,7 +517,7 @@ export function CalculadoraClient({
       const af = a.isFav ? 0 : 1
       const bf = b.isFav ? 0 : 1
       if (af !== bf) return af - bf
-      return a.nome.localeCompare(b.nome, 'pt-BR')
+      return cmpNome(a.nome, b.nome)
     })
   }, [itensFiltrados, servicosFiltrados, favoritos, favoritosServicos])
 
@@ -684,7 +694,7 @@ export function CalculadoraClient({
     }
     return Object.entries(map)
       .map(([id, v]) => ({ ingrediente_id: id, ...v }))
-      .sort((a, b) => (a.ingrediente?.nome ?? '').localeCompare(b.ingrediente?.nome ?? '', 'pt-BR'))
+      .sort((a, b) => cmpNome(a.ingrediente?.nome ?? '', b.ingrediente?.nome ?? ''))
   }, [batch, comboBatch, itemMap, lojaPrecoPorItem, servicoItens, riscadosResumo])
 
   // ── Totais ────────────────────────────────────────────────────────────────
