@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -58,6 +59,7 @@ export function AcaoClient({
     if (!sbRef.current) sbRef.current = createClient()
     return sbRef.current
   }, [])
+  const router = useRouter()
 
   const userFaccaoId = membrosIniciais.find(m => m.id === membroId)?.faccao_id ?? null
 
@@ -438,6 +440,7 @@ export function AcaoClient({
       setAcoes(prev => prev.filter(a => a.id !== id))
       setParticipantes(prev => prev.filter(p => p.acao_id !== id))
       toast.success('Ação excluída')
+      router.refresh()
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
     finally { setSalvando(false) }
@@ -561,6 +564,7 @@ export function AcaoClient({
       setEscalacoes(prev => prev.filter(e => e.id !== id))
       setEscalacaoParticipantes(prev => prev.filter(p => p.escalacao_id !== id))
       toast.success('Escalação excluída')
+      router.refresh()
       return true
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Erro'); return false }
     finally { setSalvando(false) }

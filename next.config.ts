@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     staleTimes: {
-      dynamic: 60,
+      dynamic: 0,   // sem cache de RSC para rotas dinâmicas → dados sempre frescos
       static: 300,
     },
   },
