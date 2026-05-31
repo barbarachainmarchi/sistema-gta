@@ -720,6 +720,8 @@ function OrderDialog({
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPctSujo, setDraftPctSujo] = useState<Record<string, string>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
+  const [editandoResumo, setEditandoResumo] = useState<Set<string>>(new Set())
+  const [precoKitOverride, setPrecoKitOverride] = useState<Record<string, number | null>>({})
   const [combosModo, setCombosModo] = useState<Record<string, 'resumo' | 'detalhado'>>({})  // por servico_id
   const [combosQtd, setCombosQtd] = useState<Record<string, number>>({})  // quantidade do combo inteiro
   const [faixasMap, setFaixasMap] = useState<Record<string, PrecoFaixa[]>>({})
@@ -842,6 +844,8 @@ function OrderDialog({
       setDraftOrigem({})
       setDraftPctSujo({})
       setEditandoPreco(new Set())
+      setEditandoResumo(new Set())
+      setPrecoKitOverride({})
       if (!open) setFaixasMap({})
     }
   }
@@ -1130,6 +1134,8 @@ function OrderDialog({
   // Totals — combos em modo resumo usam preço definido do combo, não soma dos itens
   const { subtotal, totalSemFixo } = (() => {
     function comboPrecoResumo(sid: string): number | null {
+      const override = precoKitOverride[sid]
+      if (override != null) return override * (combosQtd[sid] ?? 1)
       const sv = servicos.find(s => s.id === sid)
       const pb = form.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
       if (pb == null) return null
@@ -1174,10 +1180,25 @@ function OrderDialog({
       const qty = c.servico_id && combosModo[c.servico_id] === 'resumo'
         ? c.quantidade * (combosQtd[c.servico_id] ?? 1)
         : c.quantidade
+      let preco = getPrecoEfetivo(c)
+      // Distribute kit price override proportionally across items
+      if (c.servico_id && combosModo[c.servico_id] === 'resumo') {
+        const override = precoKitOverride[c.servico_id]
+        if (override != null) {
+          const kitItens = cart.filter(ci => ci.servico_id === c.servico_id)
+          const origTotal = kitItens.reduce((acc, ci) => acc + ci.quantidade * getPrecoEfetivo(ci), 0)
+          if (origTotal > 0) {
+            preco = preco * (override / origTotal)
+          } else {
+            const totalUnits = kitItens.reduce((acc, ci) => acc + ci.quantidade, 0)
+            preco = totalUnits > 0 ? override / totalUnits : 0
+          }
+        }
+      }
       return {
         tempId: c.item_id + (c.servico_id ?? ''), item_id: c.item_id, item_nome: c.nome,
         quantidade: String(qty),
-        preco_unit: String(getPrecoEfetivo(c)),
+        preco_unit: String(preco),
         origem: c.origem,
         servico_id: c.servico_id,
       }
@@ -1718,7 +1739,27 @@ function OrderDialog({
                                     <span className="text-[11px] tabular-nums font-medium min-w-[1.4rem] text-center">{qtdCombo}×</span>
                                     <button onClick={() => setCombosQtd(p => ({ ...p, [sid]: (p[sid] ?? 1) + 1 }))}
                                       className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">+</button>
-                                    <span className="text-[11px] tabular-nums text-foreground font-medium ml-1">{fmt(totalCombo)}</span>
+                                    {editandoResumo.has(sid) ? (
+                                      <Input autoFocus type="number" min="0" step="1"
+                                        defaultValue={precoKitOverride[sid] ?? Math.round(totalCombo / qtdCombo)}
+                                        onBlur={e => {
+                                          const v = parseFloat(e.target.value)
+                                          if (!isNaN(v)) setPrecoKitOverride(prev => ({ ...prev, [sid]: v }))
+                                          setEditandoResumo(prev => { const n = new Set(prev); n.delete(sid); return n })
+                                        }}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') e.currentTarget.blur()
+                                          if (e.key === 'Escape') setEditandoResumo(prev => { const n = new Set(prev); n.delete(sid); return n })
+                                        }}
+                                        className="h-5 w-16 text-[10px] text-right tabular-nums border-primary/40 bg-primary/[0.04] px-1 ml-1" />
+                                    ) : (
+                                      <button type="button"
+                                        className={cn('text-[11px] tabular-nums font-medium ml-1 hover:text-yellow-400 transition-colors', precoKitOverride[sid] != null && 'text-yellow-400')}
+                                        title="Clique para editar preço por kit"
+                                        onClick={() => setEditandoResumo(prev => new Set([...prev, sid]))}>
+                                        {fmt(totalCombo)}
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => detalharCombo(sid)}
                                       className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors ml-1">
@@ -1754,12 +1795,35 @@ function OrderDialog({
                                 {itensCombo.map(c => {
                                   const preco = getPrecoEfetivo(c)
                                   const subtotalItem = c.quantidade * preco
+                                  const hasOv = c.preco_limpo_override != null || c.preco_sujo_override != null
                                   return (
                                     <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
                                       <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
-                                      <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
-                                        {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
-                                      </span>
+                                      <div className="flex items-center gap-0.5 text-[11px] tabular-nums shrink-0 text-muted-foreground/70">
+                                        <span>{c.quantidade}×</span>
+                                        {editandoResumo.has(c.item_id) ? (
+                                          <Input autoFocus type="number" min="0" step="1"
+                                            defaultValue={preco}
+                                            onBlur={e => {
+                                              const v = parseFloat(e.target.value)
+                                              if (!isNaN(v)) { form.tipo_dinheiro === 'sujo' ? setCartPrecoSujo(c.item_id, v) : setCartPrecoLimpo(c.item_id, v) }
+                                              setEditandoResumo(prev => { const n = new Set(prev); n.delete(c.item_id); return n })
+                                            }}
+                                            onKeyDown={e => {
+                                              if (e.key === 'Enter') e.currentTarget.blur()
+                                              if (e.key === 'Escape') setEditandoResumo(prev => { const n = new Set(prev); n.delete(c.item_id); return n })
+                                            }}
+                                            className="h-5 w-16 text-[10px] text-right tabular-nums border-primary/40 bg-primary/[0.04] px-1" />
+                                        ) : (
+                                          <button type="button"
+                                            className={cn('hover:text-yellow-400 transition-colors', hasOv && 'text-yellow-400')}
+                                            title="Clique para editar preço"
+                                            onClick={() => setEditandoResumo(prev => new Set([...prev, c.item_id]))}>
+                                            {fmt(preco)}
+                                          </button>
+                                        )}
+                                        <span>= <span className="text-foreground font-medium">{fmt(subtotalItem)}</span></span>
+                                      </div>
                                     </div>
                                   )
                                 })}
@@ -1771,12 +1835,35 @@ function OrderDialog({
                         {avulsos.map(c => {
                           const preco = getPrecoEfetivo(c)
                           const subtotalItem = c.quantidade * preco
+                          const hasOv = c.preco_limpo_override != null || c.preco_sujo_override != null
                           return (
                             <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
                               <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
-                              <span className="text-[11px] tabular-nums shrink-0 text-muted-foreground/70 whitespace-nowrap">
-                                {c.quantidade}×{fmt(preco)} = <span className="text-foreground font-medium">{fmt(subtotalItem)}</span>
-                              </span>
+                              <div className="flex items-center gap-0.5 text-[11px] tabular-nums shrink-0 text-muted-foreground/70">
+                                <span>{c.quantidade}×</span>
+                                {editandoResumo.has(c.item_id) ? (
+                                  <Input autoFocus type="number" min="0" step="1"
+                                    defaultValue={preco}
+                                    onBlur={e => {
+                                      const v = parseFloat(e.target.value)
+                                      if (!isNaN(v)) { form.tipo_dinheiro === 'sujo' ? setCartPrecoSujo(c.item_id, v) : setCartPrecoLimpo(c.item_id, v) }
+                                      setEditandoResumo(prev => { const n = new Set(prev); n.delete(c.item_id); return n })
+                                    }}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') e.currentTarget.blur()
+                                      if (e.key === 'Escape') setEditandoResumo(prev => { const n = new Set(prev); n.delete(c.item_id); return n })
+                                    }}
+                                    className="h-5 w-16 text-[10px] text-right tabular-nums border-primary/40 bg-primary/[0.04] px-1" />
+                                ) : (
+                                  <button type="button"
+                                    className={cn('hover:text-yellow-400 transition-colors', hasOv && 'text-yellow-400')}
+                                    title="Clique para editar preço"
+                                    onClick={() => setEditandoResumo(prev => new Set([...prev, c.item_id]))}>
+                                    {fmt(preco)}
+                                  </button>
+                                )}
+                                <span>= <span className="text-foreground font-medium">{fmt(subtotalItem)}</span></span>
+                              </div>
                             </div>
                           )
                         })}
