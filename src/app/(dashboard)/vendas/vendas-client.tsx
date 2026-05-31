@@ -1086,6 +1086,26 @@ function OrderDialog({
     toast.success(`Combo "${servico.nome}" adicionado`)
   }
 
+  // Expande o kit para modo detalhado (mantém servico_id, apenas muda a visualização)
+  function expandirComboDetalhado(sid: string) {
+    setCombosModo(prev => ({ ...prev, [sid]: 'detalhado' }))
+    // Se os itens não têm preço individual, distribui o preço do serviço proporcionalmente por unidade
+    const sv = servicos.find(s => s.id === sid)
+    const svPreco = form.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+    if (svPreco == null || svPreco <= 0) return
+    const itensCombo = cart.filter(c => c.servico_id === sid)
+    const anyHasPrice = itensCombo.some(c =>
+      (c.preco_limpo ?? 0) > 0 || (c.preco_sujo ?? 0) > 0 ||
+      c.preco_limpo_override != null || c.preco_sujo_override != null
+    )
+    if (anyHasPrice) return
+    const totalUnits = itensCombo.reduce((acc, c) => acc + c.quantidade, 0)
+    if (totalUnits === 0) return
+    const unitPrice = Math.round(svPreco / totalUnits)
+    setCart(prev => prev.map(c => c.servico_id !== sid ? c : { ...c, preco_limpo_override: unitPrice }))
+  }
+
+  // Converte itens do kit em avulsos (usado quando quer editar itens independentemente)
   function detalharCombo(sid: string) {
     const qtdMult = combosQtd[sid] ?? 1
     setCart(prev => {
@@ -1834,7 +1854,7 @@ function OrderDialog({
                                       </button>
                                     )}
                                     <button
-                                      onClick={() => detalharCombo(sid)}
+                                      onClick={() => expandirComboDetalhado(sid)}
                                       className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors ml-1">
                                       detalhar
                                     </button>
@@ -1862,6 +1882,12 @@ function OrderDialog({
                                   onClick={() => setCombosModo(p => ({ ...p, [sid]: 'resumo' }))}
                                   className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors shrink-0">
                                   resumir
+                                </button>
+                                <button
+                                  onClick={() => detalharCombo(sid)}
+                                  className="text-[9px] text-muted-foreground/30 hover:text-red-400/70 underline transition-colors shrink-0"
+                                  title="Separar itens do kit como itens avulsos">
+                                  separar
                                 </button>
                               </div>
                               <div className="pl-3.5 space-y-0.5">
