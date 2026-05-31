@@ -1016,7 +1016,8 @@ function OrderDialog({
       if (pctG > 0) {
         const faixas = faixasMap[c.item_id] ?? []
         const limpoBase = resolverPrecoFaixas({ preco_sujo: null, preco_limpo: c.preco_limpo }, faixas, c.quantidade, 'limpo')
-        return Math.round(limpoBase * (1 + pctG / 100))
+        if (limpoBase > 0) return Math.round(limpoBase * (1 + pctG / 100))
+        // item sem preço limpo: usa preço sujo do catálogo diretamente
       }
     } else {
       if (c.preco_limpo_override != null) return c.preco_limpo_override
@@ -1026,6 +1027,15 @@ function OrderDialog({
       { preco_sujo: c.preco_sujo, preco_limpo: c.preco_limpo },
       faixas, c.quantidade, form.tipo_dinheiro
     )
+  }
+
+  // Preço de exibição para itens ainda NÃO no carrinho, aplicando % global se configurado
+  function getPrecoDisplay(p: WpItem): number {
+    const pctG = parseFloat(pctSujoGlobal) || 0
+    if (form.tipo_dinheiro === 'sujo' && pctG > 0 && (p.preco_limpo ?? 0) > 0) {
+      return Math.round((p.preco_limpo ?? 0) * (1 + pctG / 100))
+    }
+    return form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo ?? 0) : (p.preco_limpo ?? 0)
   }
 
   function setCartQtd(item_id: string, qtd: number) {
@@ -1285,13 +1295,16 @@ function OrderDialog({
                 onCheckedChange={v => setForm(prev => ({ ...prev, tipo_dinheiro: v ? 'sujo' : 'limpo' }))} />
               <span className={cn('text-xs', form.tipo_dinheiro === 'sujo' && 'text-orange-400 font-medium')}>Sujo</span>
               {form.tipo_dinheiro === 'sujo' && (
-                <div className="flex items-center gap-1 ml-1 pl-2 border-l border-border/50">
-                  <span className="text-[10px] text-orange-400/70">+</span>
+                <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-border/50">
+                  <span className="text-xs text-orange-400/80">+%</span>
                   <Input type="number" min="0" step="1" placeholder="0"
                     value={pctSujoGlobal}
                     onChange={e => setPctSujoGlobal(e.target.value)}
-                    className="h-6 w-12 text-xs text-right border-orange-500/30 bg-orange-500/[0.04]" />
-                  <span className="text-[10px] text-orange-400/70">% sujo</span>
+                    className="h-7 w-20 text-sm text-right font-medium border-orange-500/40 bg-orange-500/[0.06]" />
+                  <span className="text-xs text-orange-400/80">sujo</span>
+                  {parseFloat(pctSujoGlobal) > 0 && (
+                    <span className="text-[10px] text-orange-300/60">({pctSujoGlobal}% aplicado)</span>
+                  )}
                 </div>
               )}
             </div>
@@ -1516,6 +1529,14 @@ function OrderDialog({
                 >
                   <ArrowUpDown className="h-3.5 w-3.5" />
                 </button>
+                <div className="flex items-center gap-0.5 shrink-0 border-l border-border/40 pl-1.5" title="Tamanho da fonte da lista">
+                  <button type="button"
+                    onClick={() => setFonteProdSave(Math.max(9, fonteProd - 1))}
+                    className="h-7 w-6 rounded border border-border text-muted-foreground/70 hover:text-foreground hover:border-border/80 flex items-center justify-center text-[10px] transition-colors leading-none">a</button>
+                  <button type="button"
+                    onClick={() => setFonteProdSave(Math.min(16, fonteProd + 1))}
+                    className="h-7 w-6 rounded border border-border text-muted-foreground/70 hover:text-foreground hover:border-border/80 flex items-center justify-center text-[12px] font-bold transition-colors leading-none">A</button>
+                </div>
               </div>
             </div>
 
@@ -1560,19 +1581,9 @@ function OrderDialog({
               )
             })()}
 
-            {/* Column headers + font controls */}
-            <div className="grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 px-3 py-1 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
-              <div className="flex items-center gap-1">
-                <span>Produto</span>
-                <div className="ml-auto flex items-center gap-0.5">
-                  <button type="button" title="Diminuir fonte"
-                    onClick={() => setFonteProdSave(Math.max(9, fonteProd - 1))}
-                    className="h-4 w-4 rounded text-[9px] border border-border/50 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center transition-colors leading-none">a</button>
-                  <button type="button" title="Aumentar fonte"
-                    onClick={() => setFonteProdSave(Math.min(16, fonteProd + 1))}
-                    className="h-4 w-4 rounded text-[11px] border border-border/50 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center font-bold transition-colors leading-none">A</button>
-                </div>
-              </div>
+            {/* Column headers */}
+            <div className="grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+              <span>Produto</span>
               <span className="text-right">Estoque</span>
               <span className="text-center">Qtd</span>
               <span className="text-right">Preço unit.</span>
@@ -1595,8 +1606,7 @@ function OrderDialog({
               ) : produtosFiltrados.map(p => {
                 const c = cartMap[p.item_id]
                 const inCart = !!c
-                const precoBase = form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
-                const precoEfetivo = c ? getPrecoEfetivo(c) : (precoBase ?? 0)
+                const precoEfetivo = c ? getPrecoEfetivo(c) : getPrecoDisplay(p)
                 const estoqueDisp = estoqueMap[p.item_id] ?? 0
                 const qtd = c?.quantidade ?? 0
                 const efetivoPct = c?.desconto_item_pct ?? descontoPct
