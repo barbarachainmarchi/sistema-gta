@@ -55,7 +55,8 @@ type ServicoItemVenda = { servico_id: string; item_id: string; quantidade: numbe
 type CartItem = {
   item_id: string; nome: string; quantidade: number
   preco_limpo: number | null; preco_sujo: number | null
-  preco_override: number | null
+  preco_limpo_override: number | null
+  preco_sujo_override: number | null
   desconto_item_pct: number | null
   tem_craft: boolean; origem: 'fabricar' | 'estoque'
   servico_id: string | null
@@ -89,9 +90,15 @@ interface Props {
 
 function fmt(v: number) {
   const hasCents = v % 1 !== 0
-  return `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 })}`
+  const fixed = v.toFixed(hasCents ? 2 : 0)
+  const [int, dec] = fixed.split('.')
+  const intFmt = int.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `R$ ${intFmt}${dec ? ',' + dec : ''}`
 }
-function fmtData(s: string) { return new Date(s + 'T12:00:00').toLocaleDateString('pt-BR') }
+function fmtData(s: string) {
+  const [y, m, d] = s.split('-')
+  return `${d}/${m}/${y}`
+}
 function today() { return new Date().toISOString().split('T')[0] }
 
 const STATUS_INFO: Record<StatusVenda, { label: string; cls: string }> = {
@@ -711,7 +718,7 @@ function OrderDialog({
   const [buscaProd, setBuscaProd] = useState('')
   const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
-  const [draftPreco, setDraftPreco] = useState<Record<string, number | null>>({})
+  const [draftPctSujo, setDraftPctSujo] = useState<Record<string, string>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
   const [combosModo, setCombosModo] = useState<Record<string, 'resumo' | 'detalhado'>>({})  // por servico_id
   const [combosQtd, setCombosQtd] = useState<Record<string, number>>({})  // quantidade do combo inteiro
@@ -795,7 +802,7 @@ function OrderDialog({
         setMembroNome(editando.cliente_nome)
         setCart(editando.itens.filter(it => it.item_id).map(it => ({
           item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
-          preco_limpo: it.preco_unit, preco_sujo: null, preco_override: null,
+          preco_limpo: it.preco_unit, preco_sujo: null, preco_limpo_override: null, preco_sujo_override: null,
           desconto_item_pct: null,
           tem_craft: it.origem === 'fabricar', origem: it.origem,
           servico_id: it.servico_id ?? null,
@@ -833,7 +840,7 @@ function OrderDialog({
       setEmpresaAberta(false)
       setMembroAberta(false)
       setDraftOrigem({})
-      setDraftPreco({})
+      setDraftPctSujo({})
       setEditandoPreco(new Set())
       if (!open) setFaixasMap({})
     }
@@ -915,7 +922,9 @@ function OrderDialog({
       return
     }
     // Mantém o que foi digitado (nome ou vulgo) como cliente_nome da venda
-    setForm(prev => ({ ...prev, cliente_nome: membroNome.trim() || m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
+    const selectedName = membroNome.trim() || m.nome
+    setMembroNome(selectedName)
+    setForm(prev => ({ ...prev, cliente_nome: selectedName, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
     setMembroAberta(false)
     // Se membro civil e há facção selecionada, perguntar se pertence
     if (m.faccao_id === null && form.faccao_id) {
@@ -958,7 +967,12 @@ function OrderDialog({
 
   // Cart helpers
   function getPrecoEfetivo(c: CartItem): number {
-    if (c.preco_override != null) return c.preco_override
+    if (form.tipo_dinheiro === 'sujo') {
+      const override = c.preco_sujo_override ?? c.preco_limpo_override
+      if (override != null) return override
+    } else {
+      if (c.preco_limpo_override != null) return c.preco_limpo_override
+    }
     const faixas = faixasMap[c.item_id] ?? []
     return resolverPrecoFaixas(
       { preco_sujo: c.preco_sujo, preco_limpo: c.preco_limpo },
@@ -974,11 +988,10 @@ function OrderDialog({
       const p = meusProdutos.find(p => p.item_id === item_id)
       if (!p) return prev
       const origemDraft = draftOrigem[item_id]
-      const precoDraft = draftPreco[item_id]
       return [...prev, {
         item_id: p.item_id, nome: p.nome, quantidade: qtd,
         preco_limpo: p.preco_limpo, preco_sujo: p.preco_sujo,
-        preco_override: precoDraft != null ? precoDraft : null,
+        preco_limpo_override: null, preco_sujo_override: null,
         desconto_item_pct: faccaoDescontosItem[p.item_id] ?? null,
         tem_craft: p.tem_craft,
         origem: origemDraft ?? (p.tem_craft ? 'fabricar' : 'estoque'),
@@ -987,8 +1000,11 @@ function OrderDialog({
     })
   }
 
-  function setCartPreco(item_id: string, preco: number | null) {
-    setCart(prev => prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, preco_override: preco } : c))
+  function setCartPrecoLimpo(item_id: string, preco: number | null) {
+    setCart(prev => prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, preco_limpo_override: preco } : c))
+  }
+  function setCartPrecoSujo(item_id: string, preco: number | null) {
+    setCart(prev => prev.map(c => (c.item_id === item_id && !c.servico_id) ? { ...c, preco_sujo_override: preco } : c))
   }
 
   function setCartOrigem(item_id: string, origem: 'fabricar' | 'estoque') {
@@ -1008,7 +1024,7 @@ function OrderDialog({
           quantidade: si.quantidade,
           preco_limpo: prod?.preco_limpo ?? 0,
           preco_sujo: prod?.preco_sujo ?? 0,
-          preco_override: null,
+          preco_limpo_override: null, preco_sujo_override: null,
           desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
           tem_craft: si.tem_craft,
           origem: (si.tem_craft ? 'fabricar' : 'estoque') as 'fabricar' | 'estoque',
@@ -1161,7 +1177,7 @@ function OrderDialog({
       return {
         tempId: c.item_id + (c.servico_id ?? ''), item_id: c.item_id, item_nome: c.nome,
         quantidade: String(qty),
-        preco_unit: String(c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))),
+        preco_unit: String(getPrecoEfetivo(c)),
         origem: c.origem,
         servico_id: c.servico_id,
       }
@@ -1471,7 +1487,7 @@ function OrderDialog({
                 const c = cartMap[p.item_id]
                 const inCart = !!c
                 const precoBase = form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo) : p.preco_limpo
-                const precoEfetivo = c ? (c.preco_override ?? (form.tipo_dinheiro === 'sujo' ? (c.preco_sujo ?? c.preco_limpo ?? 0) : (c.preco_limpo ?? 0))) : (precoBase ?? 0)
+                const precoEfetivo = c ? getPrecoEfetivo(c) : (precoBase ?? 0)
                 const estoqueDisp = estoqueMap[p.item_id] ?? 0
                 const qtd = c?.quantidade ?? 0
                 const efetivoPct = c?.desconto_item_pct ?? descontoPct
@@ -1548,30 +1564,77 @@ function OrderDialog({
                     </div>
 
                     {/* Preço unit — leitura por padrão, edição manual via botão */}
-                    <div className="flex items-center justify-end gap-1">
-                      {inCart && editandoPreco.has(p.item_id) ? (
-                        <Input
-                          type="number" min="0" step="0.01" autoFocus
-                          value={c.preco_override != null ? c.preco_override : (precoBase ?? 0)}
-                          onChange={e => { const v = parseFloat(e.target.value); setCartPreco(p.item_id, isNaN(v) ? null : v) }}
-                          onBlur={() => setEditandoPreco(prev => { const n = new Set(prev); n.delete(p.item_id); return n })}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditandoPreco(prev => { const n = new Set(prev); n.delete(p.item_id); return n }) }}
-                          className="h-7 text-xs text-right w-full tabular-nums border-primary/40 bg-primary/[0.04]" />
-                      ) : (
-                        <>
-                          <span className={cn('text-xs tabular-nums', inCart ? (c.preco_override != null ? 'text-yellow-400' : '') : 'text-muted-foreground/50')}>
-                            {fmt(precoEfetivo)}
-                          </span>
-                          {inCart && (
-                            <button onClick={() => setEditandoPreco(prev => new Set([...prev, p.item_id]))}
-                              title="Editar preço"
-                              className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground transition-colors">
-                              <Edit2 className="h-2.5 w-2.5" />
-                            </button>
+                    {(() => {
+                      const hasOverride = inCart && (c.preco_limpo_override != null || c.preco_sujo_override != null)
+                      const closeEdit = () => setEditandoPreco(prev => { const n = new Set(prev); n.delete(p.item_id); return n })
+                      return (
+                        <div className="flex items-center justify-end gap-1">
+                          {inCart && editandoPreco.has(p.item_id) ? (
+                            <div
+                              className="space-y-0.5 py-0.5 w-full"
+                              onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) closeEdit() }}
+                            >
+                              <div className="flex items-center gap-0.5">
+                                <span className="text-[8px] text-emerald-400/70 w-3 shrink-0 text-right font-medium">L</span>
+                                <Input autoFocus type="number" min="0" step="1"
+                                  value={c.preco_limpo_override ?? ''}
+                                  placeholder={String(c.preco_limpo ?? 0)}
+                                  onChange={e => {
+                                    const v = parseFloat(e.target.value)
+                                    setCartPrecoLimpo(p.item_id, isNaN(v) ? null : v)
+                                    const pct = parseFloat(draftPctSujo[p.item_id] ?? '')
+                                    if (!isNaN(pct) && !isNaN(v)) setCartPrecoSujo(p.item_id, Math.round(v * (1 + pct / 100)))
+                                  }}
+                                  onKeyDown={e => { if (e.key === 'Escape') closeEdit() }}
+                                  className="h-5 text-[10px] text-right tabular-nums border-primary/40 bg-primary/[0.04] px-1 flex-1" />
+                              </div>
+                              <div className="flex items-center gap-0.5">
+                                <span className="text-[8px] text-orange-400/70 w-3 shrink-0 text-right font-medium">S</span>
+                                <Input type="number" min="0" step="1"
+                                  value={c.preco_sujo_override ?? ''}
+                                  placeholder={String(c.preco_sujo ?? c.preco_limpo ?? 0)}
+                                  onChange={e => {
+                                    const v = parseFloat(e.target.value)
+                                    setCartPrecoSujo(p.item_id, isNaN(v) ? null : v)
+                                    setDraftPctSujo(prev => { const n = { ...prev }; delete n[p.item_id]; return n })
+                                  }}
+                                  onKeyDown={e => { if (e.key === 'Escape') closeEdit() }}
+                                  className="h-5 text-[10px] text-right tabular-nums border-orange-500/40 bg-orange-500/[0.04] px-1 flex-1" />
+                              </div>
+                              <div className="flex items-center gap-0.5">
+                                <span className="text-[8px] text-muted-foreground/50 w-3 shrink-0 text-right">%</span>
+                                <Input type="number" min="0" step="1"
+                                  value={draftPctSujo[p.item_id] ?? ''}
+                                  placeholder="0"
+                                  onChange={e => {
+                                    const pctStr = e.target.value
+                                    setDraftPctSujo(prev => ({ ...prev, [p.item_id]: pctStr }))
+                                    const pct = parseFloat(pctStr)
+                                    const base = c.preco_limpo_override ?? c.preco_limpo ?? 0
+                                    if (!isNaN(pct)) setCartPrecoSujo(p.item_id, Math.round(base * (1 + pct / 100)))
+                                  }}
+                                  onKeyDown={e => { if (e.key === 'Escape') closeEdit() }}
+                                  className="h-5 text-[10px] text-right tabular-nums px-1 flex-1" />
+                                <span className="text-[8px] text-muted-foreground/50 shrink-0">%</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <span className={cn('text-xs tabular-nums', inCart ? (hasOverride ? 'text-yellow-400' : '') : 'text-muted-foreground/50')}>
+                                {fmt(precoEfetivo)}
+                              </span>
+                              {inCart && (
+                                <button onClick={() => setEditandoPreco(prev => new Set([...prev, p.item_id]))}
+                                  title="Editar preço (limpo / sujo)"
+                                  className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground transition-colors">
+                                  <Edit2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
+                            </>
                           )}
-                        </>
-                      )}
-                    </div>
+                        </div>
+                      )
+                    })()}
 
                     {/* Subtotal */}
                     <div className="text-right">
@@ -1812,7 +1875,7 @@ function OrderDialog({
         <div className="flex items-center gap-2 px-5 py-3 border-t border-border shrink-0">
           {cart.length > 0 && (
             <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive gap-1.5 mr-auto"
-              onClick={() => { setCart([]); setEditandoPreco(new Set()); setDraftOrigem({}); setDraftPreco({}); setCombosModo({}); setCombosQtd({}) }}>
+              onClick={() => { setCart([]); setEditandoPreco(new Set()); setDraftOrigem({}); setDraftPctSujo({}); setCombosModo({}); setCombosQtd({}) }}>
               <Trash2 className="h-3.5 w-3.5" />Limpar tudo
             </Button>
           )}
