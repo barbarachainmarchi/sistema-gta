@@ -689,6 +689,45 @@ function OrderDialog({
   const [favoritos, setFavoritos] = useState<Set<string>>(new Set(favoritosIniciais))
   const [filterCategoria, setFilterCategoria] = useState('')
 
+  // Configurações persistentes de layout
+  const [colW1, setColW1] = useState(256)
+  const [colW3, setColW3] = useState(340)
+  const [fonteProd, setFonteProd] = useState(12)
+  const [pctSujoGlobal, setPctSujoGlobal] = useState('')
+
+  useEffect(() => {
+    try { const w = localStorage.getItem('vendas-dlg-widths'); if (w) { const p = JSON.parse(w); setColW1(p.col1 ?? 256); setColW3(p.col3 ?? 340) } } catch {}
+    try { const f = localStorage.getItem('vendas-dlg-fonte'); if (f) setFonteProd(parseInt(f) || 12) } catch {}
+  }, [])
+
+  function startResizeCol(which: 'col1' | 'col3', e: React.MouseEvent) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = which === 'col1' ? colW1 : colW3
+    const limits: [number, number] = which === 'col1' ? [160, 520] : [200, 520]
+    let finalW = startW
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      finalW = Math.max(limits[0], Math.min(limits[1], startW + (which === 'col1' ? delta : -delta)))
+      which === 'col1' ? setColW1(finalW) : setColW3(finalW)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      try {
+        const saved = JSON.parse(localStorage.getItem('vendas-dlg-widths') ?? '{}')
+        localStorage.setItem('vendas-dlg-widths', JSON.stringify({ ...saved, [which]: finalW }))
+      } catch {}
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  function setFonteProdSave(n: number) {
+    setFonteProd(n)
+    try { localStorage.setItem('vendas-dlg-fonte', String(n)) } catch {}
+  }
+
   async function toggleFavorito(itemId: string) {
     const tinha = favoritos.has(itemId)
     setFavoritos(prev => { const n = new Set(prev); tinha ? n.delete(itemId) : n.add(itemId); return n })
@@ -846,6 +885,7 @@ function OrderDialog({
       setEditandoPreco(new Set())
       setEditandoResumo(new Set())
       setPrecoKitOverride({})
+      setPctSujoGlobal('')
       if (!open) setFaixasMap({})
     }
   }
@@ -925,10 +965,8 @@ function OrderDialog({
       setMembroAberta(false)
       return
     }
-    // Mantém o que foi digitado (nome ou vulgo) como cliente_nome da venda
-    const selectedName = membroNome.trim() || m.nome
-    setMembroNome(selectedName)
-    setForm(prev => ({ ...prev, cliente_nome: selectedName, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
+    setMembroNome(m.nome)
+    setForm(prev => ({ ...prev, cliente_nome: m.nome, cliente_telefone: m.telefone ?? prev.cliente_telefone }))
     setMembroAberta(false)
     // Se membro civil e há facção selecionada, perguntar se pertence
     if (m.faccao_id === null && form.faccao_id) {
@@ -971,9 +1009,15 @@ function OrderDialog({
 
   // Cart helpers
   function getPrecoEfetivo(c: CartItem): number {
+    const pctG = parseFloat(pctSujoGlobal) || 0
     if (form.tipo_dinheiro === 'sujo') {
-      const override = c.preco_sujo_override ?? c.preco_limpo_override
-      if (override != null) return override
+      if (c.preco_sujo_override != null) return c.preco_sujo_override
+      if (c.preco_limpo_override != null) return Math.round(c.preco_limpo_override * (1 + pctG / 100))
+      if (pctG > 0) {
+        const faixas = faixasMap[c.item_id] ?? []
+        const limpoBase = resolverPrecoFaixas({ preco_sujo: null, preco_limpo: c.preco_limpo }, faixas, c.quantidade, 'limpo')
+        return Math.round(limpoBase * (1 + pctG / 100))
+      }
     } else {
       if (c.preco_limpo_override != null) return c.preco_limpo_override
     }
@@ -1220,6 +1264,16 @@ function OrderDialog({
               <Switch checked={form.tipo_dinheiro === 'sujo'}
                 onCheckedChange={v => setForm(prev => ({ ...prev, tipo_dinheiro: v ? 'sujo' : 'limpo' }))} />
               <span className={cn('text-xs', form.tipo_dinheiro === 'sujo' && 'text-orange-400 font-medium')}>Sujo</span>
+              {form.tipo_dinheiro === 'sujo' && (
+                <div className="flex items-center gap-1 ml-1 pl-2 border-l border-border/50">
+                  <span className="text-[10px] text-orange-400/70">+</span>
+                  <Input type="number" min="0" step="1" placeholder="0"
+                    value={pctSujoGlobal}
+                    onChange={e => setPctSujoGlobal(e.target.value)}
+                    className="h-6 w-12 text-xs text-right border-orange-500/30 bg-orange-500/[0.04]" />
+                  <span className="text-[10px] text-orange-400/70">% sujo</span>
+                </div>
+              )}
             </div>
           </div>
         </DialogHeader>
@@ -1228,7 +1282,7 @@ function OrderDialog({
         <div className="flex-1 flex overflow-hidden min-h-0">
 
           {/* ── Coluna 1: Info do pedido ── */}
-          <div className="w-64 shrink-0 border-r border-border flex flex-col overflow-y-auto">
+          <div style={{ width: colW1 + 'px' }} className="shrink-0 flex flex-col overflow-y-auto border-r border-transparent">
             <div className="p-4 space-y-3">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Pedido</p>
 
@@ -1407,8 +1461,12 @@ function OrderDialog({
             </div>
           </div>
 
+          {/* Handle resize col1 */}
+          <div className="w-1 shrink-0 cursor-col-resize border-l border-border hover:bg-primary/30 transition-colors z-10"
+            onMouseDown={e => startResizeCol('col1', e)} />
+
           {/* ── Coluna 2: Produtos ── */}
-          <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
             {/* Search + filtros */}
             <div className="px-3 py-2 shrink-0 border-b border-border">
@@ -1482,9 +1540,19 @@ function OrderDialog({
               )
             })()}
 
-            {/* Column headers */}
-            <div className="grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 px-3 py-1.5 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
-              <span>Produto</span>
+            {/* Column headers + font controls */}
+            <div className="grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 px-3 py-1 shrink-0 border-b border-border/40 text-[10px] text-muted-foreground font-medium bg-white/[0.01]">
+              <div className="flex items-center gap-1">
+                <span>Produto</span>
+                <div className="ml-auto flex items-center gap-0.5">
+                  <button type="button" title="Diminuir fonte"
+                    onClick={() => setFonteProdSave(Math.max(9, fonteProd - 1))}
+                    className="h-4 w-4 rounded text-[9px] border border-border/50 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center transition-colors leading-none">a</button>
+                  <button type="button" title="Aumentar fonte"
+                    onClick={() => setFonteProdSave(Math.min(16, fonteProd + 1))}
+                    className="h-4 w-4 rounded text-[11px] border border-border/50 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center font-bold transition-colors leading-none">A</button>
+                </div>
+              </div>
               <span className="text-right">Estoque</span>
               <span className="text-center">Qtd</span>
               <span className="text-right">Preço unit.</span>
@@ -1516,7 +1584,8 @@ function OrderDialog({
 
                 return (
                   <div key={p.item_id}
-                    className={cn('grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 items-center px-3 py-2 transition-colors',
+                    style={{ fontSize: fonteProd + 'px' }}
+                    className={cn('grid grid-cols-[1fr_52px_104px_88px_76px_28px] gap-x-2 items-center px-3 py-1.5 transition-colors',
                       inCart ? 'bg-primary/[0.04]' : 'hover:bg-white/[0.02]'
                     )}>
                     {/* Nome + badges */}
@@ -1681,8 +1750,12 @@ function OrderDialog({
             </div>
           </div>
 
+          {/* Handle resize col3 */}
+          <div className="w-1 shrink-0 cursor-col-resize border-r border-border hover:bg-primary/30 transition-colors z-10"
+            onMouseDown={e => startResizeCol('col3', e)} />
+
           {/* ── Coluna 3: Ingredientes + Resumo ── */}
-          <div className="w-[340px] shrink-0 flex flex-col overflow-y-auto">
+          <div style={{ width: colW3 + 'px' }} className="shrink-0 flex flex-col overflow-y-auto">
 
             {/* Resumo */}
             <div className="p-4 border-b border-border shrink-0 space-y-2">
