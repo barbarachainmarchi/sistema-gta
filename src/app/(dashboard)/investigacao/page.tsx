@@ -19,6 +19,8 @@ export default async function InvestigacaoPage() {
     { data: servicosData },
     { data: lojaItemPrecosData },
     { data: faixasPrecosData },
+    { data: precosVigentesData },
+    { data: usuarioLocalData },
   ] = await Promise.all([
     supabase.from('faccoes').select('*').order('nome'),
     supabase.from('membros').select('*, faccoes(id, nome, cor_tag)').order('nome'),
@@ -28,9 +30,11 @@ export default async function InvestigacaoPage() {
     supabase.from('faccao_item_precos').select('*'),
     supabase.from('loja_membros').select('membro_id, loja_id'),
     supabase.from('usuarios').select('membro_id, ultimo_acesso').not('membro_id', 'is', null),
-    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct').eq('status', 'ativo').order('nome'),
+    supabase.from('servicos').select('id, nome, descricao, preco_sujo, preco_limpo, desconto_pct, eh_meu_servico').eq('status', 'ativo').order('nome'),
     supabase.from('loja_item_precos').select('loja_id, item_id, preco, preco_sujo'),
     supabase.from('faccao_item_preco_faixas').select('faccao_id, item_id, quantidade_min, preco_sujo, preco_limpo').order('quantidade_min'),
+    supabase.from('item_preco_vigente').select('item_id, preco_sujo, preco_limpo'),
+    supabase.from('usuarios').select('local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
   ])
 
   // Monta mapa membro_id → nomes das lojas onde trabalha
@@ -51,6 +55,8 @@ export default async function InvestigacaoPage() {
     onlineMap[u.membro_id] = online
   }
 
+  const meuFaccaoId = usuarioLocalData?.local_trabalho_faccao_id ?? null
+
   return (
     <InvestigacaoClient
       initialFaccoes={faccoes ?? []}
@@ -63,12 +69,14 @@ export default async function InvestigacaoPage() {
         apelidos: item.apelidos ?? null,
         categoria: Array.isArray(item.categorias_item) ? (item.categorias_item[0]?.nome ?? null) : (item.categorias_item?.nome ?? null),
       }))}
-      todoServicos={(servicosData ?? []) as { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }[]}
+      todoServicos={(servicosData ?? []) as { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; eh_meu_servico: boolean }[]}
       initialFaccaoPrecos={faccaoPrecos ?? []}
       lojaPorMembro={lojaPorMembro}
       onlineMap={onlineMap}
       lojaItemPrecos={(lojaItemPrecosData ?? []) as { loja_id: string; item_id: string; preco: number; preco_sujo: number | null }[]}
       faixasPrecos={(faixasPrecosData ?? []) as { faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }[]}
+      precosVigentes={(precosVigentesData ?? []) as { item_id: string; preco_sujo: number | null; preco_limpo: number | null }[]}
+      meuFaccaoId={meuFaccaoId}
     />
   )
 }

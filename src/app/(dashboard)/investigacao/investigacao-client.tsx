@@ -46,6 +46,8 @@ interface Props {
   onlineMap: Record<string, boolean>
   lojaItemPrecos: LojaItemPreco[]
   faixasPrecos: FaixaPrecoSimples[]
+  precosVigentes: { item_id: string; preco_sujo: number | null; preco_limpo: number | null }[]
+  meuFaccaoId: string | null
 }
 
 function AutocompleteInput({ value, onChange, suggestions, placeholder, className }: {
@@ -92,7 +94,7 @@ function StatusBadge({ status }: { status: 'ativo' | 'inativo' }) {
   )
 }
 
-export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap, lojaItemPrecos, faixasPrecos }: Props) {
+export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeiculos, initialLojas, todosProdutos, todoServicos, initialFaccaoPrecos, lojaPorMembro, onlineMap, lojaItemPrecos, faixasPrecos, precosVigentes, meuFaccaoId }: Props) {
   const sbRef = useRef<ReturnType<typeof createClient> | null>(null)
   const sb = useCallback(() => { if (!sbRef.current) sbRef.current = createClient(); return sbRef.current }, [])
 
@@ -1464,6 +1466,9 @@ export function InvestigacaoClient({ initialFaccoes, initialMembros, initialVeic
           onMembroDeleted={id => setMembros(prev => prev.filter(x => x.id !== id))}
           onVeiculoSaved={(v, isNew) => setVeiculos(prev => isNew ? [...prev, v] : prev.map(x => x.id === v.id ? v : x))}
           onVeiculoDeleted={id => setVeiculos(prev => prev.filter(x => x.id !== id))}
+          precosVigentes={precosVigentes}
+          meuFaccaoId={meuFaccaoId}
+          meuFaccaoPrecos={meuFaccaoId ? faccaoPrecos.filter(p => p.faccao_id === meuFaccaoId) : []}
         />
       )}
     </>
