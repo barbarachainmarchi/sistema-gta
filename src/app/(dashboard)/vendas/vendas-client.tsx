@@ -32,7 +32,7 @@ type VendaItem = {
 }
 type Venda = {
   id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; cliente_telefone: string | null
-  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; desconto_fixo: number; status: StatusVenda
+  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; desconto_fixo: number; pct_sujo_global: number; status: StatusVenda
   data_encomenda: string | null; notas: string | null
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null; entregue_em: string | null
@@ -907,7 +907,7 @@ function OrderDialog({
       setEditandoPreco(new Set())
       setEditandoResumo(new Set())
       if (!editando) setPrecoKitOverride({})
-      setPctSujoGlobal('')
+      setPctSujoGlobal(editando && editando.pct_sujo_global > 0 ? String(editando.pct_sujo_global) : '')
       if (!open) setFaixasMap({})
     }
   }
@@ -1907,7 +1907,12 @@ function OrderDialog({
                                         className={cn('tabular-nums font-medium ml-1 hover:text-yellow-400 transition-colors', precoKitOverride[sid] != null && 'text-yellow-400')}
                                         title="Clique para editar preço por kit"
                                         onClick={() => setEditandoResumo(prev => new Set([...prev, sid]))}>
-                                        {fmt(totalCombo)}
+                                        {descontoPct > 0 ? (
+                                          <span className="flex items-center gap-1">
+                                            <span className="line-through text-muted-foreground/40 text-[0.8em]">{fmt(totalCombo)}</span>
+                                            {fmt(totalCombo * (1 - descontoPct / 100))}
+                                          </span>
+                                        ) : fmt(totalCombo)}
                                       </button>
                                     )}
                                     <button
@@ -2278,6 +2283,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
@@ -2300,6 +2306,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
@@ -2322,6 +2329,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
+          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
           status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
           criado_por: vendedorId || userId,
@@ -2402,29 +2410,13 @@ export function VendasClient({
   }
 
   async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null) {
-    // Calcular total usando preços reais de combos (mesma lógica do VendaCard)
+    // Usa sempre preco_unit salvo — não recalcula do catálogo (mesmo critério do VendaCard)
+    const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
     const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
-    let subtotal = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
     const combosNomes: string[] = []
     for (const sid of sids) {
       const sv = servicos.find(x => x.id === sid)
       if (sv) combosNomes.push(sv.nome)
-      const ic = venda.itens.filter(it => it.servico_id === sid)
-      const orig = servicoItens.filter(si => si.servico_id === sid)
-      let mult: number | null = null
-      if (orig.length > 0 && orig.length === ic.length) {
-        let m: number | null = null; let ok = true
-        for (const o of orig) {
-          const it = ic.find(x => x.item_id === o.item_id)
-          if (!it || o.quantidade === 0) { ok = false; break }
-          const r = it.quantidade / o.quantidade
-          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
-          if (m === null) m = r; else if (m !== r) { ok = false; break }
-        }
-        if (ok && m != null) mult = m
-      }
-      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
-      subtotal += (pu != null && mult != null) ? pu * mult : ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
     }
     const totalVenda = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     if (totalVenda <= 0) return
