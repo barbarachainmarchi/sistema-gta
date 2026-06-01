@@ -1,0 +1,3 @@
+ALTER TABLE faccao_desconto_por_item
+  ADD COLUMN IF NOT EXISTS modo TEXT NOT NULL DEFAULT 'pct',
+  ADD COLUMN IF NOT EXISTS preco_especial NUMERIC;

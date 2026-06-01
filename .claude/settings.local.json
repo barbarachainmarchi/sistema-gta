@@ -59,7 +59,9 @@
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\node_modules\\\\next\\\\dist\\\\docs\\\\01-app\\\\03-api-reference\\\\04-functions\" | Select-Object Name | Where-Object { $_.Name -match \"dynamic|lazy\" })",
       "PowerShell(dashboard *)",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\node_modules\\\\next\\\\dist\\\\docs\\\\01-app\\\\03-api-reference\\\\04-functions\" | Where-Object { $_.Name -match \"refresh|revalidate|router\" } | Select-Object Name)",
-      "Bash(curl -s http://localhost:3001/vendas)"
+      "Bash(curl -s http://localhost:3001/vendas)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\src\" -Directory)",
+      "Read(//c/Users/barbaramarchi/projetos/**)"
     ]
   }
 }

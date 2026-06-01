@@ -233,31 +233,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
   const isDarkchat = faccaoObj?.is_darkchat ?? false
   // Subtotal: para combos usa o preço do serviço × multiplicador quando disponível
-  const subtotal = (() => {
-    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
-    let s = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-    for (const sid of sids) {
-      const sv = servicos.find(x => x.id === sid)
-      const ic = venda.itens.filter(it => it.servico_id === sid)
-      const somaItens = ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-      const orig = servicoItens.filter(si => si.servico_id === sid)
-      let mult: number | null = null
-      if (orig.length > 0 && orig.length === ic.length) {
-        let m: number | null = null; let ok = true
-        for (const o of orig) {
-          const it = ic.find(x => x.item_id === o.item_id)
-          if (!it || o.quantidade === 0) { ok = false; break }
-          const r = it.quantidade / o.quantidade
-          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
-          if (m === null) m = r; else if (m !== r) { ok = false; break }
-        }
-        if (ok && m != null) mult = m
-      }
-      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
-      s += (pu != null && mult != null) ? pu * mult : somaItens
-    }
-    return s
-  })()
+  // Subtotal sempre usa preco_unit salvo — não recalcula do catálogo (preserva pctSujoGlobal e overrides)
+  const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
   const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
   const cancelado = venda.status === 'cancelado'
@@ -392,16 +369,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                         }
                         if (ok && m != null) comboMult = m
                       }
-                      // Preço do combo definido × multiplicador
-                      const comboPrecoUnit = venda.tipo_dinheiro === 'sujo'
-                        ? (servico?.preco_sujo ?? servico?.preco_limpo)
-                        : servico?.preco_limpo
-                      const totalCombo = (comboPrecoUnit != null && comboMult != null)
-                        ? comboPrecoUnit * comboMult
-                        : somaItens
-                      const ajusteCombo = (comboPrecoUnit != null && comboMult != null && Math.abs(totalCombo - somaItens) > 0.01)
-                        ? totalCombo - somaItens
-                        : null
+                      // Usa sempre somaItens (preços salvos) — preserva pctSujoGlobal e overrides
+                      const totalCombo = somaItens
                       return (
                         <div key={sid}>
                           <button
@@ -433,17 +402,6 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                               )}
                             </div>
                           ))}
-                          {!colapsado && ajusteCombo != null && (
-                            <div className="grid grid-cols-[auto_1fr_36px_66px_68px] gap-x-1.5 items-center pl-6 pr-3 py-1 bg-primary/[0.02] border-t border-border/[0.08]">
-                              <span />
-                              <span className="text-[10px] italic text-muted-foreground/60 col-span-3">
-                                {ajusteCombo < 0 ? 'Desconto combo' : 'Acréscimo combo'}
-                              </span>
-                              <span className={cn('text-xs text-right tabular-nums font-medium', ajusteCombo < 0 ? 'text-green-400' : 'text-yellow-400')}>
-                                {ajusteCombo > 0 ? '+' : ''}{fmt(ajusteCombo)}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       )
                     })}
@@ -847,48 +805,75 @@ function OrderDialog({
           : editando.loja_id ? (lojas.find(l => l.id === editando.loja_id)?.nome ?? '') : ''
         setEmpresaNome(editEmpresaNome)
         setMembroNome(editando.cliente_nome)
-        // Para combos com preco_unit=0 (kit sem preços por item), distribui
-        // o preço do serviço igualmente para que getPrecoEfetivo retorne valor correto
+        // Detecta multiplicador real de cada combo (ex: 2×) comparando qtds salvas vs base servicoItens
         const comboPrecoDistribuido: Record<string, Record<string, number>> = {}
+        const comboMults: Record<string, number> = {}
+        const kitOverridesEdit: Record<string, number> = {}
         const comboSidsEdit = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
         for (const sid of comboSidsEdit) {
           const sv = servicos.find(s => s.id === sid)
-          const kitItems = editando.itens.filter(x => x.servico_id === sid && x.item_id)
-          const kitSoma = kitItems.reduce((acc, x) => acc + x.preco_unit * x.quantidade, 0)
+          const savedItems = editando.itens.filter(x => x.servico_id === sid && x.item_id)
+          const kitSoma = savedItems.reduce((acc, x) => acc + x.preco_unit * x.quantidade, 0)
+          // Detectar multiplicador via ratio qtd_salva / qtd_base
+          const origItems = servicoItens.filter(si => si.servico_id === sid)
+          let mult = 1
+          if (origItems.length > 0 && origItems.length === savedItems.length) {
+            let m: number | null = null; let ok = true
+            for (const orig of origItems) {
+              const saved = savedItems.find(it => it.item_id === orig.item_id)
+              if (!saved || orig.quantidade === 0) { ok = false; break }
+              const ratio = saved.quantidade / orig.quantidade
+              if (!Number.isInteger(ratio) || ratio <= 0) { ok = false; break }
+              if (m === null) m = ratio; else if (m !== ratio) { ok = false; break }
+            }
+            if (ok && m != null) mult = m
+          }
+          comboMults[sid] = mult
           if (kitSoma === 0 && sv) {
+            // Kit sem preços por item: distribui o preço do catálogo igualmente
             const kitPreco = editando.tipo_dinheiro === 'sujo'
               ? (sv.preco_sujo ?? sv.preco_limpo)
               : sv.preco_limpo
             if (kitPreco != null && kitPreco > 0) {
-              const totalQtd = kitItems.reduce((acc, x) => acc + x.quantidade, 0)
+              const totalQtd = savedItems.reduce((acc, x) => acc + x.quantidade, 0)
               if (totalQtd > 0) {
                 comboPrecoDistribuido[sid] = {}
-                for (const item of kitItems) {
+                for (const item of savedItems) {
                   comboPrecoDistribuido[sid][item.item_id!] = kitPreco / totalQtd
                 }
               }
             }
+          } else if (kitSoma > 0 && mult > 0) {
+            // Preserva preço por 1× do kit para evitar recalcular sem pctSujoGlobal ao re-salvar
+            kitOverridesEdit[sid] = kitSoma / mult
           }
         }
         setCart(editando.itens.filter(it => it.item_id).map(it => {
+          const mult = it.servico_id ? (comboMults[it.servico_id] ?? 1) : 1
+          // Divide pela qtd do multiplicador para restaurar a qtd base (1× do kit)
+          const baseQty = mult > 1 ? it.quantidade / mult : it.quantidade
           let effectivePrice = it.preco_unit
           if (it.servico_id && comboPrecoDistribuido[it.servico_id]?.[it.item_id!] != null) {
             effectivePrice = comboPrecoDistribuido[it.servico_id][it.item_id!]
           }
+          const sujoOv = effectivePrice > 0 && editando.tipo_dinheiro === 'sujo' ? effectivePrice : null
+          const limpoOv = effectivePrice > 0 && editando.tipo_dinheiro === 'limpo' ? effectivePrice : null
           return {
-          item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
-          preco_limpo: effectivePrice,
-          preco_sujo: effectivePrice,
-          preco_limpo_override: null, preco_sujo_override: null,
-          desconto_item_pct: null,
-          tem_craft: it.origem === 'fabricar', origem: it.origem,
-          servico_id: it.servico_id ?? null,
+            item_id: it.item_id!, nome: it.item_nome, quantidade: baseQty,
+            preco_limpo: it.preco_unit,
+            preco_sujo: effectivePrice,
+            preco_limpo_override: limpoOv,
+            preco_sujo_override: sujoOv,
+            desconto_item_pct: null,
+            tem_craft: it.origem === 'fabricar', origem: it.origem,
+            servico_id: it.servico_id ?? null,
           }
         }))
-        // Inicializa modo dos combos existentes
+        // Inicializa modo dos combos com multiplicador correto detectado
         const idsCombo = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
         setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
-        setCombosQtd(Object.fromEntries(idsCombo.map(id => [id, 1])))
+        setCombosQtd(comboMults)
+        if (Object.keys(kitOverridesEdit).length > 0) setPrecoKitOverride(kitOverridesEdit)
       } else {
         const defaultFaccao = meuFaccao ? faccoes.find(f => f.id === meuFaccao.id) ?? null : null
         const defaultDesconto = defaultFaccao?.desconto_padrao_pct ?? 0
@@ -921,7 +906,7 @@ function OrderDialog({
       setDraftPctSujo({})
       setEditandoPreco(new Set())
       setEditandoResumo(new Set())
-      setPrecoKitOverride({})
+      if (!editando) setPrecoKitOverride({})
       setPctSujoGlobal('')
       if (!open) setFaixasMap({})
     }
@@ -1880,8 +1865,9 @@ function OrderDialog({
                           if (modo === 'resumo') {
                             const qtdCombo = combosQtd[sid] ?? 1
                             const precoBase = getServPreco(s)
-                            const totalCombo = ((!modificado && precoBase != null)
-                              ? precoBase
+                            const precoBaseUnit = precoKitOverride[sid] ?? (!modificado && precoBase != null ? precoBase : null)
+                            const totalCombo = (precoBaseUnit != null
+                              ? precoBaseUnit
                               : itensCombo.reduce((acc, c) => acc + c.quantidade * getPrecoEfetivo(c), 0)) * qtdCombo
 
                             return (

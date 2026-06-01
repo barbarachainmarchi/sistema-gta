@@ -37,7 +37,7 @@ export type FaccaoPreco = {
 }
 export type FaixaPreco   = { id: string; faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 export type Produto      = { id: string; nome: string; categoria?: string | null; apelidos?: string | null }
-export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number }
+export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number; modo?: 'pct' | 'fixo'; preco_especial?: number | null }
 export type Servico      = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number }
 type FaccaoProdutoExtra = { id: string; faccao_id: string; nome: string; valor_sujo: number | null; valor_limpo: number | null; created_at: string }
 
@@ -440,7 +440,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [loadingExtras, setLoadingExtras] = useState(false)
   const [novoDescontoModal, setNovoDescontoModal] = useState(false)
   const [novoDescontoTab, setNovoDescontoTab] = useState<'lote' | 'manual'>('lote')
-  const [loteSelecao, setLoteSelecao] = useState<Record<string, string>>({})
+  const [loteSelecao, setLoteSelecao] = useState<Record<string, { modo: 'pct' | 'fixo'; valor: string }>>({})
+  const [loteSearch, setLoteSearch] = useState('')
+  const [loteTipo, setLoteTipo] = useState<'todos' | 'produtos' | 'kits'>('todos')
+  const [loteKitSelecao, setLoteKitSelecao] = useState<Record<string, string>>({})
+  const [servicoDescontosOverride, setServicoDescontosOverride] = useState<Record<string, number>>({})
   const [loteSaving, setLoteSaving] = useState(false)
   const [manualForm, setManualForm] = useState({ nome: '', valor_sujo: '', valor_limpo: '' })
   const [manualSaving, setManualSaving] = useState(false)
@@ -500,11 +504,24 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
 
   const combosFiltradosDesconto = useMemo(() =>
     faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
-      s!.desconto_pct > 0 && (!buscaDesconto || norm(s!.nome).includes(norm(buscaDesconto)))
+      (servicoDescontosOverride[s!.id] ?? s!.desconto_pct) > 0 && (!buscaDesconto || norm(s!.nome).includes(norm(buscaDesconto)))
     ) as Servico[]
-  , [faccaoServicosIds, todoServicos, buscaDesconto])
+  , [faccaoServicosIds, todoServicos, buscaDesconto, servicoDescontosOverride])
 
   const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
+
+  const produtosLoteFiltrados = useMemo(() => {
+    let lista = produtosParaDesconto
+    if (loteSearch) lista = lista.filter(p => norm(p.nome).includes(norm(loteSearch)))
+    return lista
+  }, [produtosParaDesconto, loteSearch])
+
+  const kitsLoteFiltrados = useMemo(() =>
+    faccaoServicosIds
+      .map(sid => todoServicos.find(s => s.id === sid))
+      .filter((s): s is Servico => s != null && (servicoDescontosOverride[s.id] ?? s.desconto_pct) === 0)
+      .filter(s => !loteSearch || norm(s.nome).includes(norm(loteSearch)))
+  , [faccaoServicosIds, todoServicos, loteSearch, servicoDescontosOverride])
 
   const descontosFiltrados = useMemo(() => descontosItem.filter(d => {
     if (!buscaDesconto) return true
@@ -549,18 +566,30 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   }
 
   async function handleSalvarLote() {
-    const itens = Object.entries(loteSelecao).filter(([, v]) => v !== '')
-    if (itens.length === 0) { toast.error('Selecione pelo menos um produto'); return }
+    const itemEntries = Object.entries(loteSelecao).filter(([, v]) => v.valor !== '')
+    const kitEntries = Object.entries(loteKitSelecao).filter(([, v]) => v !== '')
+    if (itemEntries.length === 0 && kitEntries.length === 0) { toast.error('Selecione pelo menos um produto'); return }
     setLoteSaving(true)
-    const rows = itens.map(([item_id, pct]) => ({ faccao_id: faccao.id, item_id, desconto_pct: parseFloat(pct) || 0 }))
-    const { error } = await sb().from('faccao_desconto_por_item').upsert(rows, { onConflict: 'faccao_id,item_id' })
-    setLoteSaving(false)
-    if (error) { toast.error('Erro ao salvar'); return }
+    if (itemEntries.length > 0) {
+      const rows = itemEntries.map(([item_id, sel]) => ({
+        faccao_id: faccao.id, item_id,
+        desconto_pct: sel.modo === 'pct' ? (parseFloat(sel.valor) || 0) : 0,
+        modo: sel.modo,
+        preco_especial: sel.modo === 'fixo' ? (parseFloat(sel.valor) || null) : null,
+      }))
+      const { error } = await sb().from('faccao_desconto_por_item').upsert(rows, { onConflict: 'faccao_id,item_id' })
+      if (error) { toast.error('Erro ao salvar produtos'); setLoteSaving(false); return }
+    }
+    for (const [sid, pctStr] of kitEntries) {
+      const pct = parseFloat(pctStr) || 0
+      const { error } = await sb().from('servicos').update({ desconto_pct: pct }).eq('id', sid)
+      if (!error) setServicoDescontosOverride(prev => ({ ...prev, [sid]: pct }))
+    }
     const { data } = await sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id)
     setDescontosItem((data ?? []) as DescontoItem[])
-    setNovoDescontoModal(false)
-    setLoteSelecao({})
-    toast.success(`${itens.length} produto(s) salvo(s)`)
+    setLoteSaving(false)
+    fecharDescontoModal()
+    toast.success(`${itemEntries.length + kitEntries.length} item(s) salvo(s)`)
   }
 
   async function handleSalvarManual() {
@@ -579,8 +608,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       if (error) { toast.error('Erro ao salvar'); return }
       setProdutosExtras(prev => [...prev, data as FaccaoProdutoExtra])
     }
-    setNovoDescontoModal(false)
-    setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
+    fecharDescontoModal()
     toast.success('Salvo')
   }
 
@@ -591,8 +619,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     toast.success('Removido')
   }
 
+  function fecharDescontoModal() {
+    setNovoDescontoModal(false)
+    setLoteSelecao({})
+    setLoteKitSelecao({})
+    setLoteSearch('')
+    setLoteTipo('todos')
+    setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
+    setEditandoExtra(null)
+  }
+
   function abrirNovoDescontoModal() {
     setLoteSelecao({})
+    setLoteKitSelecao({})
+    setLoteSearch('')
+    setLoteTipo('todos')
     setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
     setEditandoExtra(null)
     setNovoDescontoTab('lote')
@@ -1184,8 +1225,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       </Dialog>
 
       {/* Modal: Desconto nosso — novo/lote/manual */}
-      <Dialog open={novoDescontoModal} onOpenChange={v => { if (!v) { setNovoDescontoModal(false); setLoteSelecao({}); setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' }); setEditandoExtra(null) } }}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+      <Dialog open={novoDescontoModal} onOpenChange={v => { if (!v) fecharDescontoModal() }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader><DialogTitle className="text-sm">{editandoExtra ? 'Editar produto manual' : 'Desconto nosso — Adicionar'}</DialogTitle></DialogHeader>
           {!editandoExtra && (
             <div className="flex gap-0 border-b border-border shrink-0 -mx-6 px-6">
@@ -1199,29 +1240,165 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
               </button>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto">
-            {(novoDescontoTab === 'lote' && !editandoExtra) && (
-              <div className="py-3 space-y-1">
-                <p className="text-[11px] text-muted-foreground pb-1">Informe o desconto (%) para os produtos desejados. Deixe em branco para pular.</p>
-                {produtosParaDesconto.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">Todos os produtos já têm desconto cadastrado.</p>
-                ) : (
-                  produtosParaDesconto.map(p => (
-                    <div key={p.id} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0">
-                      <span className="text-xs flex-1 min-w-0 truncate">{p.nome}</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Input
-                          type="number" min="0" max="100" placeholder="%" step="0.5"
-                          value={loteSelecao[p.id] ?? ''}
-                          onChange={e => setLoteSelecao(prev => { const n = { ...prev }; if (e.target.value === '') delete n[p.id]; else n[p.id] = e.target.value; return n })}
-                          className="h-7 text-xs w-16 text-right" />
-                        <span className="text-xs text-muted-foreground">%</span>
-                      </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {(novoDescontoTab === 'lote' && !editandoExtra) && (() => {
+              const totalSelecionados =
+                Object.values(loteSelecao).filter(v => v.valor !== '').length +
+                Object.values(loteKitSelecao).filter(v => v !== '').length
+              const mostrarProdutos = loteTipo === 'todos' || loteTipo === 'produtos'
+              const mostrarKits = loteTipo === 'todos' || loteTipo === 'kits'
+              return (
+                <div className="py-3 space-y-2">
+                  {/* Busca */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Buscar produto ou kit..."
+                      value={loteSearch}
+                      onChange={e => setLoteSearch(e.target.value)}
+                      className="h-8 text-xs pl-8"
+                    />
+                  </div>
+                  {/* Filtro tipo */}
+                  <div className="flex border border-border rounded-md overflow-hidden text-[11px] shrink-0">
+                    {(['todos', 'produtos', 'kits'] as const).map(t => (
+                      <button key={t} onClick={() => setLoteTipo(t)}
+                        className={cn('flex-1 py-1 font-medium transition-colors',
+                          loteTipo === t
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                        )}>
+                        {t === 'todos' ? 'Todos' : t === 'produtos' ? 'Produtos' : 'Kits'}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Lista produtos */}
+                  {mostrarProdutos && produtosLoteFiltrados.length > 0 && (
+                    <div className="space-y-0">
+                      {loteTipo === 'todos' && (
+                        <p className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide px-0.5 pb-1 pt-1">Produtos</p>
+                      )}
+                      {produtosLoteFiltrados.map(p => {
+                        const basePreco = faccaoPrecos.find(fp => fp.item_id === p.id)
+                        const sel = loteSelecao[p.id]
+                        const modoAtual = sel?.modo ?? 'pct'
+                        return (
+                          <div key={p.id} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0">
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs truncate block">{p.nome}</span>
+                              {basePreco && (basePreco.preco_sujo != null || basePreco.preco_limpo != null) && (
+                                <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                                  {basePreco.preco_sujo != null && `S: ${fmt(basePreco.preco_sujo)}`}
+                                  {basePreco.preco_sujo != null && basePreco.preco_limpo != null && ' · '}
+                                  {basePreco.preco_limpo != null && `L: ${fmt(basePreco.preco_limpo)}`}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                title={modoAtual === 'pct' ? 'Mudar para preço especial (R$)' : 'Mudar para % de desconto'}
+                                onClick={() => setLoteSelecao(prev => {
+                                  const current = prev[p.id] ?? { modo: 'pct' as const, valor: '' }
+                                  return { ...prev, [p.id]: { modo: current.modo === 'pct' ? 'fixo' : 'pct', valor: '' } }
+                                })}
+                                className={cn(
+                                  'h-6 w-8 rounded text-[10px] font-bold transition-colors border shrink-0',
+                                  modoAtual === 'pct'
+                                    ? 'border-border/60 text-muted-foreground hover:border-primary hover:text-primary'
+                                    : 'border-primary text-primary bg-primary/10'
+                                )}
+                              >
+                                {modoAtual === 'pct' ? '%' : 'R$'}
+                              </button>
+                              <Input
+                                type="number" min="0"
+                                placeholder={modoAtual === 'pct' ? 'desc %' : 'preço'}
+                                step={modoAtual === 'pct' ? '0.5' : '1000'}
+                                max={modoAtual === 'pct' ? 100 : undefined}
+                                value={sel?.valor ?? ''}
+                                onChange={e => setLoteSelecao(prev => {
+                                  const n = { ...prev }
+                                  const current = n[p.id] ?? { modo: 'pct' as const, valor: '' }
+                                  if (e.target.value === '') delete n[p.id]
+                                  else n[p.id] = { ...current, valor: e.target.value }
+                                  return n
+                                })}
+                                className="h-7 text-xs w-24 text-right"
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  ))
-                )}
-              </div>
-            )}
+                  )}
+                  {mostrarProdutos && produtosLoteFiltrados.length === 0 && loteTipo === 'produtos' && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      {loteSearch ? 'Nenhum produto encontrado.' : 'Todos os produtos já têm desconto cadastrado.'}
+                    </p>
+                  )}
+                  {/* Lista kits */}
+                  {mostrarKits && kitsLoteFiltrados.length > 0 && (
+                    <div className={cn('space-y-0', loteTipo === 'todos' && produtosLoteFiltrados.length > 0 && 'mt-2 pt-2 border-t border-border/30')}>
+                      {loteTipo === 'todos' && (
+                        <p className="text-[10px] text-muted-foreground/60 font-semibold uppercase tracking-wide px-0.5 pb-1 pt-1">Kits / Serviços</p>
+                      )}
+                      {kitsLoteFiltrados.map(s => (
+                        <div key={s.id} className="flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0">
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs truncate flex items-center gap-1">
+                              <Layers className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                              {s.nome}
+                            </span>
+                            {(s.preco_sujo != null || s.preco_limpo != null) && (
+                              <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                                {s.preco_sujo != null && `S: ${fmt(s.preco_sujo)}`}
+                                {s.preco_sujo != null && s.preco_limpo != null && ' · '}
+                                {s.preco_limpo != null && `L: ${fmt(s.preco_limpo)}`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Input
+                              type="number" min="0" max="100" placeholder="desc %" step="0.5"
+                              value={loteKitSelecao[s.id] ?? ''}
+                              onChange={e => setLoteKitSelecao(prev => {
+                                const n = { ...prev }
+                                if (e.target.value === '') delete n[s.id]; else n[s.id] = e.target.value
+                                return n
+                              })}
+                              className="h-7 text-xs w-24 text-right"
+                            />
+                            <span className="text-xs text-muted-foreground shrink-0">%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {mostrarKits && kitsLoteFiltrados.length === 0 && loteTipo === 'kits' && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      {loteSearch ? 'Nenhum kit encontrado.' : 'Todos os kits já têm desconto cadastrado.'}
+                    </p>
+                  )}
+                  {loteTipo === 'todos' && produtosLoteFiltrados.length === 0 && kitsLoteFiltrados.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      {loteSearch ? 'Nenhum item encontrado.' : 'Todos os itens já têm desconto cadastrado.'}
+                    </p>
+                  )}
+                  {/* Rodapé informativo para modo fixo */}
+                  {Object.values(loteSelecao).some(v => v.modo === 'fixo') && (
+                    <p className="text-[10px] text-muted-foreground/60 italic pt-1">
+                      Preço especial (R$) requer a migration SQL — veja o console para detalhes.
+                    </p>
+                  )}
+                  <div className="flex justify-end gap-2 pt-2 border-t border-border shrink-0">
+                    <Button variant="outline" size="sm" onClick={fecharDescontoModal}>Cancelar</Button>
+                    <Button size="sm" onClick={handleSalvarLote} disabled={loteSaving || totalSelecionados === 0}>
+                      {loteSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Salvar${totalSelecionados > 0 ? ` (${totalSelecionados})` : ''}`}
+                    </Button>
+                  </div>
+                </div>
+              )
+            })()}
             {(novoDescontoTab === 'manual' || editandoExtra) && (
               <div className="py-3 space-y-3">
                 <p className="text-[11px] text-muted-foreground">Produto específico desta facção, não cadastrado globalmente.</p>
@@ -1242,21 +1419,16 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                       onChange={e => setManualForm(f => ({ ...f, valor_limpo: e.target.value }))} className="h-8 text-sm" />
                   </div>
                 </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <Button variant="outline" size="sm" onClick={fecharDescontoModal}>Cancelar</Button>
+                  <Button size="sm" onClick={handleSalvarManual} disabled={manualSaving || !manualForm.nome.trim()}>
+                    {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-border shrink-0">
-            <Button variant="outline" size="sm" onClick={() => { setNovoDescontoModal(false); setLoteSelecao({}); setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' }); setEditandoExtra(null) }}>Cancelar</Button>
-            {(novoDescontoTab === 'lote' && !editandoExtra) ? (
-              <Button size="sm" onClick={handleSalvarLote} disabled={loteSaving || Object.keys(loteSelecao).length === 0}>
-                {loteSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `Salvar${Object.keys(loteSelecao).length > 0 ? ` (${Object.keys(loteSelecao).length})` : ''}`}
-              </Button>
-            ) : (
-              <Button size="sm" onClick={handleSalvarManual} disabled={manualSaving || !manualForm.nome.trim()}>
-                {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Salvar'}
-              </Button>
-            )}
-          </div>
+          {/* Rodapé padrão apenas para aba manual sem edição (botões já embutidos acima por aba) */}
         </DialogContent>
       </Dialog>
 
