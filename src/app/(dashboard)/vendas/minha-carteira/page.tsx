@@ -21,7 +21,7 @@ export default async function MinhaCarteiraPage() {
   ] = await Promise.all([
     supabase.from('usuarios').select('perfis_acesso(perfil_permissoes(modulo, pode_editar))').eq('id', user.id).maybeSingle(),
     supabase.from('usuarios').select('nome, membro_id, local_trabalho_faccao_id').eq('id', user.id).maybeSingle(),
-    supabase.from('vendas').select('id, cliente_nome, tipo_dinheiro, desconto_pct, status, created_at, entregue_em, criado_por, criado_por_nome, entregue_por, entregue_por_nome, cancelamento_solicitado, cancelamento_motivo, faccao_id, faccoes(nome)').eq('status', 'entregue').order('created_at', { ascending: false }),
+    supabase.from('vendas').select('id, cliente_nome, tipo_dinheiro, desconto_pct, desconto_fixo, valor_total, status, created_at, entregue_em, criado_por, criado_por_nome, entregue_por, entregue_por_nome, cancelamento_solicitado, cancelamento_motivo, faccao_id, faccoes(nome)').eq('status', 'entregue').order('created_at', { ascending: false }),
     supabase.from('venda_itens').select('id, venda_id, item_id, item_nome, quantidade, preco_unit, servico_id, servicos(nome)'),
     supabase.from('financeiro_lancamentos').select('id, venda_id, conta_id, valor, tipo_dinheiro, created_by, responsavel_nome').eq('tipo', 'venda'),
     supabase.from('financeiro_contas').select('id, nome, tipo, membro_id, saldo_sujo, saldo_limpo, status').eq('status', 'ativo').order('nome'),

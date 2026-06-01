@@ -19,7 +19,8 @@ type Servico = { id: string; nome: string; preco_sujo: number | null; preco_limp
 type ServicoItem = { servico_id: string; item_id: string; quantidade: number }
 type Venda = {
   id: string; cliente_nome: string; tipo_dinheiro: 'sujo' | 'limpo'
-  desconto_pct: number; status: string; created_at: string; entregue_em: string | null
+  desconto_pct: number; desconto_fixo: number; valor_total: number | null
+  status: string; created_at: string; entregue_em: string | null
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null
   cancelamento_solicitado: boolean | null; cancelamento_motivo: string | null
@@ -179,28 +180,9 @@ export function CarteiraClient({ userId, userNome, vendas: vendasIniciais, lanca
   }, [vendasVisiveis, filtroAba, isComigo, busca])
 
   const totalVenda = (v: Venda) => {
-    const sids = [...new Set(v.itens.map(it => it.servico_id).filter(Boolean))] as string[]
-    let sub = v.itens.filter(it => !it.servico_id).reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
-    for (const sid of sids) {
-      const sv = servicos.find(x => x.id === sid)
-      const ic = v.itens.filter(it => it.servico_id === sid)
-      const orig = servicoItens.filter(si => si.servico_id === sid)
-      let mult: number | null = null
-      if (sv && orig.length > 0 && orig.length === ic.length) {
-        let m: number | null = null; let ok = true
-        for (const o of orig) {
-          const it = ic.find(x => x.item_id === o.item_id)
-          if (!it || o.quantidade === 0) { ok = false; break }
-          const r = it.quantidade / o.quantidade
-          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
-          if (m === null) m = r; else if (m !== r) { ok = false; break }
-        }
-        if (ok && m != null) mult = m
-      }
-      const pu = v.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
-      sub += (pu != null && mult != null) ? pu * mult : ic.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
-    }
-    return Math.max(0, sub * (1 - v.desconto_pct / 100))
+    if (v.valor_total != null) return v.valor_total
+    const sub = v.itens.reduce((s, it) => s + it.quantidade * it.preco_unit, 0)
+    return Math.max(0, sub * (1 - v.desconto_pct / 100) - (v.desconto_fixo ?? 0))
   }
 
   // Totais

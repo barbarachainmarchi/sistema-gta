@@ -67,6 +67,7 @@ type FormState = {
   tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: string; desconto_fixo: string; notas: string; data_encomenda: string
   data_venda: string
   status: StatusVenda; itens: FormItem[]
+  pctSujoGlobal: string
 }
 
 interface Props {
@@ -705,7 +706,8 @@ function OrderDialog({
 
   const emptyForm = (): FormState => ({
     faccao_id: '', loja_id: '', cliente_nome: '', cliente_telefone: '', tipo_dinheiro: 'limpo',
-    desconto_pct: '0', desconto_fixo: '0', notas: '', data_encomenda: today(), data_venda: today(), status: 'fabricando', itens: []
+    desconto_pct: '0', desconto_fixo: '0', notas: '', data_encomenda: today(), data_venda: today(), status: 'fabricando', itens: [],
+    pctSujoGlobal: '',
   })
 
   const [form, setForm] = useState<FormState>(emptyForm)
@@ -800,6 +802,7 @@ function OrderDialog({
           data_encomenda: editando.data_encomenda ?? today(),
           data_venda: editando.created_at.split('T')[0],
           status: editando.status, itens: [],
+          pctSujoGlobal: editando.pct_sujo_global > 0 ? String(editando.pct_sujo_global) : '',
         })
         const editEmpresaNome = editando.faccao_id
           ? (faccoes.find(f => f.id === editando.faccao_id)?.nome ?? '')
@@ -2176,7 +2179,7 @@ function OrderDialog({
           )}
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button size="sm"
-            onClick={() => onSave({ ...form, itens: buildItens() })}
+            onClick={() => onSave({ ...form, itens: buildItens(), pctSujoGlobal })}
             disabled={saving || (!form.cliente_nome.trim() && !form.faccao_id && !form.loja_id) || cart.length === 0}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : editando ? 'Salvar' : 'Criar Pedido'}
           </Button>
@@ -2309,7 +2312,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
-          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          pct_sujo_global: parseFloat(form.pctSujoGlobal) || 0,
           valor_total: valorTotal,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
@@ -2333,7 +2336,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
-          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          pct_sujo_global: parseFloat(form.pctSujoGlobal) || 0,
           valor_total: valorTotal,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
@@ -2357,7 +2360,7 @@ export function VendasClient({
           cliente_telefone: form.cliente_telefone || null, tipo_dinheiro: form.tipo_dinheiro,
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
-          pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          pct_sujo_global: parseFloat(form.pctSujoGlobal) || 0,
           valor_total: valorTotal,
           status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
@@ -2440,8 +2443,6 @@ export function VendasClient({
       dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro },
     }).then(() => {})
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
-    // DEBUG — remove depois de confirmar valor correto
-    toast.info(`[DEBUG] totalCard: R$${totalCard.toLocaleString('pt-BR')} | valor_total: R$${(venda.valor_total ?? 0).toLocaleString('pt-BR')} | itens: ${venda.itens.length}`)
     await registrarLancamentoFinanceiro(venda, undefined, undefined, totalCard)
   }
 
