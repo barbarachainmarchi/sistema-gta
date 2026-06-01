@@ -32,7 +32,7 @@ type VendaItem = {
 }
 type Venda = {
   id: string; faccao_id: string | null; loja_id: string | null; cliente_nome: string; cliente_telefone: string | null
-  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; desconto_fixo: number; pct_sujo_global: number; status: StatusVenda
+  tipo_dinheiro: 'sujo' | 'limpo'; desconto_pct: number; desconto_fixo: number; pct_sujo_global: number; valor_total: number | null; status: StatusVenda
   data_encomenda: string | null; notas: string | null
   criado_por: string | null; criado_por_nome: string | null
   entregue_por: string | null; entregue_por_nome: string | null; entregue_em: string | null
@@ -235,7 +235,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   // Subtotal: para combos usa o preço do serviço × multiplicador quando disponível
   // Subtotal sempre usa preco_unit salvo — não recalcula do catálogo (preserva pctSujoGlobal e overrides)
   const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-  const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
+  // valor_total é gravado no momento da confirmação e nunca recalculado — fonte autoritativa
+  const total = venda.valor_total ?? Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
   const cancelado = venda.status === 'cancelado'
   const ativo = !entregue && !cancelado
@@ -2287,6 +2288,9 @@ export function VendasClient({
   async function handleSave(form: FormState) {
     if ((!form.cliente_nome.trim() && !form.faccao_id && !form.loja_id) || form.itens.length === 0) return
     setSaving(true)
+    // Calcula e congela o valor total no momento da confirmação — nunca recalculado depois
+    const _subtotalForm = form.itens.reduce((acc, it) => acc + (parseFloat(it.quantidade) || 1) * (parseFloat(it.preco_unit) || 0), 0)
+    const valorTotal = Math.max(0, _subtotalForm * (1 - (parseFloat(form.desconto_pct) || 0) / 100) - (parseFloat(form.desconto_fixo) || 0))
     try {
       if (editando) {
         const novoVendedorNome = (isDono && vendedorId && vendedorId !== userId)
@@ -2299,6 +2303,7 @@ export function VendasClient({
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          valor_total: valorTotal,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
@@ -2322,6 +2327,7 @@ export function VendasClient({
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          valor_total: valorTotal,
           notas: form.notas || null,
           data_encomenda: form.data_encomenda || null, status: form.status,
           criado_por: vendedorId || userId,
@@ -2345,6 +2351,7 @@ export function VendasClient({
           desconto_pct: parseFloat(form.desconto_pct) || 0,
           desconto_fixo: parseFloat(form.desconto_fixo) || 0,
           pct_sujo_global: parseFloat(pctSujoGlobal) || 0,
+          valor_total: valorTotal,
           status: form.status,
           data_encomenda: form.data_encomenda || null, notas: form.notas || null,
           criado_por: vendedorId || userId,
@@ -2438,16 +2445,17 @@ export function VendasClient({
     ])
     if (jaExiste) return
 
-    // Calcula com dados do banco — imune a estado local desatualizado
+    // Usa itens frescos do banco para a descrição; valor_total é a fonte autoritativa
     const itens = ((freshItens ?? []) as VendaItem[]).length > 0 ? (freshItens as VendaItem[]) : venda.itens
-    const subtotal = itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
     const sids = [...new Set(itens.map(it => it.servico_id).filter(Boolean))] as string[]
     const combosNomes: string[] = []
     for (const sid of sids) {
       const sv = servicos.find(x => x.id === sid)
       if (sv) combosNomes.push(sv.nome)
     }
-    const totalVenda = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
+    // valor_total gravado na confirmação — nunca recalculado (garante imutabilidade pós-criação)
+    const subtotal = itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const totalVenda = venda.valor_total ?? Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     if (totalVenda <= 0) return
 
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
