@@ -2420,6 +2420,11 @@ export function VendasClient({
   }
 
   async function handleEntregar(venda: Venda) {
+    // Captura o total ANTES de qualquer operação — mesma fórmula do VendaCard
+    // Isso garante que o financeiro recebe exatamente o que o card mostra
+    const subtotalCard = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const totalCard = venda.valor_total ?? Math.max(0, subtotalCard * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
+
     const agora = new Date().toISOString()
     const { error } = await sb().from('vendas').update({
       status: 'entregue', entregue_por: userId, entregue_por_nome: userNome, entregue_em: agora,
@@ -2435,34 +2440,28 @@ export function VendasClient({
       dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro },
     }).then(() => {})
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
-    await registrarLancamentoFinanceiro(venda)
+    await registrarLancamentoFinanceiro(venda, undefined, undefined, totalCard)
   }
 
-  async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null) {
+  async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null, totalCard?: number) {
     const efetivId = entregadorId ?? userId
     const efetivNome = entregadorNome ?? userNome
 
-    // Busca itens frescos + lançamento existente + membro_id em paralelo
-    const [{ data: lancExistente }, { data: usuRow }, { data: freshItens }] = await Promise.all([
+    // totalCard = valor exato que o card exibiu ao usuário (passa-through direto, sem recalcular)
+    // Se não fornecido (chamada legada), calcula do valor_total ou dos itens
+    const subtotalFallback = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const totalVenda = totalCard
+      ?? venda.valor_total
+      ?? Math.max(0, subtotalFallback * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
+    if (totalVenda <= 0) return
+
+    // Lançamento existente + membro_id em paralelo
+    const [{ data: lancExistente }, { data: usuRow }] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sb().from('financeiro_lancamentos').select('id, valor').eq('venda_id', venda.id).maybeSingle() as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sb().from('usuarios').select('membro_id').eq('id', efetivId).maybeSingle() as any,
-      sb().from('venda_itens').select('*').eq('venda_id', venda.id),
     ])
-
-    // Usa itens frescos do banco; valor_total é a fonte autoritativa
-    const itens = ((freshItens ?? []) as VendaItem[]).length > 0 ? (freshItens as VendaItem[]) : venda.itens
-    const sids = [...new Set(itens.map(it => it.servico_id).filter(Boolean))] as string[]
-    const combosNomes: string[] = []
-    for (const sid of sids) {
-      const sv = servicos.find(x => x.id === sid)
-      if (sv) combosNomes.push(sv.nome)
-    }
-    // valor_total gravado na confirmação — nunca recalculado
-    const subtotal = itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-    const totalVenda = venda.valor_total ?? Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
-    if (totalVenda <= 0) return
 
     // Lançamento já existe: corrige o valor se estava errado (lançamentos criados com código antigo)
     if (lancExistente) {
@@ -2473,6 +2472,16 @@ export function VendasClient({
           .eq('id', (lancExistente as { id: string }).id)
       }
       return
+    }
+
+    // Busca itens só para a descrição (não para o valor)
+    const { data: freshItens } = await sb().from('venda_itens').select('item_nome, quantidade, servico_id').eq('venda_id', venda.id)
+    const itens = ((freshItens ?? []) as Pick<VendaItem, 'item_nome' | 'quantidade' | 'servico_id'>[])
+    const sids = [...new Set(itens.map(it => it.servico_id).filter(Boolean))] as string[]
+    const combosNomes: string[] = []
+    for (const sid of sids) {
+      const sv = servicos.find(x => x.id === sid)
+      if (sv) combosNomes.push(sv.nome)
     }
 
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
@@ -2519,6 +2528,8 @@ export function VendasClient({
   }
 
   async function handleEntregarEmNomeDe(venda: Venda, pessoaId: string, pessoaNome: string) {
+    const subtotalCard = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const totalCard = venda.valor_total ?? Math.max(0, subtotalCard * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     const agora = new Date().toISOString()
     const { error } = await sb().from('vendas').update({
       status: 'entregue', entregue_por: pessoaId, entregue_por_nome: pessoaNome, entregue_em: agora,
@@ -2534,7 +2545,7 @@ export function VendasClient({
       dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro, em_nome_de: pessoaNome },
     }).then(() => {})
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
-    await registrarLancamentoFinanceiro(venda, pessoaId, pessoaNome)
+    await registrarLancamentoFinanceiro(venda, pessoaId, pessoaNome, totalCard)
   }
 
   async function removerLancamentosVenda(vendaId: string) {
