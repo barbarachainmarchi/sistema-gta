@@ -260,7 +260,7 @@ export function DashboardClient({
 
       {/* Saudação */}
       <div>
-        <h2 className="text-lg font-semibold">{saudacao(userNome)}</h2>
+        <h2 className="text-lg font-semibold" suppressHydrationWarning>{saudacao(userNome)}</h2>
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           <p className="text-xs text-muted-foreground">Aqui está o seu resumo da semana.</p>
           {lojaNome && (
@@ -324,7 +324,7 @@ export function DashboardClient({
                 <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
-                    <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                    <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>{fmtEscalacao(esc.data_hora_prevista)}</p>
                   </div>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 shrink-0">Convocado</span>
                   <div className="flex gap-1.5 shrink-0">
@@ -370,7 +370,7 @@ export function DashboardClient({
                 <div key={esc.id} className="flex items-center gap-3 px-4 py-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{esc.tipo_nome ?? 'Escalação'}</p>
-                    <p className="text-[11px] text-muted-foreground">{fmtEscalacao(esc.data_hora_prevista)}</p>
+                    <p className="text-[11px] text-muted-foreground" suppressHydrationWarning>{fmtEscalacao(esc.data_hora_prevista)}</p>
                   </div>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 shrink-0">Aberta</span>
                   {jaCandidatou ? (

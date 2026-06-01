@@ -849,7 +849,11 @@ function OrderDialog({
         setMembroNome(editando.cliente_nome)
         setCart(editando.itens.filter(it => it.item_id).map(it => ({
           item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
-          preco_limpo: it.preco_unit, preco_sujo: null, preco_limpo_override: null, preco_sujo_override: null,
+          // Salvar o preço real em ambos os campos para que getPrecoEfetivo
+          // encontre o valor correto independente do tipo_dinheiro selecionado
+          preco_limpo: it.preco_unit,
+          preco_sujo: it.preco_unit,
+          preco_limpo_override: null, preco_sujo_override: null,
           desconto_item_pct: null,
           tem_craft: it.origem === 'fabricar', origem: it.origem,
           servico_id: it.servico_id ?? null,
