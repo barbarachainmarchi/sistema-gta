@@ -847,17 +847,44 @@ function OrderDialog({
           : editando.loja_id ? (lojas.find(l => l.id === editando.loja_id)?.nome ?? '') : ''
         setEmpresaNome(editEmpresaNome)
         setMembroNome(editando.cliente_nome)
-        setCart(editando.itens.filter(it => it.item_id).map(it => ({
+        // Para combos com preco_unit=0 (kit sem preços por item), distribui
+        // o preço do serviço igualmente para que getPrecoEfetivo retorne valor correto
+        const comboPrecoDistribuido: Record<string, Record<string, number>> = {}
+        const comboSidsEdit = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
+        for (const sid of comboSidsEdit) {
+          const sv = servicos.find(s => s.id === sid)
+          const kitItems = editando.itens.filter(x => x.servico_id === sid && x.item_id)
+          const kitSoma = kitItems.reduce((acc, x) => acc + x.preco_unit * x.quantidade, 0)
+          if (kitSoma === 0 && sv) {
+            const kitPreco = editando.tipo_dinheiro === 'sujo'
+              ? (sv.preco_sujo ?? sv.preco_limpo)
+              : sv.preco_limpo
+            if (kitPreco != null && kitPreco > 0) {
+              const totalQtd = kitItems.reduce((acc, x) => acc + x.quantidade, 0)
+              if (totalQtd > 0) {
+                comboPrecoDistribuido[sid] = {}
+                for (const item of kitItems) {
+                  comboPrecoDistribuido[sid][item.item_id!] = kitPreco / totalQtd
+                }
+              }
+            }
+          }
+        }
+        setCart(editando.itens.filter(it => it.item_id).map(it => {
+          let effectivePrice = it.preco_unit
+          if (it.servico_id && comboPrecoDistribuido[it.servico_id]?.[it.item_id!] != null) {
+            effectivePrice = comboPrecoDistribuido[it.servico_id][it.item_id!]
+          }
+          return {
           item_id: it.item_id!, nome: it.item_nome, quantidade: it.quantidade,
-          // Salvar o preço real em ambos os campos para que getPrecoEfetivo
-          // encontre o valor correto independente do tipo_dinheiro selecionado
-          preco_limpo: it.preco_unit,
-          preco_sujo: it.preco_unit,
+          preco_limpo: effectivePrice,
+          preco_sujo: effectivePrice,
           preco_limpo_override: null, preco_sujo_override: null,
           desconto_item_pct: null,
           tem_craft: it.origem === 'fabricar', origem: it.origem,
           servico_id: it.servico_id ?? null,
-        })))
+          }
+        }))
         // Inicializa modo dos combos existentes
         const idsCombo = [...new Set(editando.itens.filter(it => it.servico_id).map(it => it.servico_id!))]
         setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
@@ -1276,17 +1303,22 @@ function OrderDialog({
         ? c.quantidade * (combosQtd[c.servico_id] ?? 1)
         : c.quantidade
       let preco = getPrecoEfetivo(c)
-      // Distribute kit price override proportionally across items
+      // Para combos em modo resumo: distribui o preço total do kit entre os itens,
+      // garantindo que preco_unit salvo sempre some ao preço real do kit.
       if (c.servico_id && combosModo[c.servico_id] === 'resumo') {
         const override = precoKitOverride[c.servico_id]
-        if (override != null) {
+        const sv = servicos.find(s => s.id === c.servico_id)
+        const kitPreco = override ?? getServPreco(sv)
+        if (kitPreco != null) {
           const kitItens = cart.filter(ci => ci.servico_id === c.servico_id)
-          const origTotal = kitItens.reduce((acc, ci) => acc + ci.quantidade * getPrecoEfetivo(ci), 0)
-          if (origTotal > 0) {
-            preco = preco * (override / origTotal)
+          // soma dos preços individuais de todos os itens (1 unidade de kit)
+          const sumItemPrices = kitItens.reduce((acc, ci) => acc + ci.quantidade * getPrecoEfetivo(ci), 0)
+          if (sumItemPrices > 0) {
+            preco = getPrecoEfetivo(c) * (kitPreco / sumItemPrices)
           } else {
+            // Itens sem preço individual → distribui o preço do kit igualmente
             const totalUnits = kitItens.reduce((acc, ci) => acc + ci.quantidade, 0)
-            preco = totalUnits > 0 ? override / totalUnits : 0
+            preco = totalUnits > 0 ? kitPreco / totalUnits : 0
           }
         }
       }
