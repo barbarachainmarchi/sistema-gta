@@ -1055,7 +1055,9 @@ function OrderDialog({
         const faixas = faixasMap[c.item_id] ?? []
         const limpoBase = resolverPrecoFaixas({ preco_sujo: null, preco_limpo: c.preco_limpo }, faixas, c.quantidade, 'limpo')
         if (limpoBase > 0) return Math.round(limpoBase * (1 + pctG / 100))
-        // item sem preço limpo: usa preço sujo do catálogo diretamente
+        // sem preço limpo: aplica % sobre o sujo direto
+        const sujoBase = resolverPrecoFaixas({ preco_sujo: c.preco_sujo, preco_limpo: null }, faixas, c.quantidade, 'sujo')
+        if (sujoBase > 0) return Math.round(sujoBase * (1 + pctG / 100))
       }
     } else {
       if (c.preco_limpo_override != null) return c.preco_limpo_override
@@ -1070,8 +1072,9 @@ function OrderDialog({
   // Preço de exibição para itens ainda NÃO no carrinho, aplicando % global se configurado
   function getPrecoDisplay(p: WpItem): number {
     const pctG = parseFloat(pctSujoGlobal) || 0
-    if (form.tipo_dinheiro === 'sujo' && pctG > 0 && (p.preco_limpo ?? 0) > 0) {
-      return Math.round((p.preco_limpo ?? 0) * (1 + pctG / 100))
+    if (form.tipo_dinheiro === 'sujo' && pctG > 0) {
+      if ((p.preco_limpo ?? 0) > 0) return Math.round((p.preco_limpo ?? 0) * (1 + pctG / 100))
+      if ((p.preco_sujo ?? 0) > 0) return Math.round((p.preco_sujo ?? 0) * (1 + pctG / 100))
     }
     return form.tipo_dinheiro === 'sujo' ? (p.preco_sujo ?? p.preco_limpo ?? 0) : (p.preco_limpo ?? 0)
   }
@@ -1248,7 +1251,11 @@ function OrderDialog({
     if (!sv) return null
     const pctG = parseFloat(pctSujoGlobal) || 0
     if (form.tipo_dinheiro === 'sujo') {
-      if (pctG > 0 && (sv.preco_limpo ?? 0) > 0) return Math.round(sv.preco_limpo! * (1 + pctG / 100))
+      if (pctG > 0) {
+        // Prefere calcular do limpo; se não tiver, aplica % sobre o sujo direto
+        if ((sv.preco_limpo ?? 0) > 0) return Math.round(sv.preco_limpo! * (1 + pctG / 100))
+        if ((sv.preco_sujo ?? 0) > 0) return Math.round(sv.preco_sujo! * (1 + pctG / 100))
+      }
       return sv.preco_sujo ?? sv.preco_limpo
     }
     return sv.preco_limpo
@@ -2435,17 +2442,16 @@ export function VendasClient({
     const efetivId = entregadorId ?? userId
     const efetivNome = entregadorNome ?? userNome
 
-    // Busca itens frescos + idempotência + membro_id em paralelo
-    // Usar dados do banco (não estado local) garante valor sempre correto
-    const [{ data: jaExiste }, { data: usuRow }, { data: freshItens }] = await Promise.all([
-      sb().from('financeiro_lancamentos').select('id').eq('venda_id', venda.id).maybeSingle(),
+    // Busca itens frescos + lançamento existente + membro_id em paralelo
+    const [{ data: lancExistente }, { data: usuRow }, { data: freshItens }] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sb().from('financeiro_lancamentos').select('id, valor').eq('venda_id', venda.id).maybeSingle() as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sb().from('usuarios').select('membro_id').eq('id', efetivId).maybeSingle() as any,
       sb().from('venda_itens').select('*').eq('venda_id', venda.id),
     ])
-    if (jaExiste) return
 
-    // Usa itens frescos do banco para a descrição; valor_total é a fonte autoritativa
+    // Usa itens frescos do banco; valor_total é a fonte autoritativa
     const itens = ((freshItens ?? []) as VendaItem[]).length > 0 ? (freshItens as VendaItem[]) : venda.itens
     const sids = [...new Set(itens.map(it => it.servico_id).filter(Boolean))] as string[]
     const combosNomes: string[] = []
@@ -2453,10 +2459,21 @@ export function VendasClient({
       const sv = servicos.find(x => x.id === sid)
       if (sv) combosNomes.push(sv.nome)
     }
-    // valor_total gravado na confirmação — nunca recalculado (garante imutabilidade pós-criação)
+    // valor_total gravado na confirmação — nunca recalculado
     const subtotal = itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
     const totalVenda = venda.valor_total ?? Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     if (totalVenda <= 0) return
+
+    // Lançamento já existe: corrige o valor se estava errado (lançamentos criados com código antigo)
+    if (lancExistente) {
+      const valorAtual = (lancExistente as { id: string; valor: number }).valor
+      if (Math.abs(valorAtual - totalVenda) > 0.01) {
+        await sb().from('financeiro_lancamentos')
+          .update({ valor: totalVenda, total: totalVenda })
+          .eq('id', (lancExistente as { id: string }).id)
+      }
+      return
+    }
 
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
     let contaId: string | null = null
