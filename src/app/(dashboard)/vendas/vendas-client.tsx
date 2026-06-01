@@ -1205,13 +1205,24 @@ function OrderDialog({
     return []
   }, [servicos, faccaoServicos, lojaServicos, meuFaccao, meuLoja])
 
+  // Preço efetivo de um serviço considerando tipo_dinheiro e % global sujo
+  function getServPreco(sv: { preco_limpo: number | null; preco_sujo: number | null } | undefined): number | null {
+    if (!sv) return null
+    const pctG = parseFloat(pctSujoGlobal) || 0
+    if (form.tipo_dinheiro === 'sujo') {
+      if (pctG > 0 && (sv.preco_limpo ?? 0) > 0) return Math.round(sv.preco_limpo! * (1 + pctG / 100))
+      return sv.preco_sujo ?? sv.preco_limpo
+    }
+    return sv.preco_limpo
+  }
+
   // Totals — combos em modo resumo usam preço definido do combo, não soma dos itens
   const { subtotal, totalSemFixo } = (() => {
     function comboPrecoResumo(sid: string): number | null {
       const override = precoKitOverride[sid]
       if (override != null) return override * (combosQtd[sid] ?? 1)
       const sv = servicos.find(s => s.id === sid)
-      const pb = form.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+      const pb = getServPreco(sv)
       if (pb == null) return null
       const original = servicoItens.filter(si => si.servico_id === sid)
       const atual = cart.filter(c => c.servico_id === sid)
