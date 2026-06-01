@@ -232,32 +232,7 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const empresaNome = faccaoNome ?? lojaNome
   const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
   const isDarkchat = faccaoObj?.is_darkchat ?? false
-  // Subtotal usa preço definido do combo quando disponível (igual à exibição por item)
-  const subtotal = (() => {
-    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
-    let s = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-    for (const sid of sids) {
-      const sv = servicos.find(x => x.id === sid)
-      const ic = venda.itens.filter(it => it.servico_id === sid)
-      const somaItens = ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-      const orig = servicoItens.filter(si => si.servico_id === sid)
-      let mult: number | null = null
-      if (orig.length > 0 && orig.length === ic.length) {
-        let m: number | null = null; let ok = true
-        for (const o of orig) {
-          const it = ic.find(x => x.item_id === o.item_id)
-          if (!it || o.quantidade === 0) { ok = false; break }
-          const r = it.quantidade / o.quantidade
-          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
-          if (m === null) m = r; else if (m !== r) { ok = false; break }
-        }
-        if (ok && m != null) mult = m
-      }
-      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
-      s += (pu != null && mult != null) ? pu * mult : somaItens
-    }
-    return s
-  })()
+  const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
   const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
   const cancelado = venda.status === 'cancelado'
@@ -392,16 +367,8 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                         }
                         if (ok && m != null) comboMult = m
                       }
-                      // Preço do combo definido × multiplicador
-                      const comboPrecoUnit = venda.tipo_dinheiro === 'sujo'
-                        ? (servico?.preco_sujo ?? servico?.preco_limpo)
-                        : servico?.preco_limpo
-                      const totalCombo = (comboPrecoUnit != null && comboMult != null)
-                        ? comboPrecoUnit * comboMult
-                        : somaItens
-                      const ajusteCombo = (comboPrecoUnit != null && comboMult != null && Math.abs(totalCombo - somaItens) > 0.01)
-                        ? totalCombo - somaItens
-                        : null
+                      const totalCombo = somaItens
+                      const ajusteCombo: number | null = null
                       return (
                         <div key={sid}>
                           <button
@@ -693,11 +660,13 @@ function OrderDialog({
   const [colW1, setColW1] = useState(256)
   const [colW3, setColW3] = useState(340)
   const [fonteProd, setFonteProd] = useState(12)
+  const [fonteResumo, setFonteResumo] = useState(11)
   const [pctSujoGlobal, setPctSujoGlobal] = useState('')
 
   useEffect(() => {
     try { const w = localStorage.getItem('vendas-dlg-widths'); if (w) { const p = JSON.parse(w); setColW1(p.col1 ?? 256); setColW3(p.col3 ?? 340) } } catch {}
     try { const f = localStorage.getItem('vendas-dlg-fonte'); if (f) setFonteProd(parseInt(f) || 12) } catch {}
+    try { const r = localStorage.getItem('vendas-dlg-fonte-resumo'); if (r) setFonteResumo(parseInt(r) || 11) } catch {}
   }, [])
 
   function startResizeCol(which: 'col1' | 'col3', e: React.MouseEvent) {
@@ -726,6 +695,10 @@ function OrderDialog({
   function setFonteProdSave(n: number) {
     setFonteProd(n)
     try { localStorage.setItem('vendas-dlg-fonte', String(n)) } catch {}
+  }
+  function setFonteResumoSave(n: number) {
+    setFonteResumo(n)
+    try { localStorage.setItem('vendas-dlg-fonte-resumo', String(n)) } catch {}
   }
 
   async function toggleFavorito(itemId: string) {
@@ -1654,7 +1627,7 @@ function OrderDialog({
                           </div>
                         )
                       })()}
-                      <span className={cn('text-xs font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')}>{p.nome}</span>
+                      <span className={cn('font-medium truncate', inCart ? 'text-foreground' : 'text-muted-foreground')} style={{ fontSize: fonteProd + 'px' }}>{p.nome}</span>
                       {faccaoDescontosItem[p.item_id] != null && (
                         <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
                           -{faccaoDescontosItem[p.item_id]}%
@@ -1800,9 +1773,19 @@ function OrderDialog({
 
             {/* Resumo */}
             <div className="p-4 border-b border-border shrink-0 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Resumo</p>
+                <div className="flex items-center gap-0.5" title="Tamanho da fonte do resumo">
+                  <button type="button"
+                    onClick={() => setFonteResumoSave(Math.max(9, fonteResumo - 1))}
+                    className="h-5 w-5 rounded border border-border/60 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center text-[9px] transition-colors leading-none">a</button>
+                  <button type="button"
+                    onClick={() => setFonteResumoSave(Math.min(16, fonteResumo + 1))}
+                    className="h-5 w-5 rounded border border-border/60 text-muted-foreground/60 hover:text-foreground hover:border-border flex items-center justify-center text-[11px] font-bold transition-colors leading-none">A</button>
+                </div>
+              </div>
               {cart.length > 0 && (
-                <div className="space-y-1.5 border-b border-border/30 pb-2">
+                <div className="space-y-1.5 border-b border-border/30 pb-2" style={{ fontSize: fonteResumo + 'px' }}>
                   {(() => {
                     const servicoIdsNoCart = [...new Set(cart.filter(c => c.servico_id).map(c => c.servico_id!))]
                     const avulsos = cart.filter(c => !c.servico_id)
@@ -1827,9 +1810,7 @@ function OrderDialog({
 
                           if (modo === 'resumo') {
                             const qtdCombo = combosQtd[sid] ?? 1
-                            const precoBase = form.tipo_dinheiro === 'sujo'
-                              ? (s?.preco_sujo ?? s?.preco_limpo)
-                              : s?.preco_limpo
+                            const precoBase = getServPreco(s)
                             const totalCombo = ((!modificado && precoBase != null)
                               ? precoBase
                               : itensCombo.reduce((acc, c) => acc + c.quantidade * getPrecoEfetivo(c), 0)) * qtdCombo
@@ -1839,7 +1820,7 @@ function OrderDialog({
                                 <div className="flex items-start justify-between gap-1">
                                   <div className="flex items-center gap-1 min-w-0 flex-1">
                                     <Layers className="h-3 w-3 text-primary/50 shrink-0" />
-                                    <span className="text-[11px] font-medium truncate">{s?.nome ?? 'Combo'}</span>
+                                    <span className="font-medium truncate">{s?.nome ?? 'Combo'}</span>
                                     {!modificado && s && s.desconto_pct > 0 && (
                                       <span className="text-[9px] text-green-400 shrink-0">-{s.desconto_pct}%</span>
                                     )}
@@ -1850,7 +1831,7 @@ function OrderDialog({
                                   <div className="flex items-center gap-0.5 shrink-0">
                                     <button onClick={() => setCombosQtd(p => ({ ...p, [sid]: Math.max(1, (p[sid] ?? 1) - 1) }))}
                                       className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">−</button>
-                                    <span className="text-[11px] tabular-nums font-medium min-w-[1.4rem] text-center">{qtdCombo}×</span>
+                                    <span className="tabular-nums font-medium min-w-[1.4rem] text-center">{qtdCombo}×</span>
                                     <button onClick={() => setCombosQtd(p => ({ ...p, [sid]: (p[sid] ?? 1) + 1 }))}
                                       className="h-4 w-4 rounded flex items-center justify-center text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/[0.07] transition-colors">+</button>
                                     {editandoResumo.has(sid) ? (
@@ -1868,7 +1849,7 @@ function OrderDialog({
                                         className="h-5 w-16 text-[10px] text-right tabular-nums border-primary/40 bg-primary/[0.04] px-1 ml-1" />
                                     ) : (
                                       <button type="button"
-                                        className={cn('text-[11px] tabular-nums font-medium ml-1 hover:text-yellow-400 transition-colors', precoKitOverride[sid] != null && 'text-yellow-400')}
+                                        className={cn('tabular-nums font-medium ml-1 hover:text-yellow-400 transition-colors', precoKitOverride[sid] != null && 'text-yellow-400')}
                                         title="Clique para editar preço por kit"
                                         onClick={() => setEditandoResumo(prev => new Set([...prev, sid]))}>
                                         {fmt(totalCombo)}
@@ -1884,8 +1865,8 @@ function OrderDialog({
                                 <div className="pl-3.5 space-y-0.5">
                                   {itensCombo.map(c => (
                                     <div key={c.item_id} className="flex items-center justify-between gap-1">
-                                      <span className="text-[10px] text-muted-foreground/50 truncate min-w-0">{c.nome}</span>
-                                      <span className="text-[10px] text-muted-foreground/35 tabular-nums shrink-0">×{c.quantidade * qtdCombo}</span>
+                                      <span className="text-muted-foreground/50 truncate min-w-0" style={{ fontSize: '0.85em' }}>{c.nome}</span>
+                                      <span className="text-muted-foreground/35 tabular-nums shrink-0" style={{ fontSize: '0.85em' }}>×{c.quantidade * qtdCombo}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -1898,7 +1879,7 @@ function OrderDialog({
                             <div key={sid} className="space-y-0.5">
                               <div className="flex items-center gap-1">
                                 <Layers className="h-3 w-3 text-primary/30 shrink-0" />
-                                <span className="text-[10px] text-muted-foreground/60 truncate flex-1 italic">{s?.nome ?? 'Combo'}</span>
+                                <span className="text-muted-foreground/60 truncate flex-1 italic">{s?.nome ?? 'Combo'}</span>
                                 <button
                                   onClick={() => setCombosModo(p => ({ ...p, [sid]: 'resumo' }))}
                                   className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors shrink-0">
@@ -1918,8 +1899,8 @@ function OrderDialog({
                                   const hasOv = c.preco_limpo_override != null || c.preco_sujo_override != null
                                   return (
                                     <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
-                                      <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
-                                      <div className="flex items-center gap-0.5 text-[11px] tabular-nums shrink-0 text-muted-foreground/70">
+                                      <span className="text-muted-foreground truncate min-w-0">{c.nome}</span>
+                                      <div className="flex items-center gap-0.5 tabular-nums shrink-0 text-muted-foreground/70">
                                         <span>{c.quantidade}×</span>
                                         {editandoResumo.has(c.item_id) ? (
                                           <Input autoFocus type="number" min="0" step="1"
@@ -1958,8 +1939,8 @@ function OrderDialog({
                           const hasOv = c.preco_limpo_override != null || c.preco_sujo_override != null
                           return (
                             <div key={c.item_id} className="flex justify-between gap-1 leading-tight">
-                              <span className="text-[11px] text-muted-foreground truncate min-w-0">{c.nome}</span>
-                              <div className="flex items-center gap-0.5 text-[11px] tabular-nums shrink-0 text-muted-foreground/70">
+                              <span className="text-muted-foreground truncate min-w-0">{c.nome}</span>
+                              <div className="flex items-center gap-0.5 tabular-nums shrink-0 text-muted-foreground/70">
                                 <span>{c.quantidade}×</span>
                                 {editandoResumo.has(c.item_id) ? (
                                   <Input autoFocus type="number" min="0" step="1"

@@ -162,10 +162,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [buscaProduto, setBuscaProduto] = useState('')
 
   type TamanhoTexto = 'xs' | 'sm' | 'base'
-  const [tamanhoTexto, setTamanhoTexto] = useState<TamanhoTexto>(() => {
-    if (typeof window === 'undefined') return 'xs'
-    return (localStorage.getItem('faccao_item_font_size') as TamanhoTexto) ?? 'xs'
-  })
+  const [tamanhoTexto, setTamanhoTexto] = useState<TamanhoTexto>('xs')
+  useEffect(() => {
+    const stored = localStorage.getItem('faccao_item_font_size') as TamanhoTexto | null
+    if (stored) setTamanhoTexto(stored)
+  }, [])
   function mudarTamanho(t: TamanhoTexto) {
     setTamanhoTexto(t)
     localStorage.setItem('faccao_item_font_size', t)
