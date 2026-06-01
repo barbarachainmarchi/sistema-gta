@@ -2440,6 +2440,8 @@ export function VendasClient({
       dados: { cliente_nome: venda.cliente_nome, tipo_dinheiro: venda.tipo_dinheiro },
     }).then(() => {})
     if (!venda.estoque_descontado) await handleDescontarEstoque({ ...venda, status: 'entregue' })
+    // DEBUG — remove depois de confirmar valor correto
+    toast.info(`[DEBUG] totalCard: R$${totalCard.toLocaleString('pt-BR')} | valor_total: R$${(venda.valor_total ?? 0).toLocaleString('pt-BR')} | itens: ${venda.itens.length}`)
     await registrarLancamentoFinanceiro(venda, undefined, undefined, totalCard)
   }
 
