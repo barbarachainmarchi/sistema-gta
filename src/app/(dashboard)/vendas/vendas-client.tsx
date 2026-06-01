@@ -232,7 +232,32 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
   const empresaNome = faccaoNome ?? lojaNome
   const empresaTipo: 'faccao' | 'loja' | null = faccaoNome ? 'faccao' : lojaNome ? 'loja' : null
   const isDarkchat = faccaoObj?.is_darkchat ?? false
-  const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+  // Subtotal: para combos usa o preço do serviço × multiplicador quando disponível
+  const subtotal = (() => {
+    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+    let s = venda.itens.filter(it => !it.servico_id).reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    for (const sid of sids) {
+      const sv = servicos.find(x => x.id === sid)
+      const ic = venda.itens.filter(it => it.servico_id === sid)
+      const somaItens = ic.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+      const orig = servicoItens.filter(si => si.servico_id === sid)
+      let mult: number | null = null
+      if (orig.length > 0 && orig.length === ic.length) {
+        let m: number | null = null; let ok = true
+        for (const o of orig) {
+          const it = ic.find(x => x.item_id === o.item_id)
+          if (!it || o.quantidade === 0) { ok = false; break }
+          const r = it.quantidade / o.quantidade
+          if (!Number.isInteger(r) || r <= 0) { ok = false; break }
+          if (m === null) m = r; else if (m !== r) { ok = false; break }
+        }
+        if (ok && m != null) mult = m
+      }
+      const pu = venda.tipo_dinheiro === 'sujo' ? (sv?.preco_sujo ?? sv?.preco_limpo) : sv?.preco_limpo
+      s += (pu != null && mult != null) ? pu * mult : somaItens
+    }
+    return s
+  })()
   const total = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
   const entregue = venda.status === 'entregue'
   const cancelado = venda.status === 'cancelado'
@@ -367,8 +392,16 @@ function VendaCard({ venda, faccoes, lojas, receitaMap, estoqueMap, itemMap, pod
                         }
                         if (ok && m != null) comboMult = m
                       }
-                      const totalCombo = somaItens
-                      const ajusteCombo: number | null = null
+                      // Preço do combo definido × multiplicador
+                      const comboPrecoUnit = venda.tipo_dinheiro === 'sujo'
+                        ? (servico?.preco_sujo ?? servico?.preco_limpo)
+                        : servico?.preco_limpo
+                      const totalCombo = (comboPrecoUnit != null && comboMult != null)
+                        ? comboPrecoUnit * comboMult
+                        : somaItens
+                      const ajusteCombo = (comboPrecoUnit != null && comboMult != null && Math.abs(totalCombo - somaItens) > 0.01)
+                        ? totalCombo - somaItens
+                        : null
                       return (
                         <div key={sid}>
                           <button
@@ -1860,6 +1893,18 @@ function OrderDialog({
                                       className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground underline transition-colors ml-1">
                                       detalhar
                                     </button>
+                                    <button
+                                      type="button"
+                                      title="Remover kit"
+                                      onClick={() => {
+                                        setCart(prev => prev.filter(c => c.servico_id !== sid))
+                                        setCombosModo(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                        setCombosQtd(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                        setPrecoKitOverride(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                      }}
+                                      className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-red-400 hover:bg-red-400/10 transition-colors ml-0.5">
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
                                   </div>
                                 </div>
                                 <div className="pl-3.5 space-y-0.5">
@@ -1890,6 +1935,18 @@ function OrderDialog({
                                   className="text-[9px] text-muted-foreground/30 hover:text-red-400/70 underline transition-colors shrink-0"
                                   title="Separar itens do kit como itens avulsos">
                                   separar
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Remover kit"
+                                  onClick={() => {
+                                    setCart(prev => prev.filter(c => c.servico_id !== sid))
+                                    setCombosModo(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                    setCombosQtd(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                    setPrecoKitOverride(prev => { const n = { ...prev }; delete n[sid]; return n })
+                                  }}
+                                  className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                                  <X className="h-2.5 w-2.5" />
                                 </button>
                               </div>
                               <div className="pl-3.5 space-y-0.5">
