@@ -874,6 +874,22 @@ function OrderDialog({
         setCombosModo(Object.fromEntries(idsCombo.map(id => [id, 'resumo' as const])))
         setCombosQtd(comboMults)
         if (Object.keys(kitOverridesEdit).length > 0) setPrecoKitOverride(kitOverridesEdit)
+        // Inferir pctSujoGlobal para vendas antigas (antes da coluna existir)
+        // Se a venda é sujo e os kits têm preço acima do limpo do catálogo, calcula o %
+        const dbPct = (editando.pct_sujo_global ?? 0)
+        let editPctSujo = dbPct > 0 ? String(dbPct) : ''
+        if (!editPctSujo && editando.tipo_dinheiro === 'sujo') {
+          const pcts: number[] = []
+          for (const [sid, kitPricePerUnit] of Object.entries(kitOverridesEdit)) {
+            const sv = servicos.find(s => s.id === sid)
+            if (sv && sv.preco_limpo != null && sv.preco_limpo > 0) {
+              const ratio = kitPricePerUnit / sv.preco_limpo
+              if (ratio > 1.005) pcts.push(Math.round((ratio - 1) * 100))
+            }
+          }
+          if (pcts.length > 0 && pcts.every(p => p === pcts[0])) editPctSujo = String(pcts[0])
+        }
+        setPctSujoGlobal(editPctSujo)
       } else {
         const defaultFaccao = meuFaccao ? faccoes.find(f => f.id === meuFaccao.id) ?? null : null
         const defaultDesconto = defaultFaccao?.desconto_padrao_pct ?? 0
@@ -906,8 +922,7 @@ function OrderDialog({
       setDraftPctSujo({})
       setEditandoPreco(new Set())
       setEditandoResumo(new Set())
-      if (!editando) setPrecoKitOverride({})
-      setPctSujoGlobal(editando && editando.pct_sujo_global > 0 ? String(editando.pct_sujo_global) : '')
+      if (!editando) { setPrecoKitOverride({}); setPctSujoGlobal('') }
       if (!open) setFaixasMap({})
     }
   }
@@ -2410,9 +2425,23 @@ export function VendasClient({
   }
 
   async function registrarLancamentoFinanceiro(venda: Venda, entregadorId?: string, entregadorNome?: string | null) {
-    // Usa sempre preco_unit salvo — não recalcula do catálogo (mesmo critério do VendaCard)
-    const subtotal = venda.itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
-    const sids = [...new Set(venda.itens.map(it => it.servico_id).filter(Boolean))] as string[]
+    const efetivId = entregadorId ?? userId
+    const efetivNome = entregadorNome ?? userNome
+
+    // Busca itens frescos + idempotência + membro_id em paralelo
+    // Usar dados do banco (não estado local) garante valor sempre correto
+    const [{ data: jaExiste }, { data: usuRow }, { data: freshItens }] = await Promise.all([
+      sb().from('financeiro_lancamentos').select('id').eq('venda_id', venda.id).maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sb().from('usuarios').select('membro_id').eq('id', efetivId).maybeSingle() as any,
+      sb().from('venda_itens').select('*').eq('venda_id', venda.id),
+    ])
+    if (jaExiste) return
+
+    // Calcula com dados do banco — imune a estado local desatualizado
+    const itens = ((freshItens ?? []) as VendaItem[]).length > 0 ? (freshItens as VendaItem[]) : venda.itens
+    const subtotal = itens.reduce((acc, it) => acc + it.quantidade * it.preco_unit, 0)
+    const sids = [...new Set(itens.map(it => it.servico_id).filter(Boolean))] as string[]
     const combosNomes: string[] = []
     for (const sid of sids) {
       const sv = servicos.find(x => x.id === sid)
@@ -2421,18 +2450,8 @@ export function VendasClient({
     const totalVenda = Math.max(0, subtotal * (1 - venda.desconto_pct / 100) - (venda.desconto_fixo ?? 0))
     if (totalVenda <= 0) return
 
-    // Idempotência: não criar duplicata se já existe lançamento para esta venda
-    const { data: jaExiste } = await sb().from('financeiro_lancamentos')
-      .select('id').eq('venda_id', venda.id).maybeSingle()
-    if (jaExiste) return
-
-    const efetivId = entregadorId ?? userId
-    const efetivNome = entregadorNome ?? userNome
-
     // Banco = conta do entregador (pessoa que recebeu o dinheiro)
     let contaId: string | null = null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: usuRow } = await sb().from('usuarios').select('membro_id').eq('id', efetivId).maybeSingle() as any
     const membroId: string | null = usuRow?.membro_id ?? null
     if (membroId) {
       const { data: contaExistente } = await sb().from('financeiro_contas')
@@ -2449,7 +2468,7 @@ export function VendasClient({
     }
 
     // Descrição: nomes dos combos primeiro, depois itens avulsos
-    const standalone = venda.itens.filter(it => !it.servico_id)
+    const standalone = itens.filter(it => !it.servico_id)
     const itensDesc = [
       ...combosNomes,
       ...standalone.map(it => `${it.item_nome} (${it.quantidade})`),
@@ -2498,9 +2517,8 @@ export function VendasClient({
     const { data: lancs } = await sb().from('financeiro_lancamentos')
       .select('id').eq('venda_id', vendaId)
     if (!lancs || lancs.length === 0) return
-    for (const lanc of lancs as { id: string }[]) {
-      await sb().from('financeiro_lancamentos').delete().eq('id', lanc.id)
-    }
+    const ids = (lancs as { id: string }[]).map(l => l.id)
+    await sb().from('financeiro_lancamentos').delete().in('id', ids)
   }
 
   async function handleItemQtdChange(vendaId: string, itemId: string, newQtd: number) {
@@ -2644,13 +2662,12 @@ export function VendasClient({
     }
 
     const motivo = `Venda: ${venda.cliente_nome}`
-    for (const [item_id, quantidade] of Object.entries(saidas)) {
-      await sb().from('estoque_movimentos').insert({
-        item_id, tipo: 'saida', quantidade,
-        motivo, usuario_id: userId, usuario_nome: userNome ?? '',
-        referencia: venda.id,
-      })
-    }
+    const rows = Object.entries(saidas).map(([item_id, quantidade]) => ({
+      item_id, tipo: 'saida', quantidade,
+      motivo, usuario_id: userId, usuario_nome: userNome ?? '',
+      referencia: venda.id,
+    }))
+    if (rows.length > 0) await sb().from('estoque_movimentos').insert(rows)
 
     await sb().from('vendas').update({ estoque_descontado: true }).eq('id', venda.id)
     setVendas(prev => prev.map(v => v.id === venda.id ? { ...v, estoque_descontado: true } : v))
