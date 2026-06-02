@@ -455,6 +455,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [chooserItem, setChooserItem] = useState<{ tipo: 'produto' | 'kit'; id: string } | null>(null)
   const [chooserModo, setChooserModo] = useState<'pct' | 'fixo' | 'base'>('pct')
   const [chooserValor, setChooserValor] = useState('')
+  // Para kits no painel direito: modo de exibição do valor (pct ou valor direto)
+  const [loteKitModo, setLoteKitModo] = useState<Record<string, 'pct' | 'valor'>>({})
   const [editandoExtra, setEditandoExtra] = useState<FaccaoProdutoExtra | null>(null)
 
   useEffect(() => {
@@ -665,6 +667,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     setNovoDescontoModal(false)
     setLoteSelecao({})
     setLoteKitSelecao({})
+    setLoteKitModo({})
     setLoteSearch('')
     setLoteTipo('meus')
     setChooserItem(null)
@@ -1490,25 +1493,41 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                                   {isChooserKit && (
                                     <div className="pb-2 px-1 space-y-1.5">
                                       <div className="flex gap-1">
-                                        {(['base', 'pct'] as const).map(m => (
+                                        {(['base', 'pct', 'fixo'] as const).map(m => (
                                           <button key={m} onClick={() => { setChooserModo(m); setChooserValor('') }}
                                             className={cn('flex-1 py-1 text-[10px] font-medium rounded border transition-colors',
                                               chooserModo === m ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/50')}>
-                                            {m === 'base' ? 'Manter base' : 'Desconto %'}
+                                            {m === 'base' ? 'Manter base' : m === 'pct' ? 'Desc. %' : 'Valor R$'}
                                           </button>
                                         ))}
                                       </div>
-                                      {chooserModo === 'pct' && (
-                                        <Input autoFocus type="number" min="0" max="100" placeholder="% de desconto" value={chooserValor}
+                                      {chooserModo !== 'base' && (
+                                        <Input autoFocus type="number" min="0"
+                                          placeholder={chooserModo === 'pct' ? '% de desconto' : 'Preço final R$'}
+                                          max={chooserModo === 'pct' ? 100 : undefined}
+                                          value={chooserValor}
                                           onChange={e => setChooserValor(e.target.value)} className="h-7 text-xs" />
                                       )}
                                       {chooserModo === 'pct' && chooserValor && precoKit != null && (
                                         <p className="text-[10px] text-muted-foreground/70">→ {fmt(Math.round(precoKit * (1 - (parseFloat(chooserValor) || 0) / 100)))}</p>
                                       )}
+                                      {chooserModo === 'fixo' && chooserValor && precoKit != null && precoKit > 0 && (
+                                        <p className="text-[10px] text-muted-foreground/70">
+                                          ≈ {Math.max(0, Math.round((1 - (parseFloat(chooserValor) || 0) / precoKit) * 100))}% desc
+                                        </p>
+                                      )}
                                       <div className="flex gap-1 justify-end">
                                         <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setChooserItem(null)}>Cancelar</Button>
                                         <Button size="sm" className="h-6 text-[10px]" onClick={() => {
-                                          setLoteKitSelecao(prev => ({ ...prev, [s.id]: chooserModo === 'base' ? '0' : (chooserValor || '0') }))
+                                          let pctStr = '0'
+                                          if (chooserModo === 'pct') {
+                                            pctStr = chooserValor || '0'
+                                          } else if (chooserModo === 'fixo' && precoKit != null && precoKit > 0) {
+                                            const preco = parseFloat(chooserValor) || 0
+                                            pctStr = String(Math.max(0, Math.round((1 - preco / precoKit) * 100 * 10) / 10))
+                                          }
+                                          setLoteKitSelecao(prev => ({ ...prev, [s.id]: pctStr }))
+                                          setLoteKitModo(prev => ({ ...prev, [s.id]: chooserModo === 'fixo' ? 'valor' : 'pct' }))
                                           setChooserItem(null)
                                           setChooserValor('')
                                         }}>Adicionar</Button>
@@ -1603,7 +1622,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                             const precoBase = servico?.preco_sujo ?? servico?.preco_limpo ?? null
                             const tipoBase = servico?.preco_sujo != null ? 'sujo' : servico?.preco_limpo != null ? 'limpo' : null
                             const pct = parseFloat(pctStr) || 0
-                            const precoFinal = precoBase != null && pctStr !== '' ? Math.round(precoBase * (1 - pct / 100)) : null
+                            const precoFinal = precoBase != null ? Math.round(precoBase * (1 - pct / 100)) : null
+                            const modoKit = loteKitModo[sid] ?? 'pct'
+                            const valorDisplay = modoKit === 'valor' && precoFinal != null ? String(precoFinal) : pctStr
                             return (
                               <div key={sid} className="rounded border border-border/40 bg-white/[0.02] px-2.5 py-2 space-y-1.5">
                                 <div className="flex items-start justify-between gap-1">
@@ -1622,21 +1643,44 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                                     </div>
                                   </div>
                                   <button
-                                    onClick={() => setLoteKitSelecao(prev => { const n = { ...prev }; delete n[sid]; return n })}
+                                    onClick={() => { setLoteKitSelecao(prev => { const n = { ...prev }; delete n[sid]; return n }); setLoteKitModo(prev => { const n = { ...prev }; delete n[sid]; return n }) }}
                                     className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
                                   ><X className="h-3 w-3" /></button>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-muted-foreground shrink-0">Desc.</span>
+                                  {/* Toggle % | R$ */}
+                                  <button
+                                    title={modoKit === 'pct' ? 'Mudar para valor direto (R$)' : 'Mudar para desconto (%)'}
+                                    onClick={() => setLoteKitModo(prev => ({ ...prev, [sid]: modoKit === 'pct' ? 'valor' : 'pct' }))}
+                                    className={cn('h-6 w-8 rounded text-[10px] font-bold border shrink-0 transition-colors',
+                                      modoKit === 'pct'
+                                        ? 'border-border/60 text-muted-foreground hover:border-primary hover:text-primary'
+                                        : 'border-primary text-primary bg-primary/10'
+                                    )}>
+                                    {modoKit === 'pct' ? '%' : 'R$'}
+                                  </button>
                                   <Input
-                                    type="number" min="0" max="100" placeholder="% desc" step="0.5"
-                                    value={pctStr}
-                                    onChange={e => setLoteKitSelecao(prev => ({ ...prev, [sid]: e.target.value }))}
+                                    type="number" min="0"
+                                    max={modoKit === 'pct' ? 100 : undefined}
+                                    step={modoKit === 'pct' ? '0.5' : '1000'}
+                                    placeholder={modoKit === 'pct' ? 'desc %' : 'preço'}
+                                    value={valorDisplay}
+                                    onChange={e => {
+                                      if (modoKit === 'pct') {
+                                        setLoteKitSelecao(prev => ({ ...prev, [sid]: e.target.value }))
+                                      } else if (precoBase != null && precoBase > 0) {
+                                        const preco = parseFloat(e.target.value) || 0
+                                        const novoPct = String(Math.max(0, Math.round((1 - preco / precoBase) * 100 * 10) / 10))
+                                        setLoteKitSelecao(prev => ({ ...prev, [sid]: novoPct }))
+                                      }
+                                    }}
                                     className="h-6 text-xs flex-1 text-right"
                                   />
-                                  <span className="text-[10px] text-muted-foreground shrink-0">%</span>
-                                  {precoFinal != null && pctStr !== '' && (
+                                  {modoKit === 'pct' && precoFinal != null && pctStr !== '' && pctStr !== '0' && (
                                     <span className="text-[10px] tabular-nums text-primary shrink-0">→ {fmt(precoFinal)}</span>
+                                  )}
+                                  {modoKit === 'valor' && pctStr !== '' && pctStr !== '0' && (
+                                    <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">({pct}% desc)</span>
                                   )}
                                 </div>
                               </div>
