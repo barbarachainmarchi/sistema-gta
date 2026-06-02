@@ -445,12 +445,16 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [novoDescontoTab, setNovoDescontoTab] = useState<'lote' | 'manual'>('lote')
   const [loteSelecao, setLoteSelecao] = useState<Record<string, { modo: 'pct' | 'fixo'; valor: string }>>({})
   const [loteSearch, setLoteSearch] = useState('')
-  const [loteTipo, setLoteTipo] = useState<'todos' | 'produtos' | 'kits' | 'meus'>('todos')
+  const [loteTipo, setLoteTipo] = useState<'todos' | 'produtos' | 'kits' | 'meus'>('meus')
   const [loteKitSelecao, setLoteKitSelecao] = useState<Record<string, string>>({})
   const [servicoDescontosOverride, setServicoDescontosOverride] = useState<Record<string, number>>({})
   const [loteSaving, setLoteSaving] = useState(false)
   const [manualForm, setManualForm] = useState({ nome: '', valor_sujo: '', valor_limpo: '' })
   const [manualSaving, setManualSaving] = useState(false)
+  // Chooser inline: qual item está com seletor aberto no catálogo
+  const [chooserItem, setChooserItem] = useState<{ tipo: 'produto' | 'kit'; id: string } | null>(null)
+  const [chooserModo, setChooserModo] = useState<'pct' | 'fixo' | 'base'>('pct')
+  const [chooserValor, setChooserValor] = useState('')
   const [editandoExtra, setEditandoExtra] = useState<FaccaoProdutoExtra | null>(null)
 
   useEffect(() => {
@@ -534,12 +538,19 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     return Math.round(basePreco * (1 - pct / 100))
   }
 
+  const temPreco = (itemId: string) =>
+    meuFaccaoPrecos.some(m => m.item_id === itemId && (m.preco_sujo ?? m.preco_limpo) != null) ||
+    precosVigentes.some(g => g.item_id === itemId && (g.preco_sujo ?? g.preco_limpo) != null)
+
   const produtosLoteFiltrados = useMemo(() => {
     let lista = todosProdutos
     if (loteTipo === 'meus') lista = lista.filter(p => meuFaccaoPrecos.some(m => m.item_id === p.id))
-    if (loteSearch) lista = lista.filter(p => norm(p.nome).includes(norm(loteSearch)) || (p.apelidos && p.apelidos.split(',').some((a: string) => norm(a.trim()).includes(norm(loteSearch)))))
+    else if (loteTipo === 'todos') lista = lista.filter(p => temPreco(p.id))
+    else if (loteTipo === 'produtos') lista = lista.filter(p => temPreco(p.id))
+    if (loteSearch) lista = lista.filter(p => norm(p.nome).includes(norm(loteSearch)) || (p.apelidos ? p.apelidos.split(',').some((a: string) => norm(a.trim()).includes(norm(loteSearch))) : false))
     return lista
-  }, [todosProdutos, loteSearch, loteTipo, meuFaccaoPrecos])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todosProdutos, loteSearch, loteTipo, meuFaccaoPrecos, precosVigentes])
 
   const kitsLoteFiltrados = useMemo(() => {
     let lista: Servico[] = todoServicos
@@ -655,7 +666,9 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     setLoteSelecao({})
     setLoteKitSelecao({})
     setLoteSearch('')
-    setLoteTipo('todos')
+    setLoteTipo('meus')
+    setChooserItem(null)
+    setChooserValor('')
     setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
     setEditandoExtra(null)
   }
@@ -677,7 +690,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     }
     setLoteKitSelecao(initialKits)
     setLoteSearch('')
-    setLoteTipo('todos')
+    // Padrão: "Meus" se tiver facção configurada, senão "todos" (apenas com preço)
+    setLoteTipo(meuFaccaoId && meuFaccaoPrecos.length > 0 ? 'meus' : 'todos')
+    setChooserItem(null)
+    setChooserModo('pct')
+    setChooserValor('')
     setManualForm({ nome: '', valor_sujo: '', valor_limpo: '' })
     setEditandoExtra(null)
     setNovoDescontoTab('lote')
@@ -1312,7 +1329,7 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                         ))}
                       </div>
                       {/* Lista scrollável */}
-                      <div className="flex-1 overflow-y-auto min-h-0 space-y-0">
+                      <div className="flex-1 overflow-y-auto min-h-0">
                         {/* Seção Produtos */}
                         {mostrarProdutos && (
                           <>
@@ -1322,45 +1339,94 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                             {produtosLoteFiltrados.map(p => {
                               const { preco, tipo } = getPrecoBase(p.id)
                               const jaSelecionado = !!loteSelecao[p.id]
+                              const isChooser = chooserItem?.tipo === 'produto' && chooserItem.id === p.id
                               return (
-                                <div key={p.id} className={cn('flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0', jaSelecionado && 'bg-primary/[0.03]')}>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-xs truncate block">{p.nome}</span>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                      {preco != null ? (
-                                        <>
-                                          <span className="text-[10px] tabular-nums text-muted-foreground">{fmt(preco)}</span>
-                                          <span className={cn('text-[9px] font-semibold px-1 rounded', tipo === 'sujo' ? 'text-orange-400 bg-orange-500/10' : 'text-emerald-400 bg-emerald-500/10')}>
-                                            {tipo === 'sujo' ? 'S' : 'L'}
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-[10px] text-muted-foreground/40 italic">sem preço</span>
-                                      )}
+                                <div key={p.id} className={cn('border-b border-border/20 last:border-0', (jaSelecionado || isChooser) && 'bg-primary/[0.03]')}>
+                                  <div className="flex items-center gap-2 py-1.5">
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-xs truncate block">{p.nome}</span>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        {preco != null ? (
+                                          <>
+                                            <span className="text-[10px] tabular-nums text-muted-foreground">{fmt(preco)}</span>
+                                            <span className={cn('text-[9px] font-semibold px-1 rounded', tipo === 'sujo' ? 'text-orange-400 bg-orange-500/10' : 'text-emerald-400 bg-emerald-500/10')}>
+                                              {tipo === 'sujo' ? 'Sujo' : 'Limpo'}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span className="text-[10px] text-muted-foreground/40 italic">sem preço</span>
+                                        )}
+                                      </div>
                                     </div>
+                                    <button
+                                      onClick={() => {
+                                        if (jaSelecionado) return
+                                        if (isChooser) { setChooserItem(null); return }
+                                        setChooserItem({ tipo: 'produto', id: p.id })
+                                        setChooserModo('pct')
+                                        setChooserValor('')
+                                      }}
+                                      className={cn(
+                                        'h-6 w-6 rounded flex items-center justify-center shrink-0 transition-colors',
+                                        jaSelecionado ? 'bg-primary/15 text-primary cursor-default'
+                                          : isChooser ? 'bg-primary/10 text-primary border border-primary'
+                                          : 'border border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/[0.06]'
+                                      )}
+                                      title={jaSelecionado ? 'Já no painel' : 'Adicionar'}
+                                    >
+                                      {jaSelecionado ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                    </button>
                                   </div>
-                                  <button
-                                    onClick={() => {
-                                      if (!jaSelecionado) {
-                                        setLoteSelecao(prev => ({ ...prev, [p.id]: { modo: 'pct', valor: '' } }))
-                                      }
-                                    }}
-                                    className={cn(
-                                      'h-6 w-6 rounded flex items-center justify-center shrink-0 transition-colors',
-                                      jaSelecionado
-                                        ? 'bg-primary/15 text-primary cursor-default'
-                                        : 'border border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/[0.06]'
-                                    )}
-                                    title={jaSelecionado ? 'Já no painel' : 'Adicionar ao painel'}
-                                  >
-                                    {jaSelecionado ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                                  </button>
+                                  {/* Chooser inline */}
+                                  {isChooser && (
+                                    <div className="pb-2 px-1 space-y-1.5">
+                                      <div className="flex gap-1">
+                                        {(['base', 'pct', 'fixo'] as const).map(m => (
+                                          <button key={m} onClick={() => { setChooserModo(m); setChooserValor('') }}
+                                            className={cn('flex-1 py-1 text-[10px] font-medium rounded border transition-colors',
+                                              chooserModo === m ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/50')}>
+                                            {m === 'base' ? 'Manter base' : m === 'pct' ? 'Desconto %' : 'Preço fixo R$'}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {chooserModo !== 'base' && (
+                                        <Input
+                                          autoFocus
+                                          type="number" min="0"
+                                          placeholder={chooserModo === 'pct' ? '% de desconto' : 'Preço final R$'}
+                                          value={chooserValor}
+                                          onChange={e => setChooserValor(e.target.value)}
+                                          className="h-7 text-xs"
+                                        />
+                                      )}
+                                      {chooserModo === 'pct' && chooserValor && preco != null && (
+                                        <p className="text-[10px] text-muted-foreground/70">
+                                          → {fmt(Math.round(preco * (1 - (parseFloat(chooserValor) || 0) / 100)))}
+                                        </p>
+                                      )}
+                                      <div className="flex gap-1 justify-end">
+                                        <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setChooserItem(null)}>Cancelar</Button>
+                                        <Button size="sm" className="h-6 text-[10px]" onClick={() => {
+                                          const entry = chooserModo === 'pct'
+                                            ? { modo: 'pct' as const, valor: chooserValor || '0' }
+                                            : chooserModo === 'fixo'
+                                            ? { modo: 'fixo' as const, valor: chooserValor || '0' }
+                                            : { modo: 'pct' as const, valor: '0' }
+                                          setLoteSelecao(prev => ({ ...prev, [p.id]: entry }))
+                                          setChooserItem(null)
+                                          setChooserValor('')
+                                        }}>Adicionar</Button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )
                             })}
-                            {mostrarProdutos && produtosLoteFiltrados.length === 0 && (loteTipo === 'produtos' || (loteTipo === 'meus' && !mostrarKits)) && (
+                            {mostrarProdutos && produtosLoteFiltrados.length === 0 && (
                               <p className="text-xs text-muted-foreground text-center py-4">
-                                {loteSearch ? 'Nenhum produto encontrado.' : loteTipo === 'meus' ? 'Nenhum produto seu cadastrado.' : 'Nenhum produto.'}
+                                {loteSearch ? 'Nenhum produto encontrado.'
+                                  : loteTipo === 'meus' ? 'Nenhum produto seu com preço cadastrado. Configure em Ferramentas > Calculadora.'
+                                  : 'Nenhum produto com preço encontrado.'}
                               </p>
                             )}
                           </>
@@ -1378,53 +1444,88 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                               const jaSelecionado = !!loteKitSelecao[s.id]
                               const precoKit = s.preco_sujo ?? s.preco_limpo
                               const tipoKit = s.preco_sujo != null ? 'sujo' : s.preco_limpo != null ? 'limpo' : null
+                              const isChooserKit = chooserItem?.tipo === 'kit' && chooserItem.id === s.id
                               return (
-                                <div key={s.id} className={cn('flex items-center gap-2 py-1.5 border-b border-border/20 last:border-0', jaSelecionado && 'bg-primary/[0.03]')}>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-xs truncate flex items-center gap-1">
-                                      <Layers className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                                      {s.nome}
-                                    </span>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                      {precoKit != null ? (
-                                        <>
-                                          <span className="text-[10px] tabular-nums text-muted-foreground">{fmt(precoKit)}</span>
-                                          {tipoKit && (
-                                            <span className={cn('text-[9px] font-semibold px-1 rounded', tipoKit === 'sujo' ? 'text-orange-400 bg-orange-500/10' : 'text-emerald-400 bg-emerald-500/10')}>
-                                              {tipoKit === 'sujo' ? 'S' : 'L'}
-                                            </span>
-                                          )}
-                                        </>
-                                      ) : (
-                                        <span className="text-[10px] text-muted-foreground/40 italic">sem preço</span>
-                                      )}
+                                <div key={s.id} className={cn('border-b border-border/20 last:border-0', (jaSelecionado || isChooserKit) && 'bg-primary/[0.03]')}>
+                                  <div className="flex items-center gap-2 py-1.5">
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-xs truncate flex items-center gap-1">
+                                        <Layers className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                                        {s.nome}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        {precoKit != null ? (
+                                          <>
+                                            <span className="text-[10px] tabular-nums text-muted-foreground">{fmt(precoKit)}</span>
+                                            {tipoKit && (
+                                              <span className={cn('text-[9px] font-semibold px-1 rounded', tipoKit === 'sujo' ? 'text-orange-400 bg-orange-500/10' : 'text-emerald-400 bg-emerald-500/10')}>
+                                                {tipoKit === 'sujo' ? 'Sujo' : 'Limpo'}
+                                              </span>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <span className="text-[10px] text-muted-foreground/40 italic">sem preço</span>
+                                        )}
+                                      </div>
                                     </div>
+                                    <button
+                                      onClick={() => {
+                                        if (jaSelecionado) return
+                                        if (isChooserKit) { setChooserItem(null); return }
+                                        setChooserItem({ tipo: 'kit', id: s.id })
+                                        setChooserModo('pct')
+                                        setChooserValor('')
+                                      }}
+                                      className={cn(
+                                        'h-6 w-6 rounded flex items-center justify-center shrink-0 transition-colors',
+                                        jaSelecionado ? 'bg-primary/15 text-primary cursor-default'
+                                          : isChooserKit ? 'bg-primary/10 text-primary border border-primary'
+                                          : 'border border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/[0.06]'
+                                      )}
+                                      title={jaSelecionado ? 'Já no painel' : 'Adicionar'}
+                                    >
+                                      {jaSelecionado ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                    </button>
                                   </div>
-                                  <button
-                                    onClick={() => {
-                                      if (!jaSelecionado) setLoteKitSelecao(prev => ({ ...prev, [s.id]: '' }))
-                                    }}
-                                    className={cn(
-                                      'h-6 w-6 rounded flex items-center justify-center shrink-0 transition-colors',
-                                      jaSelecionado
-                                        ? 'bg-primary/15 text-primary cursor-default'
-                                        : 'border border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/[0.06]'
-                                    )}
-                                    title={jaSelecionado ? 'Já no painel' : 'Adicionar ao painel'}
-                                  >
-                                    {jaSelecionado ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                                  </button>
+                                  {isChooserKit && (
+                                    <div className="pb-2 px-1 space-y-1.5">
+                                      <div className="flex gap-1">
+                                        {(['base', 'pct'] as const).map(m => (
+                                          <button key={m} onClick={() => { setChooserModo(m); setChooserValor('') }}
+                                            className={cn('flex-1 py-1 text-[10px] font-medium rounded border transition-colors',
+                                              chooserModo === m ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/50')}>
+                                            {m === 'base' ? 'Manter base' : 'Desconto %'}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {chooserModo === 'pct' && (
+                                        <Input autoFocus type="number" min="0" max="100" placeholder="% de desconto" value={chooserValor}
+                                          onChange={e => setChooserValor(e.target.value)} className="h-7 text-xs" />
+                                      )}
+                                      {chooserModo === 'pct' && chooserValor && precoKit != null && (
+                                        <p className="text-[10px] text-muted-foreground/70">→ {fmt(Math.round(precoKit * (1 - (parseFloat(chooserValor) || 0) / 100)))}</p>
+                                      )}
+                                      <div className="flex gap-1 justify-end">
+                                        <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setChooserItem(null)}>Cancelar</Button>
+                                        <Button size="sm" className="h-6 text-[10px]" onClick={() => {
+                                          setLoteKitSelecao(prev => ({ ...prev, [s.id]: chooserModo === 'base' ? '0' : (chooserValor || '0') }))
+                                          setChooserItem(null)
+                                          setChooserValor('')
+                                        }}>Adicionar</Button>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )
                             })}
-                            {mostrarKits && kitsLoteFiltrados.length === 0 && (loteTipo === 'kits' || (loteTipo === 'meus' && !mostrarProdutos)) && (
+                            {mostrarKits && kitsLoteFiltrados.length === 0 && (
                               <p className="text-xs text-muted-foreground text-center py-4">
                                 {loteSearch ? 'Nenhum kit encontrado.' : loteTipo === 'meus' ? 'Nenhum kit seu cadastrado.' : 'Nenhum kit.'}
                               </p>
                             )}
                           </>
                         )}
-                        {loteTipo === 'todos' && produtosLoteFiltrados.length === 0 && kitsLoteFiltrados.length === 0 && (
+                        {(loteTipo === 'todos' || loteTipo === 'produtos') && produtosLoteFiltrados.length === 0 && kitsLoteFiltrados.length === 0 && (
                           <p className="text-xs text-muted-foreground text-center py-4">
                             {loteSearch ? 'Nenhum item encontrado.' : 'Nenhum produto cadastrado.'}
                           </p>
