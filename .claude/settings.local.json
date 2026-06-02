@@ -64,7 +64,8 @@
       "Read(//c/Users/barbaramarchi/projetos/**)",
       "Bash(dir \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\" /b)",
       "Bash(findstr \"next.config\")",
-      "Bash(dir \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\supabase\\\\migrations\" /b)"
+      "Bash(dir \"C:\\\\Users\\\\barbaramarchi\\\\projetos\\\\sistema-gta\\\\supabase\\\\migrations\" /b)",
+      "Bash(dir supabase\\\\migrations /b)"
     ]
   }
 }

@@ -38,6 +38,7 @@ export type FaccaoPreco = {
 export type FaixaPreco   = { id: string; faccao_id: string; item_id: string; quantidade_min: number; preco_sujo: number | null; preco_limpo: number | null }
 export type Produto      = { id: string; nome: string; categoria?: string | null; apelidos?: string | null }
 export type DescontoItem = { id: string; faccao_id: string; item_id: string; desconto_pct: number; modo?: 'pct' | 'fixo'; preco_especial?: number | null }
+type DescontoKit  = { id: string; faccao_id: string; servico_id: string; desconto_pct: number; modo?: 'pct' | 'fixo'; preco_especial?: number | null }
 export type Servico      = { id: string; nome: string; descricao: string | null; preco_sujo: number | null; preco_limpo: number | null; desconto_pct: number; eh_meu_servico?: boolean }
 type FaccaoProdutoExtra = { id: string; faccao_id: string; nome: string; valor_sujo: number | null; valor_limpo: number | null; created_at: string }
 
@@ -433,8 +434,14 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   useEffect(() => {
     if (!open) return
     setLoadingDescontos(true)
-    sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id)
-      .then(({ data }) => { setDescontosItem((data ?? []) as DescontoItem[]); setLoadingDescontos(false) })
+    Promise.all([
+      sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id),
+      sb().from('faccao_servico_desconto').select('*').eq('faccao_id', faccao.id),
+    ]).then(([{ data: d1 }, { data: d2 }]) => {
+      setDescontosItem((d1 ?? []) as DescontoItem[])
+      setDescontosKits((d2 ?? []) as DescontoKit[])
+      setLoadingDescontos(false)
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, faccao.id])
 
@@ -446,8 +453,8 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [loteSelecao, setLoteSelecao] = useState<Record<string, { modo: 'pct' | 'fixo'; valor: string }>>({})
   const [loteSearch, setLoteSearch] = useState('')
   const [loteTipo, setLoteTipo] = useState<'todos' | 'produtos' | 'kits' | 'meus'>('meus')
-  const [loteKitSelecao, setLoteKitSelecao] = useState<Record<string, string>>({})
-  const [servicoDescontosOverride, setServicoDescontosOverride] = useState<Record<string, number>>({})
+  const [loteKitSelecao, setLoteKitSelecao] = useState<Record<string, { modo: 'pct' | 'fixo'; valor: string }>>({})
+  const [descontosKits, setDescontosKits] = useState<DescontoKit[]>([])
   const [loteSaving, setLoteSaving] = useState(false)
   const [manualForm, setManualForm] = useState({ nome: '', valor_sujo: '', valor_limpo: '' })
   const [manualSaving, setManualSaving] = useState(false)
@@ -455,8 +462,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   const [chooserItem, setChooserItem] = useState<{ tipo: 'produto' | 'kit'; id: string } | null>(null)
   const [chooserModo, setChooserModo] = useState<'pct' | 'fixo' | 'base'>('pct')
   const [chooserValor, setChooserValor] = useState('')
-  // Para kits no painel direito: modo de exibição do valor (pct ou valor direto)
-  const [loteKitModo, setLoteKitModo] = useState<Record<string, 'pct' | 'valor'>>({})
   const [editandoExtra, setEditandoExtra] = useState<FaccaoProdutoExtra | null>(null)
 
   useEffect(() => {
@@ -512,10 +517,11 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
   , [faccaoServicosIds, todoServicos, buscaProduto])
 
   const combosFiltradosDesconto = useMemo(() =>
-    faccaoServicosIds.map(sid => todoServicos.find(s => s.id === sid)).filter(Boolean).filter(s =>
-      (servicoDescontosOverride[s!.id] ?? s!.desconto_pct) > 0 && (!buscaDesconto || norm(s!.nome).includes(norm(buscaDesconto)))
-    ) as Servico[]
-  , [faccaoServicosIds, todoServicos, buscaDesconto, servicoDescontosOverride])
+    descontosKits
+      .filter(dk => !buscaDesconto || norm(todoServicos.find(s => s.id === dk.servico_id)?.nome ?? '').includes(norm(buscaDesconto)))
+      .map(dk => ({ ...dk, servico: todoServicos.find(s => s.id === dk.servico_id) }))
+      .filter(x => x.servico)
+  , [descontosKits, todoServicos, buscaDesconto])
 
   const produtosParaDesconto = useMemo(() => todosProdutos.filter(p => !descontosItem.some(d => d.item_id === p.id)), [todosProdutos, descontosItem])
 
@@ -622,17 +628,31 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       const { error } = await sb().from('faccao_desconto_por_item').upsert(rows, { onConflict: 'faccao_id,item_id' })
       if (error) { toast.error('Erro ao salvar produtos'); setLoteSaving(false); return }
     }
-    // Salvar descontos de kits
-    for (const [sid, pctStr] of Object.entries(loteKitSelecao)) {
-      const pct = parseFloat(pctStr) || 0
-      const { error } = await sb().from('servicos').update({ desconto_pct: pct }).eq('id', sid)
-      if (!error) setServicoDescontosOverride(prev => ({ ...prev, [sid]: pct }))
+    // Kits: deletar removidos, upsert configurados
+    const toDeleteKits = descontosKits.filter(dk => !loteKitSelecao[dk.servico_id])
+    for (const dk of toDeleteKits) {
+      await sb().from('faccao_servico_desconto').delete().eq('id', dk.id)
     }
-    const { data } = await sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id)
-    setDescontosItem((data ?? []) as DescontoItem[])
+    const kitEntries = Object.entries(loteKitSelecao)
+    if (kitEntries.length > 0) {
+      const kitRows = kitEntries.map(([servico_id, sel]) => ({
+        faccao_id: faccao.id, servico_id,
+        desconto_pct: sel.modo === 'pct' ? (parseFloat(sel.valor) || 0) : 0,
+        modo: sel.modo,
+        preco_especial: sel.modo === 'fixo' ? (parseFloat(sel.valor) || null) : null,
+      }))
+      const { error } = await sb().from('faccao_servico_desconto').upsert(kitRows, { onConflict: 'faccao_id,servico_id' })
+      if (error) { toast.error('Erro ao salvar kits'); setLoteSaving(false); return }
+    }
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      sb().from('faccao_desconto_por_item').select('*').eq('faccao_id', faccao.id),
+      sb().from('faccao_servico_desconto').select('*').eq('faccao_id', faccao.id),
+    ])
+    setDescontosItem((d1 ?? []) as DescontoItem[])
+    setDescontosKits((d2 ?? []) as DescontoKit[])
     setLoteSaving(false)
     fecharDescontoModal()
-    const total = itemEntries.length + Object.keys(loteKitSelecao).length
+    const total = itemEntries.length + kitEntries.length
     toast.success(total > 0 ? `${total} item(s) salvo(s)` : 'Descontos atualizados')
   }
 
@@ -667,7 +687,6 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
     setNovoDescontoModal(false)
     setLoteSelecao({})
     setLoteKitSelecao({})
-    setLoteKitModo({})
     setLoteSearch('')
     setLoteTipo('meus')
     setChooserItem(null)
@@ -686,10 +705,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
       }
     }
     setLoteSelecao(initialLote)
-    const initialKits: Record<string, string> = {}
-    for (const s of todoServicos) {
-      const pct = servicoDescontosOverride[s.id] ?? s.desconto_pct
-      if (pct > 0) initialKits[s.id] = String(pct)
+    const initialKits: Record<string, { modo: 'pct' | 'fixo'; valor: string }> = {}
+    for (const dk of descontosKits) {
+      initialKits[dk.servico_id] = {
+        modo: (dk.modo as 'pct' | 'fixo') ?? 'pct',
+        valor: dk.modo === 'fixo' ? String(dk.preco_especial ?? '') : String(dk.desconto_pct),
+      }
     }
     setLoteKitSelecao(initialKits)
     setLoteSearch('')
@@ -1194,13 +1215,21 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                     </div>
                   </div>
                 ))}
-                {combosFiltradosDesconto.map((s, idx) => (
-                  <div key={s.id} className={cn('flex items-center gap-2 px-3 py-2', idx < combosFiltradosDesconto.length - 1 && 'border-b border-border/40')}>
-                    <span title="Combo/Serviço"><Layers className="h-3 w-3 text-primary/50 shrink-0" /></span>
-                    <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{s.nome}</span>
-                    <span className="text-xs tabular-nums text-emerald-400 shrink-0">-{s.desconto_pct}%</span>
-                  </div>
-                ))}
+                {combosFiltradosDesconto.map((dk, idx) => {
+                  const precoBase = dk.servico?.preco_sujo ?? dk.servico?.preco_limpo ?? null
+                  const precoFinal = dk.modo === 'fixo' ? (dk.preco_especial ?? null)
+                    : precoBase != null ? Math.round(precoBase * (1 - dk.desconto_pct / 100)) : null
+                  return (
+                    <div key={dk.servico_id} className={cn('flex items-center gap-2 px-3 py-2', idx < combosFiltradosDesconto.length - 1 && 'border-b border-border/40')}>
+                      <span title="Combo/Serviço"><Layers className="h-3 w-3 text-primary/50 shrink-0" /></span>
+                      <span className={cn(itemNomeClass, 'font-medium flex-1 min-w-0 truncate')}>{dk.servico?.nome}</span>
+                      {dk.modo === 'fixo'
+                        ? <span className="text-xs tabular-nums text-emerald-400 shrink-0">{fmt(precoFinal)}</span>
+                        : <span className="text-xs tabular-nums text-emerald-400 shrink-0">-{dk.desconto_pct}%{precoFinal != null && ` → ${fmt(precoFinal)}`}</span>
+                      }
+                    </div>
+                  )
+                })}
               </div>
             )}
           </section>
@@ -1511,23 +1540,16 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                                       {chooserModo === 'pct' && chooserValor && precoKit != null && (
                                         <p className="text-[10px] text-muted-foreground/70">→ {fmt(Math.round(precoKit * (1 - (parseFloat(chooserValor) || 0) / 100)))}</p>
                                       )}
-                                      {chooserModo === 'fixo' && chooserValor && precoKit != null && precoKit > 0 && (
-                                        <p className="text-[10px] text-muted-foreground/70">
-                                          ≈ {Math.max(0, Math.round((1 - (parseFloat(chooserValor) || 0) / precoKit) * 100))}% desc
-                                        </p>
+                                      {chooserModo === 'fixo' && chooserValor && (
+                                        <p className="text-[10px] text-muted-foreground/70">Preço final: {fmt(parseFloat(chooserValor) || 0)}</p>
                                       )}
                                       <div className="flex gap-1 justify-end">
                                         <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setChooserItem(null)}>Cancelar</Button>
                                         <Button size="sm" className="h-6 text-[10px]" onClick={() => {
-                                          let pctStr = '0'
-                                          if (chooserModo === 'pct') {
-                                            pctStr = chooserValor || '0'
-                                          } else if (chooserModo === 'fixo' && precoKit != null && precoKit > 0) {
-                                            const preco = parseFloat(chooserValor) || 0
-                                            pctStr = String(Math.max(0, Math.round((1 - preco / precoKit) * 100 * 10) / 10))
-                                          }
-                                          setLoteKitSelecao(prev => ({ ...prev, [s.id]: pctStr }))
-                                          setLoteKitModo(prev => ({ ...prev, [s.id]: chooserModo === 'fixo' ? 'valor' : 'pct' }))
+                                          const entry = chooserModo === 'base'
+                                            ? { modo: 'pct' as const, valor: '0' }
+                                            : { modo: chooserModo as 'pct' | 'fixo', valor: chooserValor || '0' }
+                                          setLoteKitSelecao(prev => ({ ...prev, [s.id]: entry }))
                                           setChooserItem(null)
                                           setChooserValor('')
                                         }}>Adicionar</Button>
@@ -1616,15 +1638,12 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                               </div>
                             )
                           })}
-                          {/* Kits configurados */}
-                          {Object.entries(loteKitSelecao).map(([sid, pctStr]) => {
+                          {/* Kits configurados — idêntico aos produtos */}
+                          {Object.entries(loteKitSelecao).map(([sid, sel]) => {
                             const servico = todoServicos.find(s => s.id === sid)
                             const precoBase = servico?.preco_sujo ?? servico?.preco_limpo ?? null
                             const tipoBase = servico?.preco_sujo != null ? 'sujo' : servico?.preco_limpo != null ? 'limpo' : null
-                            const pct = parseFloat(pctStr) || 0
-                            const precoFinal = precoBase != null ? Math.round(precoBase * (1 - pct / 100)) : null
-                            const modoKit = loteKitModo[sid] ?? 'pct'
-                            const valorDisplay = modoKit === 'valor' && precoFinal != null ? String(precoFinal) : pctStr
+                            const precoFinal = calcPrecoFinal(precoBase, sel.modo, sel.valor)
                             return (
                               <div key={sid} className="rounded border border-border/40 bg-white/[0.02] px-2.5 py-2 space-y-1.5">
                                 <div className="flex items-start justify-between gap-1">
@@ -1643,44 +1662,30 @@ export function FaccaoDetalhe({ faccao, membros, veiculos, todosProdutos, todoSe
                                     </div>
                                   </div>
                                   <button
-                                    onClick={() => { setLoteKitSelecao(prev => { const n = { ...prev }; delete n[sid]; return n }); setLoteKitModo(prev => { const n = { ...prev }; delete n[sid]; return n }) }}
+                                    onClick={() => setLoteKitSelecao(prev => { const n = { ...prev }; delete n[sid]; return n })}
                                     className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
                                   ><X className="h-3 w-3" /></button>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                  {/* Toggle % | R$ */}
                                   <button
-                                    title={modoKit === 'pct' ? 'Mudar para valor direto (R$)' : 'Mudar para desconto (%)'}
-                                    onClick={() => setLoteKitModo(prev => ({ ...prev, [sid]: modoKit === 'pct' ? 'valor' : 'pct' }))}
+                                    title={sel.modo === 'pct' ? 'Modo: desconto %' : 'Modo: preço fixo R$'}
+                                    onClick={() => setLoteKitSelecao(prev => ({ ...prev, [sid]: { modo: sel.modo === 'pct' ? 'fixo' : 'pct', valor: '' } }))}
                                     className={cn('h-6 w-8 rounded text-[10px] font-bold border shrink-0 transition-colors',
-                                      modoKit === 'pct'
-                                        ? 'border-border/60 text-muted-foreground hover:border-primary hover:text-primary'
-                                        : 'border-primary text-primary bg-primary/10'
+                                      sel.modo === 'pct' ? 'border-border/60 text-muted-foreground hover:border-primary hover:text-primary' : 'border-primary text-primary bg-primary/10'
                                     )}>
-                                    {modoKit === 'pct' ? '%' : 'R$'}
+                                    {sel.modo === 'pct' ? '%' : 'R$'}
                                   </button>
                                   <Input
                                     type="number" min="0"
-                                    max={modoKit === 'pct' ? 100 : undefined}
-                                    step={modoKit === 'pct' ? '0.5' : '1000'}
-                                    placeholder={modoKit === 'pct' ? 'desc %' : 'preço'}
-                                    value={valorDisplay}
-                                    onChange={e => {
-                                      if (modoKit === 'pct') {
-                                        setLoteKitSelecao(prev => ({ ...prev, [sid]: e.target.value }))
-                                      } else if (precoBase != null && precoBase > 0) {
-                                        const preco = parseFloat(e.target.value) || 0
-                                        const novoPct = String(Math.max(0, Math.round((1 - preco / precoBase) * 100 * 10) / 10))
-                                        setLoteKitSelecao(prev => ({ ...prev, [sid]: novoPct }))
-                                      }
-                                    }}
+                                    placeholder={sel.modo === 'pct' ? 'desc %' : 'preço'}
+                                    step={sel.modo === 'pct' ? '0.5' : '1000'}
+                                    max={sel.modo === 'pct' ? 100 : undefined}
+                                    value={sel.valor}
+                                    onChange={e => setLoteKitSelecao(prev => ({ ...prev, [sid]: { ...sel, valor: e.target.value } }))}
                                     className="h-6 text-xs flex-1 text-right"
                                   />
-                                  {modoKit === 'pct' && precoFinal != null && pctStr !== '' && pctStr !== '0' && (
+                                  {precoFinal != null && sel.valor !== '' && (
                                     <span className="text-[10px] tabular-nums text-primary shrink-0">→ {fmt(precoFinal)}</span>
-                                  )}
-                                  {modoKit === 'valor' && pctStr !== '' && pctStr !== '0' && (
-                                    <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">({pct}% desc)</span>
                                   )}
                                 </div>
                               </div>
