@@ -8,3 +8,10 @@ CREATE TABLE IF NOT EXISTS faccao_servico_desconto (
   created_at timestamptz DEFAULT now(),
   UNIQUE(faccao_id, servico_id)
 );
+
+ALTER TABLE faccao_servico_desconto ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "authenticated_all" ON faccao_servico_desconto
+  FOR ALL TO authenticated
+  USING (true)
+  WITH CHECK (true);
