@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { cn, norm } from '@/lib/utils'
 import {
   Plus, X, Edit2, Truck, ChevronDown, ChevronUp,
-  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown, MoreVertical, Star,
+  Package, Loader2, AlertTriangle, Check, RotateCcw, Search, ImageUp, Copy, Trash2, Layers, ArrowUpDown, MoreVertical, Star, Tag,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -724,6 +724,7 @@ function OrderDialog({
   const [buscaProd, setBuscaProd] = useState('')
   const [faccaoDescontosItem, setFaccaoDescontosItem] = useState<Record<string, number>>({})
   const [faccaoPrecoEspecialMap, setFaccaoPrecoEspecialMap] = useState<Record<string, number>>({})
+  const [faccaoKitDescontosMap, setFaccaoKitDescontosMap] = useState<Record<string, { modo: 'pct' | 'fixo'; desconto_pct: number; preco_especial: number | null }>>({})
   const [draftOrigem, setDraftOrigem] = useState<Record<string, 'fabricar' | 'estoque'>>({})
   const [draftPctSujo, setDraftPctSujo] = useState<Record<string, string>>({})
   const [editandoPreco, setEditandoPreco] = useState<Set<string>>(new Set())
@@ -906,24 +907,32 @@ function OrderDialog({
         })
         setEmpresaNome('')
         if (meuFaccao) {
-          sb().from('faccao_desconto_por_item').select('item_id, desconto_pct, modo, preco_especial').eq('faccao_id', meuFaccao.id)
-            .then(({ data }) => {
-              const pctMap: Record<string, number> = {}
-              const precoMap: Record<string, number> = {}
-              for (const row of (data ?? [])) {
-                if ((row.modo ?? 'pct') === 'fixo' && row.preco_especial != null) {
-                  precoMap[row.item_id] = row.preco_especial
-                } else {
-                  pctMap[row.item_id] = row.desconto_pct
-                }
+          Promise.all([
+            sb().from('faccao_desconto_por_item').select('item_id, desconto_pct, modo, preco_especial').eq('faccao_id', meuFaccao.id),
+            sb().from('faccao_servico_desconto').select('servico_id, desconto_pct, modo, preco_especial').eq('faccao_id', meuFaccao.id),
+          ]).then(([{ data: d1 }, { data: d2 }]) => {
+            const pctMap: Record<string, number> = {}
+            const precoMap: Record<string, number> = {}
+            for (const row of (d1 ?? [])) {
+              if ((row.modo ?? 'pct') === 'fixo' && row.preco_especial != null) {
+                precoMap[row.item_id] = row.preco_especial
+              } else {
+                pctMap[row.item_id] = row.desconto_pct
               }
-              setFaccaoDescontosItem(pctMap)
-              setFaccaoPrecoEspecialMap(precoMap)
-            })
+            }
+            const kitMap: Record<string, { modo: 'pct' | 'fixo'; desconto_pct: number; preco_especial: number | null }> = {}
+            for (const row of (d2 ?? [])) {
+              kitMap[row.servico_id] = { modo: row.modo ?? 'pct', desconto_pct: row.desconto_pct, preco_especial: row.preco_especial ?? null }
+            }
+            setFaccaoDescontosItem(pctMap)
+            setFaccaoPrecoEspecialMap(precoMap)
+            setFaccaoKitDescontosMap(kitMap)
+          })
         }
         setMembroNome('')
         setCart([])
         setFaccaoPrecoEspecialMap({})
+        setFaccaoKitDescontosMap({})
         setNovoMembroTel('')
         setNovoMembroVulgo('')
         setCombosModo({})
@@ -957,33 +966,50 @@ function OrderDialog({
     if (e.tipo === 'faccao') {
       const f = faccoes.find(f => f.id === e.id)!
       setForm(prev => ({ ...prev, faccao_id: e.id, loja_id: '', desconto_pct: f.desconto_padrao_pct > 0 ? String(f.desconto_padrao_pct) : prev.desconto_pct }))
-      // Fetch per-item discounts for this facção
       setFaccaoPrecoEspecialMap({})
-      sb().from('faccao_desconto_por_item').select('item_id, desconto_pct, modo, preco_especial').eq('faccao_id', e.id)
-        .then(({ data }) => {
-          const pctMap: Record<string, number> = {}
-          const precoMap: Record<string, number> = {}
-          for (const row of (data ?? [])) {
-            if ((row.modo ?? 'pct') === 'fixo' && row.preco_especial != null) {
-              precoMap[row.item_id] = row.preco_especial
-            } else {
-              pctMap[row.item_id] = row.desconto_pct
-            }
+      setFaccaoKitDescontosMap({})
+      Promise.all([
+        sb().from('faccao_desconto_por_item').select('item_id, desconto_pct, modo, preco_especial').eq('faccao_id', e.id),
+        sb().from('faccao_servico_desconto').select('servico_id, desconto_pct, modo, preco_especial').eq('faccao_id', e.id),
+      ]).then(([{ data: d1 }, { data: d2 }]) => {
+        const pctMap: Record<string, number> = {}
+        const precoMap: Record<string, number> = {}
+        for (const row of (d1 ?? [])) {
+          if ((row.modo ?? 'pct') === 'fixo' && row.preco_especial != null) {
+            precoMap[row.item_id] = row.preco_especial
+          } else {
+            pctMap[row.item_id] = row.desconto_pct
           }
-          setFaccaoDescontosItem(pctMap)
-          setFaccaoPrecoEspecialMap(precoMap)
-          setCart(prev => prev.map(c => ({
-            ...c,
-            desconto_item_pct: pctMap[c.item_id] ?? null,
-            preco_limpo_override: precoMap[c.item_id] != null ? precoMap[c.item_id] : c.preco_limpo_override,
-          })))
-          const qtdEspeciais = Object.keys(precoMap).length
-          if (qtdEspeciais > 0) toast.info(`${qtdEspeciais} produto${qtdEspeciais > 1 ? 's' : ''} com preço especial desta facção`)
-        })
+        }
+        const kitMap: Record<string, { modo: 'pct' | 'fixo'; desconto_pct: number; preco_especial: number | null }> = {}
+        for (const row of (d2 ?? [])) {
+          kitMap[row.servico_id] = { modo: row.modo ?? 'pct', desconto_pct: row.desconto_pct, preco_especial: row.preco_especial ?? null }
+        }
+        setFaccaoDescontosItem(pctMap)
+        setFaccaoPrecoEspecialMap(precoMap)
+        setFaccaoKitDescontosMap(kitMap)
+        setCart(prev => prev.map(c => ({
+          ...c,
+          desconto_item_pct: pctMap[c.item_id] ?? null,
+          preco_limpo_override: precoMap[c.item_id] != null ? precoMap[c.item_id] : c.preco_limpo_override,
+        })))
+        // Aplica preço especial de kits já no carrinho
+        const kitFixos = Object.entries(kitMap).filter(([, v]) => v.modo === 'fixo' && v.preco_especial != null)
+        if (kitFixos.length > 0) {
+          setPrecoKitOverride(prev => {
+            const n = { ...prev }
+            for (const [sid, desc] of kitFixos) n[sid] = desc.preco_especial!
+            return n
+          })
+        }
+        const totalEspeciais = Object.keys(precoMap).length + Object.keys(kitMap).filter(sid => kitMap[sid].modo === 'fixo').length
+        if (totalEspeciais > 0) toast.info(`${totalEspeciais} item${totalEspeciais > 1 ? 's' : ''} com preço especial desta facção`)
+      })
     } else {
       setForm(prev => ({ ...prev, faccao_id: '', loja_id: e.id }))
       setFaccaoDescontosItem({})
       setFaccaoPrecoEspecialMap({})
+      setFaccaoKitDescontosMap({})
       setCart(prev => prev.map(c => ({ ...c, desconto_item_pct: null })))
     }
     setEmpresaNome(e.nome)
@@ -1142,6 +1168,8 @@ function OrderDialog({
   function addServicoToCart(servico: Servico) {
     const itensDoServico = servicoItens.filter(si => si.servico_id === servico.id)
     if (itensDoServico.length === 0) { toast.info('Serviço sem itens configurados'); return }
+    const kitDesconto = faccaoKitDescontosMap[servico.id]
+    const descontoPctKit = kitDesconto?.modo === 'pct' ? kitDesconto.desconto_pct : (servico.desconto_pct > 0 ? servico.desconto_pct : null)
     setCart(prev => {
       const withoutOld = prev.filter(c => c.servico_id !== servico.id)
       const newItems = itensDoServico.map(si => {
@@ -1153,7 +1181,7 @@ function OrderDialog({
           preco_limpo: prod?.preco_limpo ?? 0,
           preco_sujo: prod?.preco_sujo ?? 0,
           preco_limpo_override: null, preco_sujo_override: null,
-          desconto_item_pct: servico.desconto_pct > 0 ? servico.desconto_pct : (faccaoDescontosItem[si.item_id] ?? null),
+          desconto_item_pct: descontoPctKit ?? (faccaoDescontosItem[si.item_id] ?? null),
           tem_craft: si.tem_craft,
           origem: (si.tem_craft ? 'fabricar' : 'estoque') as 'fabricar' | 'estoque',
           servico_id: servico.id,
@@ -1163,6 +1191,10 @@ function OrderDialog({
     })
     setCombosQtd(prev => ({ ...prev, [servico.id]: prev[servico.id] ?? 1 }))
     setCombosModo(prev => ({ ...prev, [servico.id]: prev[servico.id] ?? 'resumo' }))
+    // Aplica preço especial fixo do kit para esta facção
+    if (kitDesconto?.modo === 'fixo' && kitDesconto.preco_especial != null) {
+      setPrecoKitOverride(prev => ({ ...prev, [servico.id]: kitDesconto.preco_especial! }))
+    }
     toast.success(`Combo "${servico.nome}" adicionado`)
   }
 
@@ -1523,6 +1555,21 @@ function OrderDialog({
                 <Input type="number" min="0" max="100" value={form.desconto_pct}
                   onChange={e => setForm(prev => ({ ...prev, desconto_pct: e.target.value }))}
                   className="h-8 text-sm" />
+                {/* Indicador: desconto direto no item (preço especial por facção) */}
+                {(Object.keys(faccaoPrecoEspecialMap).length > 0 || Object.values(faccaoKitDescontosMap).some(k => k.modo === 'fixo')) && (
+                  <div className="flex items-start gap-1.5 rounded-md bg-emerald-500/[0.07] border border-emerald-500/20 px-2.5 py-1.5 mt-1">
+                    <Tag className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-emerald-400 leading-tight">Desconto direto no item</p>
+                      <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
+                        {[
+                          Object.keys(faccaoPrecoEspecialMap).length > 0 && `${Object.keys(faccaoPrecoEspecialMap).length} produto${Object.keys(faccaoPrecoEspecialMap).length > 1 ? 's' : ''}`,
+                          Object.values(faccaoKitDescontosMap).filter(k => k.modo === 'fixo').length > 0 && `${Object.values(faccaoKitDescontosMap).filter(k => k.modo === 'fixo').length} kit${Object.values(faccaoKitDescontosMap).filter(k => k.modo === 'fixo').length > 1 ? 's' : ''}`,
+                        ].filter(Boolean).join(' · ')} com preço especial
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Data da venda */}
@@ -1645,22 +1692,45 @@ function OrderDialog({
                   <div className="flex flex-wrap gap-1.5 px-3 pb-2">
                     {servicosFiltrados.map(s => {
                       const itensCount = servicoItens.filter(si => si.servico_id === s.id).length
-                      const preco = form.tipo_dinheiro === 'sujo' ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
+                      const kitDesc = faccaoKitDescontosMap[s.id]
+                      const precoBase = form.tipo_dinheiro === 'sujo' ? (s.preco_sujo ?? s.preco_limpo) : s.preco_limpo
+                      const preco = kitDesc?.modo === 'fixo' && kitDesc.preco_especial != null ? kitDesc.preco_especial : precoBase
+                      const temDescontoFaccao = !!kitDesc
                       return (
                         <button
                           key={s.id}
                           type="button"
                           onClick={() => addServicoToCart(s)}
                           title={s.descricao ?? s.nome}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border bg-background hover:bg-accent hover:border-primary/40 transition-colors text-left max-w-[200px]"
+                          className={cn(
+                            'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border bg-background hover:bg-accent transition-colors text-left max-w-[200px]',
+                            temDescontoFaccao ? 'border-emerald-500/40 hover:border-emerald-500/60' : 'border-border hover:border-primary/40'
+                          )}
                         >
-                          <Layers className="h-3 w-3 text-primary/70 shrink-0" />
+                          <Layers className={cn('h-3 w-3 shrink-0', temDescontoFaccao ? 'text-emerald-400/70' : 'text-primary/70')} />
                           <div className="min-w-0">
                             <p className="text-xs font-medium truncate leading-tight">{s.nome}</p>
                             <p className="text-[10px] text-muted-foreground leading-tight">
                               {itensCount} item{itensCount !== 1 ? 's' : ''}
-                              {s.desconto_pct > 0 && <span className="text-green-400 ml-1">-{s.desconto_pct}%</span>}
-                              {preco != null && <span className="ml-1 tabular-nums">· R${preco.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>}
+                              {kitDesc?.modo === 'pct' && kitDesc.desconto_pct > 0 && (
+                                <span className="text-emerald-400 ml-1 flex items-center gap-0.5 inline-flex">
+                                  <Tag className="h-2 w-2" />-{kitDesc.desconto_pct}%
+                                </span>
+                              )}
+                              {kitDesc?.modo === 'fixo' && kitDesc.preco_especial != null && (
+                                <span className="text-emerald-400 ml-1 flex items-center gap-0.5 inline-flex">
+                                  <Tag className="h-2 w-2" />preço especial
+                                </span>
+                              )}
+                              {!temDescontoFaccao && s.desconto_pct > 0 && <span className="text-green-400 ml-1">-{s.desconto_pct}%</span>}
+                              {preco != null && (
+                                <span className={cn('ml-1 tabular-nums', temDescontoFaccao && 'text-emerald-400 font-medium')}>
+                                  · R${preco.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  {temDescontoFaccao && precoBase != null && precoBase !== preco && (
+                                    <span className="line-through text-muted-foreground/40 ml-0.5">R${precoBase.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                  )}
+                                </span>
+                              )}
                             </p>
                           </div>
                         </button>
@@ -1740,8 +1810,8 @@ function OrderDialog({
                         </span>
                       )}
                       {faccaoPrecoEspecialMap[p.item_id] != null && (
-                        <span className="shrink-0 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400" title="Preço especial desta facção">
-                          {fmt(faccaoPrecoEspecialMap[p.item_id])}
+                        <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400" title="Desconto direto no item — preço especial desta facção">
+                          <Tag className="h-2.5 w-2.5" />{fmt(faccaoPrecoEspecialMap[p.item_id])}
                         </span>
                       )}
                     </div>
